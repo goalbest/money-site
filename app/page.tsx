@@ -67,6 +67,7 @@ export default function Home() {
       <div>
         {username ? (
           <div className="flex items-center gap-3">
+            <Link href="/watchlist" className="text-sm text-blue-600 hover:underline">我的自选</Link>
             <span className="text-sm text-gray-600">👤 {username}</span>
             <button onClick={handleLogout} className="text-sm text-red-500 hover:underline">退出登录</button>
           </div>
