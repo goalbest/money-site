@@ -11,23 +11,25 @@ export default function Home() {
   const [asc, setAsc] = useState(false);
   const [loading, setLoading] = useState(true);
   const [username, setUsername] = useState<string | null>(null); // 用来存当前登录的账号
-
+  const [searchTerm, setSearchTerm] = useState("");
+  
   useEffect(() => {
-    // 1. 检查有没有登录
-    const savedUsername = localStorage.getItem("username");
-    if (savedUsername) setUsername(savedUsername);
+  const savedUsername = localStorage.getItem("username");
+  if (savedUsername) setUsername(savedUsername);
 
-    // 2. 从数据库拉取产品数据
-    async function fetchData() {
-      const { data } = await supabase
-        .from("products")
-        .select("*")
-        .order("annualized_1m", { ascending: false });
-      if (data) setProducts(data);
-      setLoading(false);
+  async function fetchData() {
+    let query = supabase.from("products").select("*");
+    
+    if (searchTerm.trim()) {
+      query = query.or(`name.ilike.%${searchTerm}%,bank.ilike.%${searchTerm}%`);
     }
-    fetchData();
-  }, []);
+    
+    const { data } = await query.order("annualized_1m", { ascending: false });
+    if (data) setProducts(data);
+    setLoading(false);
+  }
+  fetchData();
+  }, [searchTerm]);
 
   // 退出登录
   function handleLogout() {
@@ -57,27 +59,42 @@ export default function Home() {
 
   return (
   <main className="container mx-auto p-6">
-    <header className="mb-6 flex justify-between items-center flex-wrap gap-3">
-      <div>
-        <h1 className="text-2xl font-bold">理财净值观察站</h1>
-        <p className="text-sm text-gray-500 mt-1">
-          共 {products.length} 只产品 · 来自云端数据库
-        </p>
-      </div>
-      <div>
-        {username ? (
-          <div className="flex items-center gap-3">
-            <Link href="/watchlist" className="text-sm text-blue-600 hover:underline">我的自选</Link>
-            <span className="text-sm text-gray-600">👤 {username}</span>
-            <button onClick={handleLogout} className="text-sm text-red-500 hover:underline">退出登录</button>
-          </div>
-        ) : (
-          <Link href="/login" className="bg-blue-600 text-white px-4 py-2 rounded text-sm hover:bg-blue-700">
-            登录 / 注册
-          </Link>
-        )}
-      </div>
-    </header>
+    <header className="mb-6">
+<div className="flex justify-between items-center flex-wrap gap-3 mb-4">
+    <div>
+      <h1 className="text-2xl font-bold">理财净值观察站</h1>
+      <p className="text-sm text-gray-500 mt-1">
+  {searchTerm ? (
+    <>搜索 "{searchTerm}" 找到 {products.length} 只产品</>
+  ) : (
+    <>共 {products.length} 只产品 · 来自云端数据库</>
+  )}
+</p>
+    </div>
+    <div>
+      {username ? (
+        <div className="flex items-center gap-3">
+          <Link href="/watchlist" className="text-sm text-blue-600 hover:underline">我的自选</Link>
+          <span className="text-sm text-gray-600">👤 {username}</span>
+          <button onClick={handleLogout} className="text-sm text-red-500 hover:underline">退出登录</button>
+        </div>
+      ) : (
+        <Link href="/login" className="bg-blue-600 text-white px-4 py-2 rounded text-sm hover:bg-blue-700">
+          登录 / 注册
+        </Link>
+      )}
+    </div>
+  </div>
+
+  {/* 搜索框 */}
+  <input
+    type="text"
+    placeholder="搜索产品名称或银行..."
+    value={searchTerm}
+    onChange={(e) => setSearchTerm(e.target.value)}
+    className="w-full border rounded-lg px-4 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+  />
+</header>
 
     {/* ==================== 电脑端：表格 ==================== */}
     <div className="hidden md:block overflow-x-auto border rounded-lg shadow-sm">
