@@ -3,6 +3,7 @@
 import { useState, useEffect } from "react";
 import { supabase } from "../lib/supabase";
 import Link from "next/link"; // 导入 Link 组件
+import WatchButton from "./WatchButton";
 
 export default function Home() {
   const [products, setProducts] = useState<any[]>([]);
@@ -101,7 +102,10 @@ export default function Home() {
               <td className="px-3 py-3 text-sm">{Number(p.daily_return).toFixed(2)}</td>
               <td className="px-3 py-3 text-sm text-gray-600">{p.nav_date}</td>
               <td className="px-3 py-3">
-                <Link href={`/product/${p.id}`} className="text-blue-600 text-sm hover:underline">走势</Link>
+                <div className="flex items-center gap-3">
+                  <WatchButton productId={p.id} />
+                  <Link href={`/product/${p.id}`} className="text-blue-600 text-sm hover:underline">走势</Link>
+                </div>
               </td>
             </tr>
           ))}
@@ -133,7 +137,10 @@ export default function Home() {
           </div>
           <div className="flex justify-between items-center mt-4 pt-3 border-t">
             <span className="text-xs text-gray-400">净值日 {p.nav_date}</span>
-            <Link href={`/product/${p.id}`} className="text-blue-600 text-sm hover:underline">查看走势 →</Link>
+            <div className="flex items-center gap-3">
+              <WatchButton productId={p.id} />
+              <Link href={`/product/${p.id}`} className="text-blue-600 text-sm hover:underline">查看走势 →</Link>
+            </div>
           </div>
         </div>
       ))}
