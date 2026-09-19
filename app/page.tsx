@@ -31,6 +31,7 @@ export default function Home() {
   // 退出登录
   function handleLogout() {
     localStorage.removeItem("username");
+    localStorage.removeItem("user_id");
     setUsername(null);
   }
 

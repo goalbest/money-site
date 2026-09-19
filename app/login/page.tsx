@@ -30,6 +30,7 @@ export default function LoginPage() {
         setMsg("账号或密码错误，请重试");
       } else {
         localStorage.setItem("username", username);
+        localStorage.setItem("user_id", String(data.id));
         setMsg("登录成功，正在跳转...");
         setTimeout(() => {
           router.push("/");
