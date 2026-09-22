@@ -2,6 +2,7 @@ import { supabase } from "../../../lib/supabase";
 import Link from "next/link";
 import NavChart from "./NavChart";
 import MetricsPanel from "./MetricsPanel";
+import TransactionList from "./TransactionList";
 
 export default async function ProductPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -23,7 +24,6 @@ export default async function ProductPage({ params }: { params: Promise<{ id: st
 
   const navList = history || [];
 
-  // 区间统计（用于指标卡底部）
   let maxNav = null;
   let minNav = null;
   if (navList.length > 0) {
@@ -38,19 +38,20 @@ export default async function ProductPage({ params }: { params: Promise<{ id: st
         ← 返回首页
       </Link>
 
-      {/* 产品头部 + 指标卡 */}
       <div className="bg-white rounded-2xl p-6 shadow-sm mb-4">
         <h1 className="text-xl font-bold mb-2">{product.name}</h1>
         <div className="flex flex-wrap gap-x-4 gap-y-1 text-sm text-gray-500">
           <span>{product.bank}</span>
           {product.code && <span className="font-mono text-xs">编码 {product.code}</span>}
         </div>
-
-        {/* 可切换指标卡 */}
         <MetricsPanel navList={navList} />
       </div>
 
-      {/* 净值走势图 */}
+      <div className="bg-white rounded-2xl p-6 shadow-sm mb-4">
+        <h2 className="text-base font-semibold mb-4">我的交易记录</h2>
+        <TransactionList productId={productId} />
+      </div>
+
       <div className="bg-white rounded-2xl p-6 shadow-sm mb-4">
         <h2 className="text-base font-semibold mb-4">历史净值走势</h2>
         {navList.length === 0 ? (
@@ -76,7 +77,6 @@ export default async function ProductPage({ params }: { params: Promise<{ id: st
         )}
       </div>
 
-      {/* 净值明细表 */}
       {navList.length > 0 && (
         <div className="bg-white rounded-2xl shadow-sm overflow-hidden">
           <div className="px-6 py-4 border-b">
@@ -109,7 +109,11 @@ export default async function ProductPage({ params }: { params: Promise<{ id: st
                       <td className="px-4 py-2 text-sm text-right font-mono text-gray-500">
                         {n.accum_nav ? Number(n.accum_nav).toFixed(4) : "—"}
                       </td>
-                      <td className={`px-4 py-2 text-sm text-right font-mono ${change != null && change > 0 ? "text-red-500" : change != null && change < 0 ? "text-green-600" : "text-gray-400"}`}>
+                      <td className={`px-4 py-2 text-sm text-right font-mono ${
+                        change != null && change > 0 ? "text-red-500"
+                        : change != null && change < 0 ? "text-green-600"
+                        : "text-gray-400"
+                      }`}>
                         {change != null ? `${change > 0 ? "+" : ""}${change.toFixed(3)}%` : "—"}
                       </td>
                     </tr>

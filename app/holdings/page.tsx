@@ -131,7 +131,7 @@ export default function HoldingsPage() {
                     const annual = Number(p.annualized_1m || 0);
 
                     return (
-                      <Link key={h.id} href={`/product/${p.id}`} className="block px-4 py-3 hover:bg-gray-50">
+                      <Link key={h.id} href={`/holdings/${h.id}`} className="block px-4 py-3 hover:bg-gray-50">
                         <div className="flex justify-between items-start mb-2">
                           <h3 className="font-medium text-gray-900 text-sm leading-snug flex-1 pr-3">
                             {p.name}
