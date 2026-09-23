@@ -1,0 +1,46 @@
+name: Daily NAV Update
+
+"on":
+  schedule:
+    # 北京时间（UTC+8）
+    # 08:00 → UTC 00:00
+    - cron: '0 0 * * *'
+    # 10:00 → UTC 02:00
+    - cron: '0 2 * * *'
+    # 12:00 → UTC 04:00
+    - cron: '0 4 * * *'
+    # 15:00 → UTC 07:00
+    - cron: '0 7 * * *'
+    # 18:00 → UTC 10:00
+    - cron: '0 10 * * *'
+    # 21:00 → UTC 13:00
+    - cron: '0 13 * * *'
+    # 22:00 → UTC 14:00
+    - cron: '0 14 * * *'
+  workflow_dispatch:
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Install Playwright Chromium
+        run: npx playwright install --with-deps chromium
+
+      - name: Run NAV update script
+        env:
+          NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+          HEADLESS: 'true'
+        run: node crawler/update_holdings.mjs

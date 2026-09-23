@@ -1,38 +1,67 @@
-import { chromium } from 'playwright';
-import fs from 'fs';
+import https from 'https';
+import crypto from 'crypto';
+import { readFileSync, existsSync } from 'fs';
+import { resolve } from 'path';
 
-const SUPABASE_URL = 'https://xbwzrnmacznaxtumkrwy.supabase.co';
-const SUPABASE_KEY = 'sb_publishable_ENL6t2RGt7GKhT7Z4i5rbg_H20oeZ1i';
-const USER_ID = 1;
-const LIMIT = 2; // ★ 只处理前 2 个
+// ============ 环境变量 ============
+function loadEnv() {
+  const envPath = resolve(process.cwd(), '..', '.env.local');
+  if (existsSync(envPath)) {
+    const content = readFileSync(envPath, 'utf-8');
+    content.split('\n').forEach(line => {
+      const m = line.match(/^([^=]+)=(.*)$/);
+      if (m && !process.env[m[1].trim()]) process.env[m[1].trim()] = m[2].trim();
+    });
+    console.log('📂 已加载 .env.local');
+  }
+}
+loadEnv();
 
-const BANK_KEYWORDS = {
-  '中邮理财': ['中邮理财'],
-  '邮储银行': ['中邮理财'],
-  '农银理财': ['农银理财'],
-  '工银理财': ['工银理财'],
-  '建信理财': ['建信理财'],
-  '中银理财': ['中银理财'],
-  '交银理财': ['交银理财'],
-  '招银理财': ['招银理财'],
-  '兴银理财': ['兴银理财'],
-  '浦银理财': ['浦银理财'],
-  '信银理财': ['信银理财'],
-  '光大理财': ['光大理财'],
-  '民生理财': ['民生理财'],
-  '平安理财': ['平安理财'],
-  '华夏理财': ['华夏理财'],
-  '广银理财': ['广银理财'],
-  '北京银行': ['北京银行'],
-  '上银理财': ['上银理财'],
-  '苏银理财': ['苏银理财'],
-  '宁银理财': ['宁银理财'],
-  '南银理财': ['南银理财'],
-  '杭银理财': ['杭银理财'],
-  '上海农商行': ['上海农商'],
+const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL;
+const SUPABASE_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+
+// ============ 中邮理财 API ============
+const PSBC_BASE = 'https://www.psbc-wm.com';
+const PSBC_API = '/pswm-api';
+
+const HEADERS = {
+  'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36',
+  'Referer': 'https://www.psbc-wm.com/',
+  'Accept': 'application/json, text/plain, */*',
+  'Accept-Language': 'zh-CN,zh;q=0.9,en;q=0.8',
 };
 
-const BANK_PREFIXES = Object.values(BANK_KEYWORDS).flat();
+const AGENT = new https.Agent({
+  rejectUnauthorized: false,
+  minVersion: 'TLSv1',
+  maxVersion: 'TLSv1.3',
+  ciphers: 'DEFAULT@SECLEVEL=1',
+  secureOptions: 0x4 | crypto.constants.SSL_OP_NO_SSLv2 | crypto.constants.SSL_OP_NO_SSLv3,
+});
+
+function httpsGetJson(fullUrl) {
+  return new Promise((resolve, reject) => {
+    const u = new URL(fullUrl);
+    const req = https.request({
+      hostname: u.hostname,
+      port: 443,
+      path: u.pathname + u.search,
+      method: 'GET',
+      headers: HEADERS,
+      agent: AGENT,
+    }, (res) => {
+      let data = '';
+      res.setEncoding('utf8');
+      res.on('data', c => data += c);
+      res.on('end', () => {
+        try { resolve(JSON.parse(data)); }
+        catch (e) { reject(new Error(`不是 JSON: ${data.slice(0, 200)}`)); }
+      });
+    });
+    req.on('error', reject);
+    req.end();
+  });
+}
 
 function similarity(a, b) {
   if (!a || !b) return 0;
@@ -49,117 +78,93 @@ function similarity(a, b) {
   return dp[m][n] / Math.max(m, n);
 }
 
-function generateKeywords(name) {
-  let s = name.replace(/[\s]/g, '');
-  for (const prefix of BANK_PREFIXES) {
-    if (s.startsWith(prefix)) { s = s.slice(prefix.length); break; }
+// ★ 搜索关键词策略：完整名优先
+function buildSearchQueries(name) {
+  const queries = [];
+  // 1. 完整产品名（最精准）
+  queries.push(name);
+
+  // 2. 去掉银行前缀
+  let s = name;
+  const prefixes = ['中邮理财', '邮储银行', '交银理财', '招银理财', '上银理财', '农银理财', '工银理财', '建信理财', '中银理财', '兴银理财', '浦银理财', '信银理财', '光大理财', '民生理财', '平安理财', '华夏理财', '广银理财'];
+  for (const prefix of prefixes) {
+    if (s.startsWith(prefix)) {
+      s = s.slice(prefix.length).replace(/^[·\-—]+/, '');
+      break;
+    }
   }
-  s = s.replace(/^[·\-—]+/, '');
+  if (s !== name) queries.push(s);
 
-  const keywords = new Set();
-  keywords.add(s);
-  keywords.add(s.replace(/最短持有\d+天/, ''));
-  keywords.add(s.replace(/\d+年第\d+期/, '').replace(/最短持有\d+天/, ''));
+  // 3. 去掉"最短持有X天"（保留产品号）
+  const stripped = s.replace(/最短持有\d+天/, '').replace(/\d+年/, '');
+  if (stripped !== s && stripped.length >= 5) queries.push(stripped);
 
-  const seriesMatch = s.match(/^([^0-9]+)\d+号/);
-  if (seriesMatch) {
-    const numMatch = s.match(/(\d+号)/);
-    keywords.add(seriesMatch[1] + (numMatch ? numMatch[1] : ''));
+  // 4. 提取核心数字标识（如"7天22号B"）
+  const numMatch = s.match(/(\d+天\d+号[A-Z]?)/);
+  if (numMatch) queries.push(numMatch[1]);
+
+  return Array.from(new Set(queries.filter(q => q.length >= 4)));
+}
+
+async function searchPsbc(keywords) {
+  const url = new URL(PSBC_BASE + PSBC_API + '/product/search');
+  url.searchParams.set('keywords', keywords);
+  url.searchParams.set('pageSize', '30');
+  url.searchParams.set('pageNum', '1');
+  try {
+    const json = await httpsGetJson(url.toString());
+    return json.data?.list || [];
+  } catch (e) {
+    return [];
   }
+}
 
-  if (s.length > 6) keywords.add(s.slice(0, 6));
-  if (s.length > 4) keywords.add(s.slice(0, 4));
-
-  return Array.from(keywords).filter(k => k.length >= 3);
+// ============ Supabase ============
+async function fetchWithRetry(url, options = {}, retries = 3) {
+  for (let i = 0; i < retries; i++) {
+    try { return await fetch(url, options); }
+    catch (e) {
+      if (i === retries - 1) throw e;
+      await new Promise(r => setTimeout(r, 3000));
+    }
+  }
 }
 
 async function getMissingCodeProducts() {
-  const url = `${SUPABASE_URL}/rest/v1/user_holdings?select=product_id,products(id,name,bank,code)&user_id=eq.${USER_ID}&limit=${LIMIT}`;
-  const resp = await fetch(url, {
-    headers: {
-      'apikey': SUPABASE_KEY,
-      'Authorization': `Bearer ${SUPABASE_KEY}`,
-    },
+  const url = `${SUPABASE_URL}/rest/v1/user_holdings?or=(status.eq.active,status.is.null)&select=product_id,products(id,name,bank,code)`;
+  const resp = await fetchWithRetry(url, {
+    headers: { apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}` },
   });
   const data = await resp.json();
-  return data.map(d => d.products).filter(p => p && !p.code);
+  const map = new Map();
+  data.forEach(d => {
+    if (d.products && !d.products.code) map.set(d.products.id, d.products);
+  });
+  return Array.from(map.values());
 }
 
 async function updateCode(id, code) {
-  const resp = await fetch(`${SUPABASE_URL}/rest/v1/products?id=eq.${id}`, {
+  const resp = await fetchWithRetry(`${SUPABASE_URL}/rest/v1/products?id=eq.${id}`, {
     method: 'PATCH',
     headers: {
-      'apikey': SUPABASE_KEY,
-      'Authorization': `Bearer ${SUPABASE_KEY}`,
+      apikey: SUPABASE_KEY,
+      Authorization: `Bearer ${SUPABASE_KEY}`,
       'Content-Type': 'application/json',
-      'Prefer': 'return=minimal',
+      Prefer: 'return=minimal',
     },
     body: JSON.stringify({ code }),
   });
   return resp.ok;
 }
 
-async function waitForMaskGone(page) {
-  try {
-    await page.waitForFunction(() => {
-      const masks = document.querySelectorAll('.el-loading-mask');
-      for (const m of masks) {
-        const style = window.getComputedStyle(m);
-        if (style.display !== 'none' && style.visibility !== 'hidden') return false;
-      }
-      return true;
-    }, { timeout: 3000 });
-  } catch (e) {}
-}
-
-async function searchAndExtract(page, keyword) {
-  await waitForMaskGone(page);
-  const nameInput = page.locator('input[type="text"]:visible').first();
-  await nameInput.fill('');
-  await new Promise(r => setTimeout(r, 100));
-  await nameInput.fill(keyword);
-  await new Promise(r => setTimeout(r, 300));
-
-  const searchBtn = page.locator('button:has-text("查询")').first();
-  await searchBtn.click({ force: true, timeout: 10000 });
-  await new Promise(r => setTimeout(r, 2500));
-
-  return await page.evaluate(() => {
-    const tbody = document.querySelector('table tbody');
-    if (!tbody) return [];
-    const trs = Array.from(tbody.querySelectorAll('tr'));
-    return trs.map(tr => Array.from(tr.querySelectorAll('td')).map(td => td.innerText.trim())).filter(r => r.length >= 3);
-  });
-}
-
+// ============ 主流程 ============
 const products = await getMissingCodeProducts();
-console.log(`📋 待匹配产品：${products.length} 个`);
-products.forEach(p => console.log(`  - ${p.name} (${p.bank})`));
+console.log(`\n📋 缺 code 的产品：${products.length} 个\n`);
 
 if (products.length === 0) {
-  console.log('🎉 所有产品都有编码了！');
+  console.log('🎉 没有缺 code 的产品');
   process.exit(0);
 }
-
-const browser = await chromium.launch({
-  headless: false,
-  args: ['--disable-blink-features=AutomationControlled', '--no-sandbox'],
-});
-const context = await browser.newContext({
-  viewport: { width: 1440, height: 900 },
-  userAgent: 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36',
-  locale: 'zh-CN',
-});
-const page = await context.newPage();
-await page.addInitScript(() => {
-  Object.defineProperty(navigator, 'webdriver', { get: () => undefined });
-});
-
-await page.goto('https://xinxipilu.chinawealth.com.cn/queryMenu/prodType', {
-  waitUntil: 'networkidle',
-  timeout: 60000,
-});
-await new Promise(r => setTimeout(r, 3000));
 
 const results = { matched: [], unmatched: [] };
 
@@ -167,57 +172,60 @@ for (let i = 0; i < products.length; i++) {
   const p = products[i];
   console.log(`\n[${i + 1}/${products.length}] ${p.name}`);
 
-  const keywords = generateKeywords(p.name);
-  console.log(`  候选：${keywords.join(' | ')}`);
+  const queries = buildSearchQueries(p.name);
+  console.log(`  搜索词：${queries.join(' | ')}`);
 
   let best = null;
   let bestScore = 0;
 
-  for (const kw of keywords) {
+  for (const kw of queries) {
     try {
-      const rows = await searchAndExtract(page, kw);
-      if (rows.length === 0) { console.log(`    [${kw}] 无结果`); continue; }
+      const list = await searchPsbc(kw);
+      if (list.length === 0) {
+        console.log(`    [${kw}] 0 结果`);
+        continue;
+      }
+      console.log(`    [${kw}] ${list.length} 结果`);
 
-      for (const row of rows) {
-        let nameCol = '', codeCol = '', orgCol = '';
-        for (const cell of row) {
-          if (/^[ZC]\d{10,}$/.test(cell)) codeCol = cell;
-          else if (cell.includes('理财') || cell.includes('银行')) {
-            if (!orgCol && cell.length < 30) orgCol = cell;
-          } else if (cell.length > 5 && !nameCol) nameCol = cell;
-        }
-        if (!codeCol) continue;
-
-        const bankKeywords = BANK_KEYWORDS[p.bank] || [p.bank];
-        const orgOk = bankKeywords.some(k => orgCol.includes(k));
-        const score = similarity(p.name, nameCol) + (orgOk ? 0.3 : 0);
-
+      for (const item of list) {
+        const score = similarity(p.name, item.wp_name || '');
         if (score > bestScore) {
           bestScore = score;
-          best = { name: nameCol, code: codeCol, org: orgCol };
+          best = item;
         }
       }
 
-      if (bestScore >= 0.65) { console.log(`    [${kw}] ✅ 高分匹配`); break; }
+      // 高分就停
+      if (bestScore >= 0.75) break;
+      await new Promise(r => setTimeout(r, 500));
     } catch (e) {
-      console.log(`    [${kw}] 出错: ${e.message.slice(0, 80)}`);
+      console.log(`    [${kw}] 出错：${e.message}`);
     }
-    await new Promise(r => setTimeout(r, 800));
   }
 
   if (best && bestScore >= 0.55) {
-    console.log(`  ✅ ${best.name}`);
-    console.log(`     ${best.code} | 分数 ${bestScore.toFixed(2)}`);
-    const ok = await updateCode(p.id, best.code);
-    if (ok) results.matched.push({ name: p.name, code: best.code });
+    console.log(`  ✅ 匹配：${best.wp_name}`);
+    console.log(`     登记编码：${best.wp_registration_code} | 相似度 ${bestScore.toFixed(2)}`);
+    const ok = await updateCode(p.id, best.wp_registration_code);
+    if (ok) {
+      results.matched.push({ name: p.name, code: best.wp_registration_code });
+      console.log(`     💾 已保存`);
+    }
   } else {
     console.log(`  ⚠️ 未匹配（最佳 ${bestScore.toFixed(2)}）`);
-    results.unmatched.push({ name: p.name, best });
+    if (best) console.log(`     最佳候选：${best.wp_name}`);
+    results.unmatched.push({ name: p.name, best: best?.wp_name });
   }
+
+  await new Promise(r => setTimeout(r, 800));
 }
 
-fs.writeFileSync('match_report.json', JSON.stringify(results, null, 2));
-console.log(`\n✅ 成功：${results.matched.length} | ⚠️ 未匹配：${results.unmatched.length}`);
+console.log(`\n═══════════════════════════════════`);
+console.log(`✅ 成功：${results.matched.length}`);
+console.log(`⚠️  未匹配：${results.unmatched.length}`);
+console.log(`═══════════════════════════════════`);
 
-await new Promise(r => setTimeout(r, 5000));
-await browser.close();
+if (results.unmatched.length > 0) {
+  console.log(`\n未匹配清单：`);
+  results.unmatched.forEach(u => console.log(`  - ${u.name}`));
+}

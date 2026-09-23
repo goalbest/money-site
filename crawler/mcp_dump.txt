@@ -1,0 +1,325 @@
+
+===== /dist/psbc/client.js =====
+import { API_PATH, BASE_URL, DEFAULT_REFERER, HTTP_TIMEOUT_MS, USER_AGENT, } from "../constants.js";
+/**
+ * 与中邮理财公开 API 通讯的轻量 HTTP 客户端。
+ * 所有方法在公共数据接口不需要鉴权，因此复用同一组请求头即可。
+ */
+export class PsbcClient {
+    defaultHeaders;
+    constructor() {
+        this.defaultHeaders = {
+            "User-Agent": USER_AGENT,
+            Referer: DEFAULT_REFERER,
+            Accept: "application/json, text/plain, */*",
+            "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.8",
+        };
+    }
+    /**
+     * 向公开 API 发起 GET 请求，并自动解出 data 字段。
+     * path 以 "/" 开头，例如 "/pswm-api/product/search"。
+     */
+    async get(path, query, opts = {}) {
+        const url = this.buildApiUrl(path, query);
+        const body = await this.requestText(url, this.defaultHeaders, opts);
+        let parsed;
+        try {
+            parsed = JSON.parse(body);
+        }
+        catch (e) {
+            throw new Error(`解析 JSON 失败: ${e.message} (body=${truncate(body, 200)})`);
+        }
+        if (parsed.state !== "ok") {
+            throw new Error(`接口返回 state=${parsed.state} msg=${parsed.msg}`);
+        }
+        return parsed.data;
+    }
+    /**
+     * 拿到原始响应体（不经过 state 包装），用于 /upload/report 之类的 HTML/PDF 资源。
+     * 返回二进制 Buffer 与 content-type。
+     */
+    async getRaw(fullURL, opts = {}) {
+        if (!fullURL) {
+            throw new Error("url 不能为空");
+        }
+        const url = fullURL.startsWith("http://") || fullURL.startsWith("https://")
+            ? fullURL
+            : this.buildAbsoluteUrl(fullURL);
+        const headers = {
+            "User-Agent": USER_AGENT,
+            Referer: DEFAULT_REFERER,
+        };
+        const { buffer, contentType } = await this.requestBuffer(url, headers, opts);
+        return { body: buffer, contentType };
+    }
+    // -------------------- 具体业务接口 --------------------
+    async searchProducts(params, opts = {}) {
+        const q = new URLSearchParams();
+        if (params.keywords)
+            q.set("keywords", params.keywords);
+        if (params.sale_object_indi && params.sale_object_indi > 0) {
+            q.set("sale_object_indi", String(params.sale_object_indi));
+        }
+        if (params.sale_object_inst && params.sale_object_inst > 0) {
+            q.set("sale_object_inst", String(params.sale_object_inst));
+        }
+        if (params.wp_type)
+            q.set("wp_type", params.wp_type);
+        if (params.prd_template_code)
+            q.set("prd_template_code", params.prd_template_code);
+        if (params.base_days)
+            q.set("base_days", params.base_days);
+        if (params.min_subs_amount_by_indi && params.min_subs_amount_by_indi > 0) {
+            q.set("min_subs_amount_by_indi", String(params.min_subs_amount_by_indi));
+        }
+        if (params.min_amount_by_inst && params.min_amount_by_inst > 0) {
+            q.set("min_amount_by_inst", String(params.min_amount_by_inst));
+        }
+        if (params.ishot && params.ishot > 0)
+            q.set("ishot", String(params.ishot));
+        if (params.page_size && params.page_size > 0)
+            q.set("pageSize", String(params.page_size));
+        if (params.page_num && params.page_num > 0)
+            q.set("pageNum", String(params.page_num));
+        if (params.sort)
+            q.set("sort", params.sort);
+        if (params.order)
+            q.set("order", params.order);
+        return this.get(`${API_PATH}/product/search`, q, opts);
+    }
+    async navList(wpCode, pageSize, pageNum, opts = {}) {
+        const q = new URLSearchParams({ wp_code: wpCode });
+        if (pageSize > 0)
+            q.set("pageSize", String(pageSize));
+        if (pageNum > 0)
+            q.set("pageNum", String(pageNum));
+        return this.get(`${API_PATH}/product/nvlist`, q, opts);
+    }
+    async bjjz(wpCode, opts = {}) {
+        const q = new URLSearchParams({ wp_code: wpCode });
+        return this.get(`${API_PATH}/product/bjjz`, q, opts);
+    }
+    async periodYield(wpCode, baseDays, opts = {}) {
+        const q = new URLSearchParams({ wp_code: wpCode });
+        if (baseDays && baseDays.trim())
+            q.set("baseDays", baseDays);
+        return this.get(`${API_PATH}/performance/periodYield`, q, opts);
+    }
+    async annualYield(wpCode, opts = {}) {
+        const q = new URLSearchParams({ wp_code: wpCode });
+        return this.get(`${API_PATH}/performance/annualYield`, q, opts);
+    }
+    async cpsmsUrl(wpCode, opts = {}) {
+        const q = new URLSearchParams({ wp_code: wpCode });
+        return this.get(`${API_PATH}/report/cpsmsUrl`, q, opts);
+    }
+    async reportList(attachmentType, wpCode, pageSize, pageNum, opts = {}) {
+        const q = new URLSearchParams({ attachment_type: attachmentType });
+        if (wpCode && wpCode.trim())
+            q.set("wp_code", wpCode);
+        if (pageSize > 0)
+            q.set("pageSize", String(pageSize));
+        if (pageNum > 0)
+            q.set("pageNum", String(pageNum));
+        return this.get(`${API_PATH}/report/list`, q, opts);
+    }
+    // -------------------- 内部工具 --------------------
+    buildApiUrl(path, query) {
+        const p = path.startsWith("/") ? path : `/${path}`;
+        const url = new URL(p, BASE_URL);
+        if (query) {
+            for (const [k, v] of query)
+                url.searchParams.set(k, v);
+        }
+        return url.toString();
+    }
+    buildAbsoluteUrl(relOrAbs) {
+        return relOrAbs.startsWith("/") ? `${BASE_URL}${relOrAbs}` : relOrAbs;
+    }
+    async requestText(url, headers, opts) {
+        const { buffer } = await this.requestBuffer(url, headers, opts);
+        return buffer.toString("utf-8");
+    }
+    async requestBuffer(url, headers, opts) {
+        const controller = new AbortController();
+        const timer = setTimeout(() => controller.abort(), HTTP_TIMEOUT_MS);
+        // 转发外部取消信号
+        const external = opts.signal;
+        const onAbort = () => controller.abort();
+        if (external) {
+            if (external.aborted)
+                controller.abort();
+            else
+                external.addEventListener("abort", onAbort);
+        }
+        let resp;
+        try {
+            resp = await fetch(url, {
+                method: "GET",
+                headers,
+                signal: controller.signal,
+            });
+        }
+        catch (e) {
+            const err = e;
+            if (err.name === "AbortError") {
+                throw new Error(`请求 ${url} 超时或被取消: ${err.message}`);
+            }
+            throw new Error(`请求 ${url} 失败: ${err.message}`);
+        }
+        finally {
+            clearTimeout(timer);
+            if (external)
+                external.removeEventListener("abort", onAbort);
+        }
+        const buffer = Buffer.from(await resp.arrayBuffer());
+        if (resp.status < 200 || resp.status >= 300) {
+            throw new Error(`HTTP ${resp.status}: ${truncate(buffer.toString("utf-8"), 200)}`);
+        }
+        return {
+            buffer,
+            contentType: resp.headers.get("content-type") ?? "",
+        };
+    }
+}
+function truncate(s, n) {
+    return s.length <= n ? s : s.slice(0, n) + "...";
+}
+
+
+
+===== /dist/tools/decorate.js =====
+import { attachmentTypeText, currencyText, dividendText, numToString, riskLevelText, yieldIntervalText, } from "./helpers.js";
+/**
+ * 给搜索结果列表里每个产品加上中文注释字段。
+ */
+export function decorateSearchResult(raw) {
+    const list = readList(raw);
+    if (!list) {
+        return { raw };
+    }
+    const products = list.map(enrichProduct);
+    return {
+        count: products.length,
+        products,
+        raw,
+    };
+}
+/**
+ * 在原始产品对象上补充 _risk_text / _currency_text 等易读字段。
+ */
+function enrichProduct(p) {
+    const out = { ...p };
+    out._risk_text = riskLevelText(p.prd_risk_rate);
+    out._currency_text = currencyText(p.currency_type);
+    out._dividend_text = dividendText(p.def_dividend_method);
+    if ("nav" in p)
+        out._nav_str = numToString(p.nav);
+    if ("accumulative_nav" in p)
+        out._accumulative_nav_str = numToString(p.accumulative_nav);
+    return out;
+}
+/**
+ * 净值历史装饰。
+ */
+export function decorateNavList(raw, wpCode) {
+    const list = readList(raw);
+    if (!list) {
+        return { wp_code: wpCode, raw };
+    }
+    return {
+        wp_code: wpCode,
+        count: list.length,
+        nav_list: list,
+        raw,
+    };
+}
+/**
+ * 阶段 + 年度收益汇总装饰。
+ */
+export function decorateYield(period, annual, wpCode) {
+    const periodList = readSubList(period, "data");
+    if (periodList) {
+        for (const item of periodList) {
+            item._interval_text = yieldIntervalText(item.yieldIntevlType);
+        }
+    }
+    const annualList = readSubList(annual, "data");
+    return {
+        wp_code: wpCode,
+        period_yield: {
+            data: periodList ?? [],
+            raw: period,
+        },
+        annual_yield: {
+            data: annualList ?? [],
+            raw: annual,
+        },
+    };
+}
+/**
+ * 公告列表装饰。
+ */
+export function decorateReportList(raw, attachmentType) {
+    const list = readList(raw);
+    return {
+        attachment_type: attachmentType,
+        attachment_type_text: attachmentTypeText(attachmentType),
+        count: list?.length ?? 0,
+        announcements: list ?? [],
+        raw,
+    };
+}
+/**
+ * 拉取一个产品的全部详情：基本信息 + 业绩比较基准 + 说明书 URL。
+ */
+export async function fetchProductDetail(c, wpCode, signal) {
+    const raw = await c.searchProducts({
+        keywords: wpCode,
+        page_size: 5,
+        page_num: 1,
+    }, { signal });
+    const list = (readList(raw) ?? []);
+    let picked;
+    for (const item of list) {
+        if (item.wp_code === wpCode) {
+            picked = item;
+            break;
+        }
+    }
+    if (!picked && list.length > 0)
+        picked = list[0];
+    const out = { wp_code: wpCode };
+    if (picked)
+        out.basic = enrichProduct(picked);
+    try {
+        out.bjjz = await c.bjjz(wpCode, { signal });
+    }
+    catch (e) {
+        out.bjjz_error = e.message;
+    }
+    try {
+        out.cpsms_url = await c.cpsmsUrl(wpCode, { signal });
+    }
+    catch (e) {
+        out.cpsms_url_error = e.message;
+    }
+    return out;
+}
+// -------------------- 内部解析工具 --------------------
+function readList(raw) {
+    if (!raw || typeof raw !== "object")
+        return null;
+    const list = raw.list;
+    if (!Array.isArray(list))
+        return null;
+    return list;
+}
+function readSubList(raw, key) {
+    if (!raw || typeof raw !== "object")
+        return null;
+    const arr = raw[key];
+    if (!Array.isArray(arr))
+        return null;
+    return arr;
+}
