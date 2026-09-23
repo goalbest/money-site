@@ -73,16 +73,47 @@ async function psbcSearch(keywords, pageSize = 20) {
   return json.data?.list || [];
 }
 
-async function psbcNavList(wpCode, pageSize = 500) {
-  const url = new URL(PSBC_BASE + PSBC_API + '/product/nvlist');
-  url.searchParams.set('wp_code', wpCode);
-  url.searchParams.set('pageSize', String(pageSize));
-  url.searchParams.set('pageNum', '1');
-  const json = await httpsGetJson(url.toString());
-  return json.data?.list || [];
+// ★ 新增：循环翻页抓全部净值
+async function psbcNavListAll(wpCode, maxPages = 50) {
+  const all = [];
+  const seen = new Set();
+
+  for (let page = 1; page <= maxPages; page++) {
+    const url = new URL(PSBC_BASE + PSBC_API + '/product/nvlist');
+    url.searchParams.set('wp_code', wpCode);
+    url.searchParams.set('pageSize', '10');
+    url.searchParams.set('pageNum', String(page));
+
+    try {
+      const json = await httpsGetJson(url.toString());
+      const list = json.data?.list || [];
+
+      if (list.length === 0) break;
+
+      let newCount = 0;
+      for (const item of list) {
+        const key = item.update_date;
+        if (key && !seen.has(key)) {
+          seen.add(key);
+          all.push(item);
+          newCount++;
+        }
+      }
+
+      // 全是重复的，说明已经到底
+      if (newCount === 0) break;
+
+      // 每页间隔 300ms，礼貌访问
+      await new Promise(r => setTimeout(r, 300));
+    } catch (e) {
+      console.log(`    ⚠️ 第 ${page} 页出错: ${e.message.slice(0, 50)}`);
+      break;
+    }
+  }
+
+  return all;
 }
 
-// ★ 关键：日期格式转换 20260922 → 2026-09-22
 function formatDate(d) {
   if (!d) return null;
   const s = String(d).trim();
@@ -126,18 +157,24 @@ async function saveNavHistory(productId, navs) {
 
   if (rows.length === 0) return false;
 
-  const url = `${SUPABASE_URL}/rest/v1/nav_history?on_conflict=product_id,nav_date`;
-  const resp = await fetchWithRetry(url, {
-    method: 'POST',
-    headers: {
-      apikey: SUPABASE_KEY,
-      Authorization: `Bearer ${SUPABASE_KEY}`,
-      'Content-Type': 'application/json',
-      Prefer: 'resolution=merge-duplicates,return=minimal',
-    },
-    body: JSON.stringify(rows),
-  });
-  return resp.ok;
+  // 分批插入（每批 200 条）
+  let inserted = 0;
+  for (let i = 0; i < rows.length; i += 200) {
+    const batch = rows.slice(i, i + 200);
+    const url = `${SUPABASE_URL}/rest/v1/nav_history?on_conflict=product_id,nav_date`;
+    const resp = await fetchWithRetry(url, {
+      method: 'POST',
+      headers: {
+        apikey: SUPABASE_KEY,
+        Authorization: `Bearer ${SUPABASE_KEY}`,
+        'Content-Type': 'application/json',
+        Prefer: 'resolution=merge-duplicates,return=minimal',
+      },
+      body: JSON.stringify(batch),
+    });
+    if (resp.ok) inserted += batch.length;
+  }
+  return inserted;
 }
 
 async function updateProduct(id, updates) {
@@ -203,8 +240,9 @@ for (let i = 0; i < products.length; i++) {
     const wpCode = matched.wp_code;
     console.log(`  ✅ 匹配到 ${matched.wp_name} (wp_code=${wpCode})`);
 
-    const navs = await psbcNavList(wpCode, 500);
-    console.log(`  📊 拿到 ${navs.length} 天净值`);
+    // ★ 翻页抓全部
+    const navs = await psbcNavListAll(wpCode, 50);
+    console.log(`  📊 翻页抓到 ${navs.length} 天净值`);
 
     if (navs.length === 0) {
       console.log(`  ⚠️ 净值历史为空`);
@@ -212,8 +250,8 @@ for (let i = 0; i < products.length; i++) {
       continue;
     }
 
-    const saved = await saveNavHistory(p.id, navs);
-    if (saved) console.log(`  💾 已存 ${navs.length} 条净值`);
+    const inserted = await saveNavHistory(p.id, navs);
+    if (inserted > 0) console.log(`  💾 已存 ${inserted} 条净值`);
 
     const sorted = [...navs].sort((a, b) =>
       String(b.update_date || '').localeCompare(String(a.update_date || ''))
