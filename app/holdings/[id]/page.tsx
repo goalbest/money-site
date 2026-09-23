@@ -2,8 +2,10 @@
 
 import { useState, useEffect } from "react";
 import { useRouter, useParams } from "next/navigation";
+import Link from "next/link";
 import { supabase } from "../../../lib/supabase";
 import PageHeader from "../../PageHeader";
+import FetchNoticeButton from "../../product/[id]/FetchNoticeButton";
 
 export default function HoldingDetailPage() {
   const router = useRouter();
@@ -204,6 +206,7 @@ export default function HoldingDetailPage() {
   const currentShares = Number(holding.shares || 0);
   const currentAmount = Number(holding.holding_amount || 0);
   const todayProfit = currentAmount * Number(p.daily_return || 0) / 10000;
+  const hasNav = p.unit_nav != null;
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -244,6 +247,36 @@ export default function HoldingDetailPage() {
             <span>年化 {p.annualized_1m != null && Number(p.annualized_1m) > 0 ? `+${Number(p.annualized_1m).toFixed(2)}%` : "—"}</span>
             <span>净值日 {p.nav_date || "—"}</span>
           </div>
+
+          {/* ★ 无净值数据时提示 + 补数据 */}
+          {!hasNav && (
+            <div className="bg-orange-50 rounded-xl p-3 mt-4">
+              <div className="text-[10px] text-orange-700 mb-2 leading-relaxed">
+                ⚠️ 该产品暂未抓到净值数据。可以：
+              </div>
+              <div className="flex gap-2">
+                <FetchNoticeButton productId={p.id} />
+                <Link
+                  href={`/product/${p.id}`}
+                  className="text-xs text-gray-600 bg-gray-100 hover:bg-gray-200 px-3 py-1.5 rounded-lg transition"
+                >
+                  查看产品详情
+                </Link>
+              </div>
+            </div>
+          )}
+
+          {/* 有数据时显示"查看产品详情"链接 */}
+          {hasNav && (
+            <div className="mt-3 pt-3 border-t border-gray-50 flex justify-end">
+              <Link
+                href={`/product/${p.id}`}
+                className="text-xs text-blue-600 hover:underline"
+              >
+                查看产品详情（净值走势） →
+              </Link>
+            </div>
+          )}
         </div>
 
         {mode === "view" && (

@@ -1,0 +1,2886 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+	<meta charset="UTF-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
+	<title>中国邮政储蓄银行</title>
+	<link class="stylefile" rel="stylesheet" type="text/css" href="../../../../images/psbc_base_pc.css">
+	<link class="stylefile" rel="stylesheet" type="text/css" href="../../../../images/psbc02_pc_v2020.css">
+	<link class="stylefile" rel="stylesheet" href="../../../../images/filter.css">
+	<link class="mobileStyle" rel="stylesheet" href="../../../../images/psbc_base_mobile.css">
+	<link class="mobileStyle" rel="stylesheet" href="../../../../images/psbc02_mobile_v2020.css">
+	<link class="mobileStyle" rel="stylesheet" href="../../../../images/filter_m.css">
+	<link class="mobileStyle" rel="stylesheet" href="../../../../images/swiper.min_v2020.css">
+	<link rel="stylesheet" href="../../../../images/psbc_jquery-ui_v2020.css">
+	<script type="text/javascript" src="../../../../images/jquery.min.js"></script>
+	<script type="text/javascript" src="../../../../images/mobile_v2020.js"></script>
+	<script type="text/javascript" src="../../../../images/respond.src.js"></script>
+	<script type="text/javascript">
+		var isPC = IsPC(); //获取是否为PC端
+		if (isPC) {
+			//如果是PC端加载PC的js和css
+			$(".mobileStyle").remove();
+			dynamicLoadJs('../../../../images/psbc_base_pc.js')
+			dynamicLoadJs("../../../../images/psbc02_pc_v2020.js");
+		} else {
+			//如果是移动端加载移动端的js和css
+			$(".stylefile").remove();
+			dynamicLoadJs('../../../../images/psbc_base_mobile.js')
+			dynamicLoadJs("../../../../images/psbc02_mobile_v2020.js");
+		}
+	</script>
+	<style>
+		.proItcn {
+			margin-right: 14px;
+		}
+
+		@media screen and (max-width:640px) {
+			.page_nr1 {
+				position: relative;
+				left: 70%;
+				float: left;
+				width: 100%;
+			}
+
+			.page_nr2 {
+				position: relative;
+				left: -50%;
+				float: left;
+				width: 100%;
+			}
+
+			.proItcn {
+				margin-right: 0rem;
+			}
+		}
+	</style>
+</head>
+
+<body>
+	<!-- header start -->
+	<style>
+.navDownGsfwList .gs_dzyh dl p {
+    line-height: 25px;
+}
+
+.navDownGsfwList .cpfw dl p {
+    line-height: 25px;
+}
+
+.navDownGsfwList li.cpfw div{
+	/*margin-right: 25px;*/
+	margin-right: 10px;
+}
+
+
+.navDownGrfw {
+    /*width: 857px;*/
+	
+	width: 982px;
+    height: auto;
+    /* left: -233px; */
+    right: 0px;
+    padding: 15px 15px;
+}
+
+.navDownGrfw_l ul.navDown_grfwList {
+  /*width: 715px;*/
+    width: 840px;
+    height: 174px;
+    border-bottom: 1px solid #e7e7e7;
+}
+
+.navDown_grfwList li.gbfw {
+    width: 117px;
+    margin-right: 0;
+}
+
+.navDown_grfwList li.gbfw h3.kfyh {
+    /*margin-top: 10px;
+    padding-top: 4px;*/
+     background-position:right 1px;
+	margin-top: 0px;
+    padding-top: 0px;
+}
+
+.kfyh2 {
+	width: 112px!important;
+}
+.navDown_grfwList li.gbfw h3 {
+    /*background: url(psbc_base_gbfw-.png) right 4px no-repeat;*/
+}
+
+
+.psbc_contentbox table tr td {
+  padding:5px;
+  text-align: center;
+}
+
+.psbc_contentbox table tr td span{
+ text-align: center;
+}
+
+</style>
+<!-- <script type="text/javascript" src="../../images/sensorsdata.js"></script> -->
+<script charset='UTF-8' src="/cn/images/sensorsdata.js"></script>
+<script>
+	var sensors = window['sensorsDataAnalytic201505'];
+  	sensors.use('PageLoad') // 页面加载时长
+  	sensors.use('PageLeave') // 页面浏览时长
+	sensors.init({
+  		server_url: 'https://ibfp.psbc.com/sa?project=portal',
+		is_track_single_page:true, // 单页面配置，默认关闭。开启后自动监听 URL 有变化就会触发 $pageview 事件
+		use_client_time:true, 
+  		send_type:'beacon',
+ 		show_log:false,
+		heatmap: {
+			//是否开启点击图，default 表示开启，自动采集 $WebClick 事件，可以设置 'not_collect' 表示关闭。
+			clickmap:'default',
+			//是否开启触达图，not_collect 表示关闭，不会自动采集 $WebStay 事件，可以设置 'default' 表示开启。
+			scroll_notice_map:'not_collect'
+		}   
+	});
+	sensors.quick('autoTrack');
+</script>
+<script>
+    var settings={"serviceurl":"https://s.psbc.com","wxcontent":"","wxcom":"中国邮政储蓄可追溯至1919 年开办的邮政储金业务.."};
+    var ServiceUrl = "https://s.psbc.com";
+  </script>
+  <script src="/cn/images/trans_shift.js"></script> 
+  <div class="psbc_header" style="position: relative;z-index: 999;">
+<div style="display: none;"><img src="/cn/images/psbc_hLogoMin_v2020.png" /></div>
+    <div class="psbc_headerCont clear mobileNone">
+        <div class="psbc_headerTop rl clear">
+            <div class="fl">
+                <a href="javascript:;" id="wza_id">无障碍浏览</a>
+                 <!--<a href="javascript:;" id="ghb">关怀版</a>-->
+                <a href="https://www.psbc.com/cn/fhpd/" target="_blank">分行频道</a>
+                <a href="https://www.psbc.com/cn/common/fwwd/" target="_blank">服务网点</a>
+                <a href="https://95580.psbc.com:9098/psbc_webchat/main" target="_blank" class="zxkfl">在线客服</a>
+                <a href="https://www.psbc.com/cn/gyyc/rczp/" target="_blank">人才招聘</a>
+                <a href="javascript:zh_tran('t');" id="fanti">繁體</a>
+                <a href="javascript:zh_tran('s');" id="jianti" style="display: none;">简体</a>
+                <a class="english" href="/en/" target="_blank">English</a>
+                <div class="psbc_header_searchBox rl">
+                    <label>
+                       <input class="sr_text" type="text" id="sr_text" />
+                        <input class="sr_btn" type="submit" value="" />
+                    </label>
+                 </div>
+            </div>
+        </div>
+        <div class="psbc_HeaderNav clear">
+            <div class="psbc_headerL_logo fl">
+               <a href="/cn/">
+                    <img class="hlogo" src="/cn/images/psbc_hLogo_v2020.PNG" onerror="this.parentElement.parentElement.style.display='none';" />
+                </a>
+            </div>
+            <ul class="psbc_headerR_list rl">
+                <li class="navItem">
+                    <a class="navTitle" href="https://www.psbc.com/cn/grfw/">个人服务</a>
+                    <div class="header_navDown navDownGrfw clear">
+                        <div class="navDownGrfw_l fl">
+                            <ul class="navDown_grfwList clear">
+                                <li class="tzlc">
+                                    <dl>
+                                        <!--<a href="https://www.psbc.com/cn/grfw/tzlc/">-->
+                                            <h3>投资理财</h3>
+                                        <!--</a>-->
+                                        <!-- <p><a href="https://www.psbc.com/cn/grfw/tzlc/lc/">理财</a>|<a
+                                                href="https://www.psbc.com/cn/grfw/tzlc/jj/">基金</a></p> -->
+                                        <div class="clear hllzy">
+                                            <p class="fl"><a href="https://www.psbc.com/cn/grfw/tzlc/lc/">理财</a></p>
+                                            <p class="rl"><a href="https://www.psbc.com/cn/grfw/tzlc/bx/">保险</a></p>
+                                            <p class="fl"><a href="https://www.psbc.com/cn/grfw/tzlc/jj/">基金</a></p>
+                                            <p class="rl"><a href="https://www.psbc.com/cn/grfw/tzlc/gjs/">贵金属</a></p>
+                                            <p class="fl"><a href="https://www.psbc.com/cn/grfw/tzlc/gz/">国债</a></p>
+                                            <p class="rl"><a href="https://www.psbc.com/cn/grfw/tzlc/gtz/">柜台债</a></p>
+                                        </div>
+                                        <!--<p><a href="https://www.psbc.com/cn/grfw/tzlc/gz/">国债</a></p>-->
+                                        <p><a href="https://www.psbc.com/cn/grfw/tzlc/zjcg/">资金存管</a></p>
+                                        <p><a href="https://www.psbc.com/cn/grfw/tzlc/zcgljh/">资产管理计划</a></p>
+                                        <p><a href="https://pbank.psbc.com/perbank/portalPersonProductManageQuery.gate">个人产品信息查询平台</a></p>
+                                    </dl>
+                                </li>
+                                <li class="xyk">
+                                    <dl>
+                                        <a href="https://www.psbc.com/cn/grfw/xyk/">
+                                            <h3>信用卡</h3>
+                                        </a>
+                                        <p><a href="https://www.psbc.com/cn/grfw/xyk/xykqjf/">信用卡全家福</a></p>
+                                        <p><a href="https://www.psbc.com/cn/grfw/xyk/xxplzq/xykfq/">信用卡分期</a></p>
+                                        <!--<p><a href="">信用卡服务</a></p>
+                                        <p><a href="https://www.psbc.com/cn/grfw/xyk/kjgn/">快捷功能</a></p>-->
+                                        <!--<p><a href="https://shop.psbc.com/index.html">积分专区</a></p>-->
+                                        <p><a href="https://www.psbc.com/cn/grfw/xyk/tyhd/">特惠活动</a><p>
+                                        <p><a href="https://ccwc.psbc.com/creditcard/smwarp/index.html#/pages/officialSite/index">积分专区</a></p>
+                                        <p><a href="https://www.psbc.com/cn/grfw/xyk/xxplzq/">信息披露专区</a><p>
+                                    </dl>
+                                </li>
+                                <li class="yhk">
+                                    <dl>
+                                        <a href="https://www.psbc.com/cn/grfw/cdh/">
+                                            <h3>借记卡及存贷汇</h3>
+                                        </a>
+                                        <p><a href="https://www.psbc.com/cn/grfw/yxk/">借记卡</a></p>
+                                        <p><a href="https://www.psbc.com/cn/grfw/cdh/cxck/">个人存款</a></p>
+                                        <p><a href="https://www.psbc.com/cn/grfw/cdh/xdfw/">信贷服务</a></p>
+                                        <p><a href="https://www.psbc.com/cn/grfw/cdh/wh/">外汇</a></p>
+                                        <p><a href="https://www.psbc.com/cn/grfw/cdh/zfjs/">支付结算</a></p> 
+                                    </dl>
+                                </li>
+                                <li class="dzyh">
+                                    <dl>
+                                        <a href="https://www.psbc.com/cn/grfw/grdzyh/">
+                                            <h3>个人电子银行</h3>
+                                        </a>
+                                        <p><a href="https://www.psbc.com/cn/grfw/grdzyh/sjyh/">个人手机银行</a></p>
+                                        <p><a href="https://www.psbc.com/cn/grfw/grdzyh/grwy/">个人网银</a></p>
+                                        <p><a href="https://www.psbc.com/cn/grfw/grdzyh/dhyh/">电话银行</a></p>
+                                        <p><a href="https://www.psbc.com/cn/grfw/grdzyh/zzyh/">自助银行</a></p>
+                                        <p><a href="https://www.psbc.com/cn/grfw/grdzyh/wxyh/">微信银行</a></p>
+                                        <p><a href="https://www.psbc.com/cn/grfw/grdzyh/cxdxfw/">储蓄短信服务</a></p>
+                                    </dl>
+                                </li>
+
+
+                                <!--<li class="gbfw">
+                                    <dl>
+                                        <a href="https://www.psbc.com/cn/grfw/gbfw/">
+                                            <h3>贵宾服务</h3>
+                                        </a>
+                                        <p><a href="https://www.psbc.com/cn/grfw/gbfw/vipk_305/">VIP卡</a></p>
+                                        <p><a href="https://www.psbc.com/cn/grfw/gbfw/zxfw/">专项服务</a></p>
+                                        <p><a href="https://www.psbc.com/cn/grfw/gbfw/cfzx/">财富中心</a></p>
+                                    </dl>
+
+                                    <dl>
+                                       <a href="https://www.psbc.com/cn/grfw/kfyh/">
+                                            <h3 class="kfyh">开放银行</h3>
+                                        </a>
+                                        <p class="p1"><a href="https://www.psbc.com/cn/grfw/kfyh/fwkfpt/" target="_self">服务开放平台</a></p>
+                                        
+                                    </dl>
+                                </li>-->
+
+
+                               <li class="gbfw">
+                                    <dl>
+                                        <a href="https://www.psbc.com/cn/grfw/gbfw/">
+                                            <h3>VIP客户服务</h3>
+                                        </a>
+                                        <p><a href="https://www.psbc.com/cn/grfw/gbfw/pjbz/">评级标准</a></p>
+                                        <p><a href="https://www.psbc.com/cn/grfw/gbfw/lktj/">领卡条件</a></p>
+                                        <p><a href="https://www.psbc.com/cn/grfw/gbfw/zfyh/">资费优惠</a></p>
+										
+										<p><a href="https://www.psbc.com/cn/grfw/gbfw/zzfw/">增值服务</a></p>
+                                        <p><a href="https://www.psbc.com/cn/grfw/gbfw/khsc/">客户手册</a></p>
+                                        <p><a href="https://www.psbc.com/cn/grfw/gbfw/cfzx/">财富中心</a></p>
+                                    </dl>
+
+                                    
+                                </li>
+								
+								
+								
+				<li class="gbfw kfyh2">
+
+				   <dl  style="margin-left: 20px;">
+                                       <a href="https://www.psbc.com/cn/grfw/kfyh/">
+                                            <h3 class="kfyh">开放银行</h3>
+                                        </a>
+                                        <p class="p1"><a href="https://www.psbc.com/cn/grfw/kfyh/fwkfpt/" target="_self">服务开放平台</a></p>
+                                        
+                                    </dl>
+
+                                </li>
+
+
+                            </ul>
+                            <div class="navDown_grfwBot">
+                                <!--<a href="https://www.psbc.com/cn/grfw/jrzx/">金融资讯</a>-->
+                                <a href="https://www.psbc.com/cn/grfw/fwgg/">服务公告</a>
+                                <a href="https://www.psbc.com/cn/grfw/yhhd/">优惠活动</a>
+                                <a href="https://www.psbc.com/cn/grfw/ycdjt/">邮储大讲堂</a>
+                                <a href="https://www.psbc.com/cn/grfw/cjwt/">常见问题</a>
+                            </div>
+                        </div>
+                        <div class="navDownGrfw_R rl">
+                            <a href="">
+                                <img src="/cn/images/psbc_base_grfw.jpg" />
+                            </a>
+                        </div>
+                    </div>
+                </li>
+                <li class="navItem">
+                    <a class="navTitle" href="https://www.psbc.com/cn/gsfw/">公司服务</a>
+                    <div class="header_navDown navDownGsfw">
+                        <div class="navDownGsfw_l fl">
+                            <ul class="navDownGsfwList clear">
+                                <li class="gs_zhfw">
+                                    <dl>
+                                        <a href="https://www.psbc.com/cn/gsfw/zhfw/">
+                                            <h3>账户服务</h3>
+                                        </a>
+                                        <p><a href="https://www.psbc.com/cn/gsfw/zhfw/dwjszhkl/">服务标准及流程</a></p>
+                                        <p><a href="https://www.psbc.com/cn/gsfw/zhfw/bjkh/">便捷开户</a></p>
+                                        <p><a href="https://corpebankq.psbc.com/#/BankpreAcc">预约办理</a></p>
+                                        <p><a href="https://www.psbc.com/cn/gsfw/zhfw/yhxzh/">银行询证函</a></p>
+                                    </dl>
+                                </li>
+                                <li class="cpfw">
+                                    <dl>
+                                        <a href="https://www.psbc.com/cn/gsfw/cpfw/">
+                                            <h3>产品服务</h3>
+                                        </a>
+                                        <div class="fl">
+                                            <p><a href="https://www.psbc.com/cn/gsfw/cpfw/gsck/">公司存款</a></p>
+                                            <p><a href="https://www.psbc.com/cn/gsfw/cpfw/gsxd/">公司信贷</a></p>
+                                            <!-- <p><a href="https://www.psbc.com/cn/gsfw/tyjr/">同业金融</a></p> -->
+                                            <p><a href="https://www.psbc.com/cn/gsfw/cpfw/kjjr/">跨境金融</a></p>
+                                            <p><a href="https://www.psbc.com/cn/gsfw/cpfw/gnmyrz/">国内贸易融资</a></p>
+                                            <p><a href="https://www.psbc.com/cn/gsfw/cpfw/gs_zcgljh/">对公资产管理计划</a></p>
+                                        </div>
+                                        <div class="fl">
+                                            <p><a href="https://www.psbc.com/cn/gsfw/cpfw/pjyw/">票据业务</a></p>
+                                            <p><a href="https://www.psbc.com/cn/gsfw/cpfw/xjgl/">现金管理</a></p>
+                                            <p><a href="https://www.psbc.com/cn/gsfw/cpfw/gslc/">公司理财</a></p>
+                                        </div>
+                                        <div class="fl">
+                                            <p><a href="https://www.psbc.com/cn/gsfw/cpfw/tzyx/">投资银行</a></p>
+                                            <p><a href="https://www.psbc.com/cn/gsfw/cpfw/gsjs/">公司结算</a></p>
+                                            <p><a href="https://www.psbc.com/cn/gsfw/cpfw/zjcg_388/">资金存管</a></p>
+                                            <p><a href="https://www.psbc.com/cn/gsfw/cpfw/gsbx/">公司保险</a></p>
+                                        </div>
+                                    </dl>
+                                </li>
+                                <li class="gs_dzyh">
+                                    <dl>
+                                        <a href="https://www.psbc.com/cn/gsfw/qydzyh/">
+                                            <h3>企业电子银行</h3>
+                                        </a>
+                                        <p><a href="https://www.psbc.com/cn/gsfw/qydzyh/qywy/">企业网银</a></p>
+                                        <p><a href="https://www.psbc.com/cn/gsfw/qydzyh/ycqyyh/">邮储企业银行</a></p>
+                                        <p><a href="https://www.psbc.com/cn/gsfw/qydzyh/dhyh/">电话银行</a></p>
+                                        <p><a href="https://www.psbc.com/cn/gsfw/qydzyh/zzyh/">自助银行</a></p>
+                                        <p><a href="https://www.psbc.com/cn/gsfw/qydzyh/yqzl/">银企直联</a></p>
+                                    </dl>
+                                </li>
+								<li class="gsfyzctg">
+                                    <dl>
+                                        <a href="https://www.psbc.com/cn/gsfw/gsfyzctg/">
+                                            <h3>资产托管</h3>
+                                        </a>
+                                            <p><a href="https://www.psbc.com/cn/gsfw/gsfyzctg/tghjs/">托管行介绍</a></p>
+                                            <p><a href="https://www.psbc.com/cn/gsfw/gsfyzctg/tgwy/">托管网银</a></p>
+                                            <p><a href="https://www.psbc.com/cn/gsfw/gsfyzctg/xxpl/">信息披露</a></p>
+                                            <p><a href="https://www.psbc.com/cn/gsfw/gsfyzctg/ywlx/">业务联系</a></p>
+                                    </dl>
+                                </li>
+                                <li class="zzfw">
+                                    <dl>
+                                        <a href="https://www.psbc.com/cn/gsfw/zzfw/">
+                                            <h3>增值服务</h3>
+                                        </a>
+                                        <p><a href="https://www.psbc.com/cn/gsfw/zzfw/jrfa/">金融方案</a></p>
+                                        <!-- <p><a href="">金融工具</a></p> -->
+                                        <p><a href="https://www.psbc.com/cn/gsfw/zzfw/ywzn/">业务指南</a></p>
+                                    </dl>
+                                    <dl style="margin-top: 5px;">
+                                        <a href="https://www.psbc.com/cn/gsfw/tyjr/">
+                                            <h3>同业金融</h3>
+                                        </a>
+                                    </dl>
+
+                                  <dl style="margin-top: 5px;">
+                                        <a href="https://www.psbc.com/cn/gsfw/jgjr/">
+                                            <h3>机构金融</h3>
+                                        </a>
+                                    </dl>
+                                </li>
+                           
+                              
+                            </ul>
+                            <div class="navDownGsfwBot">
+                                <a href="https://www.psbc.com/cn/gsfw/ppfw/">品牌服务</a>
+                                <!-- <a href="">金融资讯</a> -->
+                                <!-- <a href="">服务公告</a> -->
+                                <!-- <a href="">优惠活动</a> -->
+                                <a href="https://www.psbc.com/cn/gsfw/cjwt_413/">常见问题</a>
+                                <!--<a href="https://www.psbc.com/cn/gsfw/cpfw/gslc/gslccs/">公司理财</a>-->
+                            </div>
+                        </div>
+                        <div class="navDownGsfw_R rl">
+                            <a href="https://www.psbc.com/cn/gsfw/tyjr/">
+                                <img src="/cn/images/psbc_base_gsfw03.jpg" />
+                            </a>
+                        </div>
+                    </div>
+                </li>
+                <li class="navItem">
+                    <a class="navTitle" href="https://www.psbc.com/cn/snfw/">三农服务</a>
+                    <div class="header_navDown navDownSnfw">
+                        <div class="navDownSnfw_l fl">
+                            <ul class="navDownSnfwList clear">
+                                <li class="snfw">
+                                    <dl>
+                                        <a href="https://www.psbc.com/cn/snfw/">
+                                            <h3>三农服务</h3>
+                                        </a>
+                                        <div class="snfwghgs">
+
+                                            <p class="wsthpe"><a href="https://www.psbc.com/cn/snfw/sngrfw/wdt/">极速贷（信用和抵押）</a></p>
+                                            <!--<p ><a href="https://www.psbc.com/cn/snfw/sngrfw/ndt/">邮惠付</a></p>-->
+                                            <p class="wsthpe"><a href="https://www.psbc.com/cn/snfw/sngrfw/zdt/">农牧贷</a></p>
+                                            <!--<p><a href="https://www.psbc.com/cn/snfw/sndgfw/nycyldk/">产业链经营贷款</a></p>-->
+                                            <p class="wsthpe"><a href="https://www.psbc.com/cn/snfw/sngrfw/sdt/">产业贷</a></p>
+                                           <!-- <p><a href="https://www.psbc.com/cn/snfw/sndgfw/nyzyhzsdk/">农业专业合作社贷款</a></p>-->
+                                        </div>
+                                    </dl>
+                                  <!--  <dl class="snzx qutecp" style="margin-top: 10px;">
+                                        <a href="https://www.psbc.com/cn/snfw/sngrfw/dqtscp/">
+                                            <h3>地区特色产品</h3>
+                                        </a>
+                                    </dl>-->
+                                    <dl class="snzx ywjlp" style="margin-top: 10px;">
+                                        <a href="https://www.psbc.com/cn/snfw/snywjlxcp/">
+                                            <h3>三农金融宣传片</h3>
+                                        </a>
+                                    </dl>
+                                </li>
+                                <li class="snfw_sj">
+                                    <dl class="snzx">
+                                        <a href="https://www.psbc.com/cn/snfw/snzx/">
+                                            <h3>三农资讯</h3>
+                                        </a>
+                                        <p>聚焦邮储三农最新动态，发布最新农业资讯，全方位解读热点农业政策。</p>
+                                    </dl>
+                                    <dl class="fpgs">
+                                        <a href="https://www.psbc.com/cn/snfw/fpgs/">
+                                            <h3>乡村振兴故事</h3>
+                                        </a>
+                                        <p>镜头视角全景再现邮储扶贫事业点点滴滴，以影像记录邮储扶贫中的每一个坚实脚步。</p>
+                                    </dl>
+                                </li>
+                                <!--<li class="dkbl">
+                                    <p>我要贷款快捷办理</p>
+                                    <a href="https://www.psbc.com/cn/snfw/wydk/"><img src="/cn/images/psbc_base_navEWM.png" /></a>
+                                </li>-->
+                            </ul>
+                        </div>
+                        <div class="navDownSnfw_R rl">
+                            <a href="">
+                                <!-- <img src="/cn/images/psbc_snRimg_v2020.jpg" /> -->
+                                 <img src="/cn/images/psbc_snRimg2_v2020.jpg" />
+                            </a>
+                        </div>
+                    </div>
+                </li>
+                <li class="navItem">
+                    <a class="navTitle" href="https://www.psbc.com/cn/xqyfw/">小企业服务</a>
+                    <div class="header_navDown navDownXwfw">
+                        <div class="navDownXwfw_l fl">
+                            <ul class="navDownXwfwList clear">
+                                <li class="xwfw">
+                                    <!--<dl class="xwqyzs">
+                                        <a href="">
+                                            <h3>小微企业运行指数</h3>
+                                        </a>
+                                    </dl>-->
+                                    <!-- <dl class="xwzx">
+                                        <a href="">
+                                            <h3>小微资讯</h3>
+                                        </a>
+                                    </dl> -->
+                                    <dl class="xwczgs" style="margin-top:0px;">
+                                        <a href="https://www.psbc.com/cn/xqyfw/xwqyczgs/">
+                                            <h3>小微金融成长故事</h3>
+                                        </a>
+                                    </dl>
+                                    <dl class="xwczgs xqyjlp">
+                                        <a href="https://www.psbc.com/cn/xqyfw/xqyjrywjlxcp/">
+                                            <h3>小微金融宣传片</h3>
+                                        </a>
+                                    </dl>
+                                </li>
+                                <li class="xw_xdcp">
+                                    <dl>
+                                        <a href="https://www.psbc.com/cn/xqyfw/xqyxdcp/">
+                                            <h3>小企业信贷产品</h3>
+                                        </a>
+                                        <p><a href="https://www.psbc.com/cn/xqyfw/xqyxdcp/xwyd/">邮易贷-小微易贷</a></p>
+                                        <p><a href="https://www.psbc.com/cn/xqyfw/xqyxdcp/kcxqydk/">科创小企业贷款</a></p>
+                                        <p><a href="https://www.psbc.com/cn/xqyfw/xqyxdcp/ybxqydk/">一般小企业贷款</a></p>
+                                        <p><a href="https://www.psbc.com/cn/xqyfw/xqyxdcp/tsxqydk/">特色小企业贷款</a></p>
+                                    </dl>
+                                </li>
+                                <li class="dkbl">
+                                    <p>小微贷款快捷办理</p>
+                                    <a href="javascript:;"><img src="/cn/images/psbc_base_navEWM_xqy.png" /></a>
+                                </li>
+
+
+<style>
+								
+.navDownXwfw {
+    width: 658px;
+    height: 194px;
+    /* left: 72px; */
+    right: 0px;
+    padding: 15px 15px;
+	
+	border:0px solid #333;
+}
+
+.navDownXwfw_l ul.navDownXwfwList {
+    width: 500px;
+    height: 165px;
+    border-bottom: 1px solid #e7e7e7;
+    margin-left: 10px;
+	border:0px solid #333;
+}
+								
+.navDownXwfwList li.dkbl {
+    width: 141px;
+    font-size: 0;
+	margin-left: 20px;
+}
+
+.navDownXwfwList li.dkbl img {
+    width: 141px;
+    height: 143px;
+    margin-top: 10px;
+}
+
+.navDownXwfwList li.dkbl p {
+    font-size: 16px;
+    color: #18ae66;
+    line-height: 21px;
+    background: none;
+    padding-left: 0;
+}
+						
+</style>
+                            </ul>
+                            <div class="navDownXwfwBot">
+                                <!-- <a href="https://www.psbc.com/cn/xqyfw/xqyjrywjlxcp/">小企业金融业务宣传片</a> -->
+                            </div>
+                        </div>
+                        <div class="navDownXwfw_R rl">
+                            <a href="">
+                                <img src="/cn/images/psbc_base_xwfw_03.png" />
+                            </a>
+                        </div>
+                    </div>
+                </li>
+                <li class="navItem">
+                    <a class="navTitle" href="https://www.psbc.com/cn/gyyc/">关于邮储</a>
+                    <div class="header_navDown navDownGyyc">
+                        <div class="navDownGyyc_l fl">
+                            <ul class="navDownGyycList clear">
+                                <li class="ycfm">
+                                    <dl>
+                                        <a href="https://www.psbc.com/cn/gyyc/ycfm/">
+                                            <h3>邮储风貌</h3>
+                                        </a>
+                                        <div class="fl">
+                                            <p><a href="https://www.psbc.com/cn/gyyc/ycfm/gyyc/">邮储简介</a></p>
+                                            <p><a href="https://www.psbc.com/cn/gyyc/ycfm/ycdt/">邮储新闻</a></p>
+                                            <p><a href="https://www.psbc.com/cn/grfw/tzlc/lc/cslc/djgz/">党建工作</a></p>
+					    <p><a href="https://www.psbc.com/cn/gyyc/ycfm/ppzc/yagy/"  class="zxkfl">邮爱公益</a></p> 
+                                            <!-- <p><a href="https://www.psbc.com/cn/gyyc/ycfm/zgwh/">职工文化</a></p>
+                                            <p><a href="https://www.psbc.com/cn/gyyc/ycfm/spzq/">视频专区</a></p> -->
+                                            <!-- <p><a href="https://www.psbc.com/cn/gyyc/ycfm/zgwh/ycyx/">邮储影像</a></p> -->
+                                            <!-- <p><a href="https://www.psbc.com/cn/gyyc/ycfm/ppzc/yagy/"  class="zxkfl">邮爱公益</a></p> -->
+                                        </div>
+                                        <div class="fl">
+                                            <p><a href="https://www.psbc.com/cn/gyyc/ycfm/zgwh/">职工文化</a></p>
+                                            <p><a href="https://www.psbc.com/cn/gyyc/ycfm/spzq/">视频专区</a></p>
+                                            <!--<p><a href="https://www.psbc.com/cn/gyyc/ycfm/ppzc/">品牌之窗</a></p>-->
+                                            <p><a href="https://www.psbc.com/cn/gyyc/ycfm/qywh/">企业文化</a></p>
+                                            <!-- <p><a href="https://www.psbc.com/cn/gyyc/ckbx/">存款保险</a></p> -->
+                                            <!-- <p><a href="https://www.psbc.com/cn/gyyc/cgxx/">采购信息</a></p> -->
+                                            <!-- <p><a href="https://www.psbc.com/cn/gyyc/rczp/">人才招聘</a></p> -->
+                                        </div>
+                                    </dl>
+                                </li>
+                                <li class="tzgx">
+                                    <dl>
+                                        <a href="https://www.psbc.com/cn/gyyc/tzzgx/">
+                                            <h3>投资者关系</h3>
+                                        </a>
+                                        <div class="fl">
+                                            <p><a href="https://www.psbc.com/cn/gyyc/tzzgx/tzjz/">投资价值</a></p>
+                                            <p><a href="https://www.psbc.com/cn/gyyc/tzzgx/gsgg/">公司公告</a></p>
+                                            <p><a href="https://www.psbc.com/cn/gyyc/tzzgx/gszl/">公司治理</a></p>
+                                            <p><a href="https://www.psbc.com/cn/gyyc/tzzgx/cwxx/">财务信息</a></p>
+                                            <!--<p><a href="">投资者约见</a></p>-->
+                                        </div>
+                                        <div class="fl">
+                                            <p><a href="https://www.psbc.com/cn/gyyc/tzzgx/jgzb/">监管资本</a></p>
+                                            <p><a href="https://www.psbc.com/cn/gyyc/tzzgx/qyshzr/">企业社会责任</a></p>
+                                            <p><a href="https://www.psbc.com/cn/gyyc/tzzgx/yjtj/">业绩推介</a></p>
+                                            <p><a href="https://www.psbc.com/cn/gyyc/tzzgx/tzzfw/">投资者服务</a></p>
+                                        </div>
+                                    </dl>
+                                </li>
+                            
+                                <li class="fzjg">
+                                    <dl>
+                                        <a href="https://www.psbc.com/cn/gyyc/esg/">
+                                            <h3 style="background: url(https://www.psbc.com/cn/images/esg.png) right 1px bottom 3px  no-repeat;background-size: 24px;">ESG</h3>
+                                        </a>
+                                      
+                                    </dl>
+                                    <dl>
+                                        <a href="https://www.psbc.com/cn/fhpd/">
+                                            <h3>分行频道</h3>
+                                        </a>
+                                        <!-- <p><a href="">VIP卡</a></p> -->
+                                        <!-- <p><a href="https://www.psbc.com/cn/grfw/gbfw/zxfw/">专项服务</a></p> -->
+                                    </dl>
+                                    <dl class="rczpdl rczp" style="margin-top:10px">
+                                        <a href="https://www.psbc.com/cn/gyyc/rczp/">
+                                            <h3>人才招聘</h3>
+                                        </a>
+                                    </dl>
+                                    <dl class="rczpdl ckbx" style="margin-top:10px">
+                                        <a href="https://www.psbc.com/cn/gyyc/ckbx/">
+                                            <h3>存款保险</h3>
+                                        </a>
+                                    </dl>
+
+                                   <dl class="rczpdl zwsm" style="margin-top:10px">
+                                        <a href="https://www.psbc.com/cn/gyyc/qybzzwsm/">
+                                            <h3>企业标准自我声明</h3>
+                                        </a>
+                                    </dl>
+
+
+                                  <!--  <dl class="rczpdl cgxx" style="margin-top:10px">
+                                        <a href="https://www.psbc.com/cn/gyyc/cgxx/">
+                                            <h3>采购信息</h3>
+                                        </a>
+                                    </dl> -->
+                                </li>
+                            </ul>
+                        </div>
+                        <div class="navDownGyyc_R rl">
+                            <a href="https://www.psbc.com/cn/gyyc/ycfm/gyyc/">
+                                <img src="/cn/images/psbc_base_gyyc.jpg" />
+                            </a>
+                        </div>
+                    </div>
+                </li>
+            </ul>
+        </div>
+    </div>
+    <div class="psbc_headerCont pcNone clear">
+        <a class="headerLogo fl" href="/cn/">
+            <img src="/cn/images/psbc_mobile_base_logo.png" onerror="this.parentElement.parentElement.style.display='none';" />
+        </a>
+      
+        <a class="navMore rl" href="javascript:void (0)">
+            <img src="/cn/images/psbc_base_more_mobilev2020.png" />
+        </a>
+<!--<a id="bzb_btn" style="float:right;font-size: 0.3rem;margin-right: 0.2rem;line-height: 0.6rem;">标准版</a >-->
+        <a class="navClose rl" href="javascript:void (0)">
+            <img src="/cn/images/psbc_base_navClose_mobileV2020.png" />
+        </a>
+        <div class="navListCont">
+            <div class="navListTop">
+                <div class="psbc_header_searchBox">
+                    <label>
+                        <input class="sr_text" type="text" id="sr_text2" />
+                        <input class="sr_btn" type="submit" value="" />
+                    </label>
+                </div>
+            </div>
+            <ul class="navList">
+                <li>
+                    <a href="https://www.psbc.com/cn/grfw/" class="itemLink">个人服务</a>
+                    <a href="javascript:void(0)" class="itemTitle" ></a>
+                    <div>
+                        <dl>
+                            <dd><a href="https://www.psbc.com/cn/grfw/tzlc/">投资理财</a></dd>
+                            <dd><a href="https://www.psbc.com/cn/grfw/xyk/">信用卡</a></dd>
+                            <dd><a href="https://www.psbc.com/cn/grfw/yxk/">借记卡</a></dd>
+                            <dd><a href="https://www.psbc.com/cn/grfw/cdh/">存贷汇</a></dd>
+                            <dd><a href="https://www.psbc.com/cn/grfw/grdzyh/">个人电子银行</a></dd>
+                            <dd><a href="https://www.psbc.com/cn/grfw/gbfw/">贵宾服务</a></dd>
+                            <dd><a href="https://www.psbc.com/cn/grfw/kfyh/">开放银行</a></dd>
+                            <!--<dd><a href="https://www.psbc.com/cn/grfw/jrzx/">金融资讯</a></dd>-->
+                            <dd><a href="https://www.psbc.com/cn/grfw/fwgg/">服务公告</a></dd>
+                            <dd><a href="https://www.psbc.com/cn/grfw/yhhd/">优惠活动</a></dd>
+                            <dd><a href="https://www.psbc.com/cn/grfw/ycdjt/">邮储大讲堂</a></dd>
+                            <dd><a href="https://www.psbc.com/cn/grfw/cjwt/">常见问题</a></dd>
+                        </dl>
+                    </div>
+                </li>
+                <li>
+                    <a href="https://www.psbc.com/cn/gsfw/" class="itemLink">公司服务</a>
+                    <a href="javascript:void(0)" class="itemTitle" ></a>
+                    <div>
+                        <dl>
+                            <!-- <dd><a href="https://www.psbc.com/cn/gsfw/zhfw/">账户服务</a></dd> -->
+                            <dd><a href="https://www.psbc.com/cn/gsfw/cpfw/">产品服务</a></dd>
+                            <dd><a href="https://www.psbc.com/cn/gsfw/qydzyh/">企业电子银行</a></dd>
+							<dd><a href="https://www.psbc.com/cn/gsfw/gsfyzctg/">资产托管</a></dd>
+                            <dd><a href="https://www.psbc.com/cn/gsfw/zzfw/">增值服务</a></dd>
+                            <dd><a href="https://www.psbc.com/cn/gsfw/tyjr/">同业金融</a></dd>
+                            <dd><a href="https://www.psbc.com/cn/gsfw/jgjr/">机构金融</a></dd>
+                            <dd><a href="https://www.psbc.com/cn/gsfw/ppfw/">品牌服务</a></dd>
+                            <dd><a href="https://www.psbc.com/cn/gsfw/cjwt_413/">常见问题</a></dd>
+                        </dl>
+                    </div>
+                </li>
+                <li>
+                    <a href="https://www.psbc.com/cn/snfw/" class="itemLink">三农服务</a>
+                    <a href="javascript:void(0)" class="itemTitle" ></a>
+                    <div>
+                        <dl>
+                            <!-- <dd><a href="https://www.psbc.com/cn/snfw/">三农服务</a></dd> -->
+                            <dd><a href="https://www.psbc.com/cn/snfw/sngrfw/">三农个人业务</a></dd>
+                            <!--<dd><a href="https://www.psbc.com/cn/snfw/sndgfw/">三农特色业务</a></dd>-->
+                            <dd><a href="https://www.psbc.com/cn/snfw/snzx/">三农资讯</a></dd>
+                            <dd><a href="https://www.psbc.com/cn/snfw/fpgs/">乡村振兴故事</a></dd>
+                            <dd><a href="https://www.psbc.com/cn/snfw/sngrfw/dqtscp/">地区特色产品</a></dd>
+                            <dd><a href="https://www.psbc.com/cn/snfw/snywjlxcp/">三农金融宣传片</a></dd>
+                        </dl>
+                    </div>
+                </li>
+                <li>
+                    <a href="https://www.psbc.com/cn/xqyfw/" class="itemLink">小企业服务</a>
+                    <a href="javascript:void(0)" class="itemTitle" ></a>
+                    <div>
+                        <dl>
+                            <!--<dd><a href="">小微企业运行指数</a></dd>-->
+                            <dd><a href="https://www.psbc.com/cn/xqyfw/xwqyczgs/">小微金融成长故事</a></dd>
+                            <dd><a href="https://www.psbc.com/cn/xqyfw/xqyjrywjlxcp/">小企业金融业务宣传片</a></dd>
+                            <dd><a href="https://www.psbc.com/cn/xqyfw/xqyxdcp/">小企业信贷产品</a></dd>
+                        </dl>
+                    </div>
+                </li>
+                <li>
+                    <a href="https://www.psbc.com/cn/gyyc/" class="itemLink">关于邮储</a>
+                    <a href="javascript:void(0)" class="itemTitle" ></a>
+                    <div>
+                        <dl>
+                            <dd><a href="https://www.psbc.com/cn/gyyc/ycfm/">邮储风貌</a></dd>
+                
+                            <dd><a href="https://www.psbc.com/cn/gyyc/tzzgx/">投资者关系</a></dd>
+                            <dd><a href="https://www.psbc.com/cn/gyyc/esg/">ESG</a></dd>
+                            <dd><a href="https://www.psbc.com/cn/fhpd/">分行频道</a></dd>
+                            <dd><a href="https://www.psbc.com/cn/gyyc/rczp/">人才招聘</a></dd>
+                            <dd><a href="https://www.psbc.com/cn/gyyc/ckbx/">存款保险</a></dd>
+                           <!-- <dd><a href="https://www.psbc.com/cn/gyyc/cgxx/">采购信息</a></dd>  -->
+                        </dl>
+                    </div>
+                </li>
+                <li><a href="https://www.psbc.com/cn/fhpd/" class="itemLink">分行频道</a></li>
+                <li><a href="/en/" class="itemLink">英文版</a></li>
+                <!-- <li><a href="" class="itemLink">英文版</a></li> -->
+            </ul>
+            <a class="navDownApp" href="http://phone.psbc.com">手机银行下载<i></i></a>
+        </div>
+    </div>
+  </div>
+  
+  
+  <script>
+    $(function(){
+        
+        //搜索
+        $(".sr_btn").click(function(){
+        if($("#sr_text").val() != ''){
+            localStorage.searchVal = $(".sr_text").val();
+        }else{
+            localStorage.searchVal = $("#sr_text2").val();
+        }
+            window.location.href = "/cn/common/search/";
+        })
+  
+    })
+  </script>
+
+<script>
+  document.addEventListener("DOMContentLoaded", function () {
+    // 判断URL是否包含uesweb
+    var hasUesweb = window.location.href.indexOf("uepsXYDMHWZXTweb") !== -1;
+
+    // 判断是否是iOS端
+    var ua = navigator.userAgent || navigator.vendor || window.opera;
+    var isIOS = /iPhone|iPad|iPod/i.test(ua);
+
+    if (hasUesweb && isIOS) {
+      var logoDiv = document.querySelector(".headerLogo.fl");
+      if (logoDiv) {
+        logoDiv.style.display = "none";
+      }
+    }
+  });
+</script>
+<script id="toolbar.js" src="https://www.psbc.com/toolbar/js/toolbar_init.js"></script>
+	<!-- header end -->
+
+	<div class="psbc_layout manMon manMonDet">
+		<div class="crumbs wrap">您所在的位置：<a href="../../../../" target="_self" title="首页" class="CurrChnlCls">首页</a>&nbsp;>&nbsp;<a href="../../../" target="_self" title="个人服务" class="CurrChnlCls">个人服务</a>&nbsp;>&nbsp;<a href="../../" target="_self" title="投资理财" class="CurrChnlCls">投资理财</a>&nbsp;>&nbsp;<a href="../" target="_self" title="理财" class="CurrChnlCls">理财</a>
+		</div>
+		<div class="wrap">
+			<div class="fdDett ">
+				<!-- 理财产品详情 开始 -->
+				<div class="fdT mobile_none">
+					理财筛选页面
+				</div>
+				<div class="fdT pc_none">
+					理财筛选页面
+					<div class="fdT_sx">
+						<img src="../../../../images/sx.png" alt="" />
+						<span>筛选</span>
+					</div>
+				</div>
+				<!-- 理财筛选 开始 -->
+				<div class="eaCal mobile_none">
+					<div class="eaCalB clear">
+						<input type="text" placeholder="请输入产品代码和名称" id="pc_finkeyword" />
+						<span class="search" id="pc_searchbt"><img src="../../../../images/finance-search.png" alt="" /></span>
+					</div>
+					<!--筛选条件-->
+					<div class="filter-wrap clear" id="fundFilter">
+						<div class="filter-box">
+							<div class="filter-type">币种&nbsp;:&nbsp;</div>
+							<ul class="filter-item" id="currency">
+								<li row="0" data-item="" class="active active2">不限</li>
+								<li row="0" data-item="156">人民币</li>
+								<!-- <li row="0" data-item="036">澳元</li>
+                                <li row="0" data-item="124">加元</li>
+                                <li row="0" data-item="344">港元</li>
+                                <li row="0" data-item="392">日元</li>
+                                <li row="0" data-item="826">英镑</li> -->
+								<li row="0" data-item="840">美元</li>
+								<!-- <li row="0" data-item="978">欧元</li> -->
+							</ul>
+						</div>
+						<div class="filter-box">
+							<div class="filter-type">产品期限&nbsp;:&nbsp;</div>
+							<ul class="filter-item" id="deadline">
+								<li row="1" class="active active2" data-item="">不限</li>
+								<li row="1" data-item="0">30天以下</li>
+								<li row="1" data-item="1">31天-180天</li>
+								<li row="1" data-item="2">180天-365天</li>
+								<li row="1" data-item="3">365天以上</li>
+							</ul>
+						</div>
+						<div class="filter-box">
+							<div class="filter-type">产品类型&nbsp;:&nbsp;</div>
+							<ul class="filter-item" id="netproduct">
+								<li row="2" class="active active2" data-item="">不限</li>
+								<li row="2" data-item="04">开放式非净值型</li>
+								<li row="2" data-item="02">封闭式非净值型</li>
+								<li row="2" data-item="03">开放式净值型</li>
+								<li row="2" data-item="01">封闭式净值型</li>
+							</ul>
+						</div>
+						<div class="filter-box">
+							<div class="filter-type">风险等级&nbsp;:&nbsp;</div>
+							<ul class="filter-item" id="risklevel">
+								<li row="3" class="active active2" data-item="">不限</li>
+								<li row="3" data-item="1">PR1低风险</li>
+								<li row="3" data-item="2">PR2较低风险</li>
+								<li row="3" data-item="3">PR3中等风险</li>
+								<li row="3" data-item="4">PR4较高风险</li>
+								<li row="3" data-item="5">PR5高风险</li>
+							</ul>
+						</div>
+						<div class="filter-box">
+							<div class="filter-type">起购金额&nbsp;:&nbsp;</div>
+							<ul class="filter-item active2" id="entruststartamt">
+								<li row="4" class="active active2" data-item="">不限</li>
+								<li row="4" data-item="0">0至5万</li>
+								<li row="4" data-item="1">5万-10万</li>
+								<li row="4" data-item="2">10万-20万</li>
+								<li row="4" data-item="3">20万以上</li>
+							</ul>
+						</div>
+
+						<div class="filter-box">
+							<div class="filter-type">产品状态&nbsp;:&nbsp;</div>
+							<ul class="filter-item" id="status">
+								<li row="5" class="active active2" data-item="" data-product="">不限</li>
+								<li row="5" buystatus="1,4"> 在售</li>
+								<li row="5" buystatus="3"> 预约</li>
+								<li row="5" productstatus="0"> 募集</li>
+								<li row="5" productstatus="1"> 存续</li>
+								<li row="5" productstatus="5"> 已到期</li>
+							</ul>
+						</div>
+
+						<div class="filter-box cpglr">
+							<div class="filter-type">产品管理人 &nbsp;:&nbsp;</div>
+							<ul class="filter-item" id="status">
+								<li row="6" class="active active2" data-item="" data-product="">不限</li>
+								<li row="6" bankflag="000"> 邮储银行</li>
+								<li row="6" zhongyouflag="1"> 中邮理财</li>
+								<li row="6" bankflag="002"> 光大理财</li>
+								<li row="6" bankflag="004"> 招银理财</li>
+								<li row="6" bankflag="011"> 中银理财</li>
+								<li row="6" bankflag="001"> 交银理财</li>
+								<li row="6" bankflag="010"> 平安理财</li>
+								<li row="6" bankflag="007"> 兴银理财</li>
+								<li row="6" bankflag="012"> 华夏理财</li>
+                                                                <li row="6" bankflag="003"> 工银理财</li>
+                                                                <li row="6" bankflag="014"> 浦银理财</li>
+                                                                <li row="6" bankflag="013"> 北银理财</li>
+                                                                <li row="6" bankflag="015"> 苏银理财</li>
+                                                                <li row="6" bankflag="005"> 建信理财</li>
+                                                                <li row="6" bankflag="009"> 民生理财</li>
+
+							</ul>
+						</div>
+
+
+						<div class="filter-box cptx" style="display:block">
+							<div class="filter-type">产品体系 &nbsp;:&nbsp;</div>
+							<ul class="filter-item" id="status">
+								<li row="7" class="active active2" data-item="" data-product="">不限</li>
+								<li row="7" prodseries="鸿宝"> 鸿宝</li>
+								<li row="7" prodseries="鸿运"> 鸿运</li>
+								<li row="7" prodseries="鸿锦"> 鸿锦</li>
+								<li row="7" prodseries="鸿元"> 鸿元</li>
+								<li row="7" prodseries="鸿鑫"> 鸿鑫</li>
+								<li row="7" prodseries="鸿晟"> 鸿晟</li>
+								<li row="7" prodseries="鸿盈"> 鸿盈</li>
+								<li row="7" prodseries="鸿博"> 鸿博</li>
+							</ul>
+						</div>
+
+						<!--<div class="filter-box">
+                            <div class="filter-type">投资性质 &nbsp;:&nbsp;</div>
+                            <ul class="filter-item" id="status">
+                                <li row="8" class="active active2" investornature="">不限</li>
+                                <li row="8" investornature="1"> 固定收益类</li>
+                                <li row="8" investornature="4"> 权益类</li>
+                                <li row="8" investornature="2"> 混合类</li>
+                                <li row="8" investornature="3"> 商品及金融衍生品类</li>
+                                <li row="8" investornature=""> 其他</li>
+                            </ul>
+                        </div>-->
+
+					</div>
+					<!--更多筛选条件-->
+					<div class="filter-more down" style="display: none;">
+						<span>更多筛选条件</span>
+						<img src="../../../../images/more-down.png" alt="" />
+					</div>
+				</div>
+				<div class="pc_none">
+
+				</div>
+				<!-- 理财筛选 结束 -->
+				<!-- 筛选结果 开始-->
+				<div>
+					<!-- pc端 筛选 开始  -->
+					<div class="fundIqeFilts mobile_none">
+						<div class="fundSort">
+							<div class="fundIqeFiltI fs dactive" data-item="PERBENMARK">
+								<span>业绩基准</span>
+
+								<div class="arrCon">
+									<div class="upArr"></div>
+									<div class="bottomArr"></div>
+								</div>
+							</div>
+							<div class="fundIqeFiltI fs" data-item="RISKLEVEL">
+								<span>风险等级</span>
+								<div class="arrCon">
+									<div class="upArr"></div>
+									<div class="bottomArr"></div>
+								</div>
+							</div>
+
+							<div class="fundIqeFiltI fs" data-item="ENTRUSTSTARTAMT">
+								<span>起购金额</span>
+								<div class="arrCon">
+									<div class="upArr"></div>
+									<div class="bottomArr"></div>
+								</div>
+							</div>
+							<div class="fundIqeFiltI fs" data-item="ENTRUSTPERIOD">
+								<span>投资期限</span>
+								<div class="arrCon">
+									<div class="upArr"></div>
+									<div class="bottomArr"></div>
+								</div>
+							</div>
+						</div>
+						<!--产品对比-->
+						<div class="fundProdCompare">
+							<span class="prodName">产品对比&nbsp;:&nbsp;</span>
+							<ul id="fundProList">
+
+							</ul>
+							<div class="compareBtn"><a href="javascript:;">比一比</a></div>
+						</div>
+					</div>
+					<!-- pc端 筛选 结束  -->
+					<!-- 移动端筛选开始 -->
+					<div class="fdfM pc_none clear fundSort">
+						<div class="fundMFilt fl fs dactive" data-item="PERBENMARK">
+							<span>业绩基准</span>
+							<div class="arrCon">
+								<div class="upArr"></div>
+								<div class="bottomArr"></div>
+							</div>
+						</div>
+						<div class="fundMFilt fl fs" data-item="RISKLEVEL">
+							<span>风险等级</span>
+							<div class="arrCon">
+								<div class="upArr"></div>
+								<div class="bottomArr"></div>
+							</div>
+						</div>
+
+						<div class="fundMFilt fl fs" data-item="ENTRUSTSTARTAMT">
+							<span>起购金额</span>
+							<div class="arrCon">
+								<div class="upArr"></div>
+								<div class="bottomArr"></div>
+							</div>
+						</div>
+						<div class="fundMFilt fl fs" data-item="ENTRUSTPERIOD">
+							<span>投资期限</span>
+							<div class="arrCon">
+								<div class="upArr"></div>
+								<div class="bottomArr"></div>
+							</div>
+						</div>
+					</div>
+					<!-- 移动端筛选 结束 -->
+					<div class="fundIqeClist">
+						<ul id="fundLists" data-bind="foreach:finCollection.Resultlist">
+							<li>
+								<div class="fdqU clear">
+									<div class="fsqTitle">
+										<a data-bind="attr:{href:docpuburl},text:FPNAME"></a>
+									</div>
+									<div class="fundCode" data-bind="text:SECODE"></div>
+									<div class="fundType" data-bind="attr:{zsbs:EXPECTFLAG}"></div>
+									<div class="proItcn">
+										<a data-bind="attr:{href:'/cn/channels/licai/material/'+SECODE+'.pdf'}"
+											target="_self"> 产品说明书(PDF)</a>
+									</div>
+								</div>
+								<div class="fdqB clear financeTxt">
+									<div class="fdqbRate fdqBI ">
+										<div class="yieldRate fdqbSatmT"
+											data-bind="attr:{CURTYPEPRODUCT:CURTYPEPRODUCT,NET_EXPECT_PRODUCT:NET_EXPECT_PRODUCT,LATEST_NET:LATEST_NET,PERBENMARK:PERBENMARK,SEVEN_ANNUAL_YIELD:SEVEN_ANNUAL_YIELD,EXPTYIELD_LOW:EXPTYIELD_LOW,EXPTYIELD:EXPTYIELD}"
+											WTFVAL="WTFVAL"></div>
+										<div class="fdqbRateB"
+											data-bind="attr:{CURTYPEPRODUCT:CURTYPEPRODUCT,NET_EXPECT_PRODUCT:NET_EXPECT_PRODUCT,LATEST_NET:LATEST_NET,PERBENMARK:PERBENMARK,SEVEN_ANNUAL_YIELD:SEVEN_ANNUAL_YIELD,EXPTYIELD_LOW:EXPTYIELD_LOW,EXPTYIELD:EXPTYIELD}"
+											WTFKEY="WTFKEY"></div>
+
+									</div>
+
+
+									<div class="fdqBI fdqBI2">
+
+										<span>
+											<div class="yjbjjjtc yjbjjjtc-30">
+												<dl>
+													<dt>
+														<span>业绩比较基准…</span> <i></i>
+													</dt>
+													<dd class="dd-3">
+														<a></a>
+														<p data-bind="attr:{perbenmark_desc:perbenmark_desc}">
+															业绩比较基准概述
+														</p>
+													</dd>
+												</dl>
+
+											</div>
+
+										</span>
+
+									</div>
+
+
+
+									<div class="fdqbRate fdqBI" style="display:none;">
+										<!--<div class="fdqbRateB"  data-bind="attr:{CURTYPEPRODUCT:CURTYPEPRODUCT,NET_EXPECT_PRODUCT:NET_EXPECT_PRODUCT,LATEST_NET:LATEST_NET,PERBENMARK:PERBENMARK,SEVEN_ANNUAL_YIELD:SEVEN_ANNUAL_YIELD,EXPTYIELD_LOW:EXPTYIELD_LOW,EXPTYIELD:EXPTYIELD}" WTFDESC="WTFDESC">业绩比较基准综合投资范围、策略和市场环境测算</div>-->
+									</div>
+
+									<div class="fdqbRate fdqBI">
+										<div class="fdqbSatmT fdqxD" data-bind="attr:{SFRULE:SFRULE}"></div>
+										<div class="fdqbRateB">
+											申赎规则
+										</div>
+									</div>
+									<div class="fdqbRate fdqBI">
+										<div class="fdqbSatmT fdqxD" data-bind="attr:{RISKLEVEL:RISKLEVEL}"></div>
+										<div class="fdqbRateB">
+											风险等级
+										</div>
+									</div>
+
+									<div class="fdqbRate fdqBI_20" style="width:15%;">
+										<div class="fdqbMoney">
+											<div class="fdqbRateM"
+												data-bind="attr:{ENTRUSTSTARTAMT:ENTRUSTSTARTAMT,CURTYPEPRODUCT:CURTYPEPRODUCT,CURRENCY:CURRENCY}">
+
+											</div>
+											<div class="fdqbRateBb"
+												data-bind="attr:{SUBSCRIPTION_DATE:SUBSCRIPTION_DATE,CLOSING_DATE:CLOSING_DATE}">
+											</div>
+										</div>
+									</div>
+
+									<div class="fdqbRate fdqBI mobilebuy" style="float:right;">
+										<div class="buyNow"
+											data-bind="attr:{BUYSTATUS:BUYSTATUS,CURTYPEPRODUCT:CURTYPEPRODUCT,CURRENCY:CURRENCY}">
+											<!-- <a class="mobileNone" data-bind="attr:{SECODE:SECODE,NET_EXPECT_PRODUCT:NET_EXPECT_PRODUCT,CURTYPEPRODUCT:CURTYPEPRODUCT,BUYSTATUS:BUYSTATUS}"  class="fdqBIbtn">立即购买</a> -->
+											<!-- <a class="mobileNone" data-bind="attr:{SECODE:SECODE,NET_EXPECT_PRODUCT:NET_EXPECT_PRODUCT}"  class="fdqBIbtn">立即购买</a>
+											<a class="pcNone" class="fdqBIbtn" >立即购买</a> -->
+										</div>
+										<!--通过对比数组确定显示内容-->
+										<div compare="compare" data-bind="attr:{id:SECODE,SECODE:SECODE}">
+
+										</div>
+										<!-- </div> -->
+									</div>
+									<style>
+										.buyNow0,
+										.buyNow2 {
+											background: url(/cn/images/psbc02_jjBnBg_v2020_gray.png) no-repeat;
+											background-size: 100%;
+											pointer-events: none;
+										}
+
+										.buyNow .fdqBIbtn0,
+										.buyNow .fdqBIbtn2 {
+											color: gray;
+											cursor: not-allowed;
+										}
+
+										.buyNow0:hover,
+										.buyNow2:hover {
+											background: url(/cn/images/psbc02_jjBnBg_v2020_gray.png) no-repeat;
+											background-size: 100%;
+										}
+
+										.buyNow0:hover a,
+										.buyNow2:hover a {
+											color: gray;
+										}
+									</style>
+									<!--通过对比数组确定显示内容-->
+								</div>
+							</li>
+						</ul>
+					</div>
+				</div>
+				<!-- 筛选结果 结束-->
+				<div class="page">
+					<div class="page_nr1">
+						<div class="page_nr2" id="pageList">
+
+						</div>
+					</div>
+				</div>
+			</div>
+		</div>
+		<!--筛选遮罩-->
+		<div id="filter-layer" class="pcNone"></div>
+		<div class="layer-container pc_none">
+			<div class="eaCalB prod clear">
+				<input type="text" placeholder="请输入产品代码和名称" id="mob_finkeyword" />
+				<span class="search" id="mob_searchbt"><img src="../../../../images/finance_search_m.png" alt="" /></span>
+			</div>
+			<!--列表-->
+			<div class="filter-wrap clear" id="fundFilterM">
+				<div class="filter-box">
+					<div class="filter-type">币种&nbsp;:&nbsp;</div>
+					<ul class="filter-item" id="currency">
+						<li data-item="" class="active">不限</li>
+						<li currency="" data-item="156">人民币</li>
+						<li currency="" data-item="036">澳元</li>
+						<li currency="" data-item="124">加元</li>
+						<li currency="" data-item="344">港元</li>
+						<li currency="" data-item="392">日元</li>
+						<li currency="" data-item="826">英镑</li>
+						<li currency="" data-item="840">美元</li>
+						<li currency="" data-item="978">欧元</li>
+					</ul>
+				</div>
+				<div class="filter-box">
+					<div class="filter-type">产品期限&nbsp;:&nbsp;</div>
+					<ul class="filter-item" id="deadline">
+						<li class="active" data-item="">不限</li>
+						<li data-item="0">30天以下</li>
+						<li data-item="1">31天-180天</li>
+						<li data-item="2">180天-365天</li>
+						<li data-item="3">365天以上</li>
+					</ul>
+				</div>
+				<div class="filter-box">
+					<div class="filter-type">风险等级&nbsp;:&nbsp;</div>
+					<ul class="filter-item" id="risklevel">
+						<li class="active" data-item="">不限</li>
+						<li data-item="1">低风险</li>
+						<li data-item="2">较低风险</li>
+						<li data-item="3">中等风险</li>
+						<li data-item="4">较高风险</li>
+						<li data-item="5">高风险</li>
+					</ul>
+				</div>
+				<div class="filter-box">
+					<div class="filter-type">起购金额&nbsp;:&nbsp;</div>
+					<ul class="filter-item" id="entruststartamt">
+						<li class="active" data-item="">不限</li>
+						<li data-item="0">0至5万</li>
+						<li data-item="1">5万-10万</li>
+						<li data-item="2">10万-20万</li>
+						<li data-item="3">20万以上</li>
+					</ul>
+				</div>
+
+				<div class="filter-box">
+					<div class="filter-type">产品状态&nbsp;:&nbsp;</div>
+					<ul class="filter-item" id="status">
+						<li class="active" data-item="">不限</li>
+						<li data-item="">可购买</li>
+						<li data-item="">即将发售</li>
+					</ul>
+				</div>
+				<div class="filter-box">
+					<div class="filter-type">开放性质&nbsp;:&nbsp;</div>
+					<ul class="filter-item" id="kfzt">
+						<li class="active" data-item="">不限</li>
+						<li data-item="">开放式</li>
+						<li data-item="">封闭式</li>
+					</ul>
+				</div>
+
+				<div class="filter-box cpglr">
+					<div class="filter-type">产品管理人 &nbsp;:&nbsp;</div>
+					<ul class="filter-item" id="cpglr">
+						<li class="active active2" data-item="" data-product="">不限</li>
+						<li data-item=""> 邮储银行</li>
+						<li data-item=""> 中邮理财</li>
+						<li data-item=""> 光大理财</li>
+						<li data-item=""> 招银理财</li>
+						<li data-item=""> 中银理财</li>
+						<li data-item=""> 交银理财</li>
+						<li data-item=""> 平安理财</li>
+						<li data-item=""> 兴银理财</li>
+						<li data-item=""> 华夏理财</li>
+                                                <li data-item=""> 工银理财</li>
+                                                <li data-item=""> 浦银理财</li>
+                                               	<li data-item=""> 北银理财</li>
+                                                <li data-item=""> 苏银理财</li>
+                                                <li data-item=""> 建信理财</li>
+                                                <li data-item=""> 民生理财</li>
+
+
+					</ul>
+				</div>
+
+
+				<div class="filter-box cptx" style="display:block">
+					<div class="filter-type">产品体系 &nbsp;:&nbsp;</div>
+					<ul class="filter-item" id="scptx">
+						<li class="active active2" data-item="" data-product="">不限</li>
+						<li data-item=""> 鸿宝</li>
+						<li data-item=""> 鸿运</li>
+						<li data-item=""> 鸿锦</li>
+						<li data-item=""> 鸿元</li>
+						<li data-item=""> 鸿鑫</li>
+						<li data-item=""> 鸿晟</li>
+						<li data-item=""> 鸿盈</li>
+						<li data-item=""> 鸿博</li>
+					</ul>
+				</div>
+
+				<div class="filter-box">
+					<div class="filter-type">投资性质 &nbsp;:&nbsp;</div>
+					<ul class="filter-item" id="tzxz">
+						<li class="active active2" data-item="" data-product="">不限</li>
+						<li data-item=""> 固定收益类</li>
+						<li data-item=""> 权益类</li>
+						<li data-item=""> 混合类</li>
+						<li data-item=""> 商品及金融衍生品类</li>
+						<li data-item=""> 其他</li>
+					</ul>
+				</div>
+
+				<div class="filter-box">
+					<ul class="filter-item-btn">
+						<li id="fundReset">重置</li>
+						<li class="active" id="fundSubmit">确定</li>
+					</ul>
+				</div>
+			</div>
+		</div>
+	</div>
+
+	<!-- footer start -->
+	<style>
+.footer_Mes2 {
+    /*width: 750px;*/
+    width: 804px;
+    margin: 0 auto;
+    text-align: center;
+}
+.gaba_box{width:240px;float:left;/*margin:0 auto; padding:20px 0;*/padding-left:5px; padding-top:3px;display:inline-block;}
+.gaba_a{display:inline-block;text-decoration:none;height:29px;line-height:29px; border:0px solid #ccc;}
+.gaba_a img{ padding-top:4px;}
+.gaba_p{float:left;height:29px;line-height:29px;margin: 0px 0px 0px 5px; color:#ffffff;font-size:14px;border:0px solid #ccc;}
+.mar_t94{
+   /*margin-top: 94px;*/
+   margin-top:25px;
+}
+.kexin_box{width: 100px;padding-left: 8px; /*width:108px; padding-left:114px;  margin:0 auto; padding:20px 0; */ display:inline-block;}
+.kexin_box img{width: 104px;height:37px;float: left;/*padding-right: 56px;*/}
+@media screen and (max-width:750px){
+
+.psbc_footer {
+    /* height: 7.18rem; */
+    /*height: 15.78rem;*/
+	height: 18.2rem; 
+    /*height: 15.18rem;*/
+	/*height: 16.06rem;*/
+
+    background: #5DA875;
+    /* padding: 0.8rem 0.6rem 0.6rem; */
+    position: relative;
+}
+
+
+
+.gaba_box{width: 4.60rem;border: 0px solid #333;/*margin:0 auto; padding:20px 0;*/padding-left:5px; /*float:left;*/float:none;display:block; clear:both; margin-left:auto;margin-right:auto;}
+.gaba_a{display:block;text-decoration:none;height:.4rem;line-height:.44rem; overflow:inherit;}
+.gaba_a img{width:.4rem;padding-top:0rem;}
+.gaba_p{float:left;height:.4rem;line-height:0.4rem!important;margin: 0px 0px 0px 5px; color:#ffffff;font-size:0.28rem!important;}
+.mar_t94{
+   /*margin-top: 0px;*/
+   margin-top: 25px;
+}
+
+.kexin_box {text-align:center; width: 1.6rem;padding-left:0px; border: 0px solid #333;display:block; margin-left:auto;margin-right:auto;}
+.kexin_box div { font-size:medium!important;}
+.kexin_box a { overflow:inherit;}
+.kexin_box span { font-size:medium!important;}
+.kexin_box img{display:block!important;width: 1.6rem;max-width: 1.6rem;height:0.60rem;border: 0px solid #333;  margin-left:auto;margin-right:auto;}
+
+    .footer_Mes2 {
+        position: absolute;
+        width: 6.9rem;
+        top: 0.1rem;
+        left: 0.32rem;
+     }
+	 
+	 .footer_Mes {
+		margin-top: 0.1rem;
+		position: absolute;
+		width: 6.4rem;
+		top: 14rem;
+		left: 0.6rem;
+
+
+    
+	}
+
+
+	.foot_r {
+		margin-top: 0.1rem;
+		position: absolute;
+		width: 6.4rem;
+		top: 5.7rem;
+		left: 0.72rem;
+	}
+}
+
+
+
+.footer_Mes2.add_mobile{left: 0;
+    right: 0;
+    width: 7.2rem;}	
+.psbc_footer.add_mobile{
+	height:17.98rem
+}
+    .footer_Mes.add_mobile {
+        margin-top: 0.1rem;
+        position: absolute;
+        width: 6.4rem;
+        top: 14.6rem;
+        left: 0.6rem;
+    }
+
+    .footer_Mes.add_mobile .gaba_box {
+        width: 4.60rem;
+    border: 0px solid #333;
+    padding-left: 5px;
+    /* float: left; */
+    float: none;
+    display: block;
+    clear: both;
+    margin-left: auto;
+    margin-right: auto;
+    height: 0.4rem;
+    }
+    .footer_Mes.add_mobile .gaba_a{
+    	display: block;
+    text-decoration: none;
+    height: auto;
+    line-height: 29px;
+    border: 0px solid #ccc;
+    }
+    .footer_Mes.add_mobile .footer_Mes p{
+    height:auto
+    }
+
+    .footer_Mes.add_mobile .gaba_box img{
+    width:0.34rem
+    }
+    .footer_Mes.add_mobile .kexin_box {
+        text-align: center;
+        width: 1.6rem;
+        padding-left: 0px;
+        border: 0px solid #333;
+        display: block;
+        margin-left: auto;
+        margin-right: auto;
+    }
+.footer_Mes.add_mobile .kexin_box img{
+    height:0.6rem;
+    width:auto
+   margin-top:0.4rem
+    }
+.gyycLBox.add_mobile .inner_title2 span{
+	margin: 0 18px;
+    font-size: .52rem;
+}
+.gyycLBox.add_mobile .inner_title2{
+	text-align:center
+}
+.gyycLBox.add_mobile .szywListUl li a{
+	width: 80%;
+    display: inline-block;
+    height:auto;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.gyycLBox.add_mobile .szywListUl li span{
+	float: right;
+    color: #a6a6a6;
+    display: block;
+    font-size: .20rem;
+    line-height: 0.6rem;
+}
+</style>
+
+
+
+<!--script type="text/javascript">
+        var isPC = IsPC(); //获取是否为PC端
+        if (isPC) {
+                    
+          
+			//调整pc右侧弹窗距离
+            $(function () {
+			   
+				$('.foot_r').css('width', '643px');
+				
+		    })
+        }
+
+</script-->
+<script type="text/javascript">
+        var isPC = IsPC(); //获取是否为PC端
+        if (isOld&&isPC){
+        $(function(){
+        $(".yhkTabCenter.xykCon").addClass("add_mobile");
+  
+			$(".yhkTabCenter.yhkCon").addClass("add_mobile");
+			$(".footer_Mes2").addClass("add_mobile")
+			$(".footer_Mes").addClass("add_mobile")
+			$(".psbc_footer").addClass("add_mobile")
+			$(".gyycLBox").addClass("add_mobile")
+        })
+        
+        }
+        else if (!isOld&&isPC) {
+                      
+          
+			//调整pc右侧弹窗距离
+            $(function () {
+			   
+				$('.foot_r').css('width', '643px');
+				
+		    })
+        }
+
+</script>
+<div class="psbc_footer">
+
+  <div class="psbc_footerCon_shang">
+      <div class="footer_Mes2">
+         <p>
+			  <a href="https://www.psbc.com/cn/common/sitemap/" target="_blank">网站地图</a>|  
+               <a href="https://www.psbc.com/cn/common/ysbmsm/" target="_blank">隐私保密声明</a>| 
+              <a href="https://www.psbc.com/cn/common/fwwd/" target="_blank">服务网点</a>|			  
+              <a href="https://www.psbc.com/cn/common/links/" target="_blank">友情链接</a>|
+              <a href="https://www.psbc.com/cn/common/lxwm/" target="_blank">联系我们</a>|
+              <a href="https://www.psbc.com/cn/common/xfzqybhzl/" target="_blank">消费者权益保护专栏</a>|
+			  <a href="https://www.psbc.com/cn/common/jrxkzxx/" target="_blank">金融许可证信息</a>
+          </p>
+  
+       </div>
+  </div>
+
+  <div class="psbc_footerCont clear">
+  
+      <div class="foot_l">
+	  
+	     <div class="footer_tel  mobileNone ">
+           <img style="width:350px" src="/cn/images/psbc_footLdkffM_v2020.png" />
+         </div>
+         <div class="footer_tel  pcNone">
+          <img src="/cn/images/psbc_footLdkffM_v2020.png" />
+         </div>
+	  
+	  <div class="footer_ewm  clear">	  
+	     <span class="fl sjyh">
+              <img src="/cn/images/psbc_base_ewmApp_07_db.png" />
+              手机银行
+          </span>
+
+          <span class="fl">
+              <img src="/cn/images/psbc_base_ewmWx_09.png" />
+              微信公众号
+          </span>
+		  
+		  <span class="fl qyyh" style="display:block;">
+	     <img src="/cn/images/psbc_base_ewmApp_ycqyyh.jpg" />
+             邮储企业银行app
+          </span>
+
+      </div>
+	  
+	   <div class="footer_Mes ">
+          
+          <p>
+              <span>
+                  <i>Copyright(C)2024 psbc.com</i>
+                  <i>All Rights Reserved</i>
+                  <i>本网站支持IPv6</i>
+              </span> 
+              <span>中国邮政储蓄银行 版权所有 <a target="_blank" href="https://beian.miit.gov.cn">京ICP备07021605号</a></span>
+          </p>
+		  
+		  <div class="gaba_box">
+		 		   <a target="_blank" href="http://www.beian.gov.cn/portal/registerSystemInfo?recordcode=11040102700173" class="gaba_a" style=""><img src="/cn/images/psbc_guohui.png" style="float:left;" /><p class="gaba_p" style="">京公网安备 11040102700173号</p></a>
+		  </div>
+
+                <div class="kexin_box">
+
+                        <div>
+                              <!--可信网站LOGO安装开始-->
+                              <script id="kXScript" type="text/javascript" src="https://kxlogo.knet.cn/seallogo.dll?sn=e13030611010039406xj0y000000&h=37"></script>
+                             <!--可信网站LOGO安装结束-->
+                          </div>
+		  </div>
+                  <div class="kexin_box">
+
+                        <div>
+                              <!--部署CFCA 站点认证开始-->
+                               <a target="_blank" href="https://evwebverify.cfca.com.cn/WebVerify/webVerifyServlet?domain=www.psbc.com" ><img src="https://www.psbc.com/cn/images/zdrz.png" style="float:left;" upload="true" /></a>
+                             <!--部署CFCA 站点认证结束-->
+                          </div>
+		  </div>
+      </div>
+	  
+	  
+	</div> 
+
+    <div class="foot_r rl mar_t94"> 
+		<p><strong>客户投诉渠道</strong></p>
+		<p>营业网点：联系我行营业网点工作人员。</p>
+		<p>客服与投诉热线：致电客服与投诉热线95580或40088-95580。</p>
+		<p>官方网站：访问官方网站（https://www.psbc.com）点击右上角“在线客服”。</p>
+		<p>网上银行：访问官方网站（https://www.psbc.com）登录个人网上银行，点击右上角“在线客服”。</p>
+		<p>手机银行：打开手机银行APP（邮储银行），点击右上角小机器人，联系在线客服。</p>
+		<p>微信银行：关注“中国邮政储蓄银行”微信公众号，对话框输入“投诉”，根据提示联系在线客服。</p>
+                <p>总行通讯地址: 北京市西城区金融大街3号（邮编:100808）。</p>
+                  <p>电子邮箱：发送邮件至95580@psbc.com，邮件内容需包括联系电话、投诉事项、被投诉机构的名称。</p>
+		<p><a href="https://www.psbc.com/cn/common/xfzqybhzl/khtszn/" target="_self">点击查看投诉处理流程</a></p>
+
+	</div>
+
+  </div>
+</div>
+
+<div id="mask" class="pcNone"></div>
+
+<!-- 右侧固定导航 开始 -->
+<div class="rpfx">
+  <ul>
+    <li class="kf">
+      <a href="https://95580.psbc.com:9098/psbc_webchat/main" target="_blank" ignoreapd="true"  class="zxkfl">在线客服</a>
+    </li>
+     <!-- <li class="ltk">
+      <a href="">用户反馈</a>
+    </li>-->
+    <li class="dt">
+      <a href="https://www.psbc.com/cn/common/fwwd/" target="_blank">服务网点</a>
+    </li>
+     <!--<li class="ds">
+      <a href="">折线</a>
+    </li>-->
+  </ul>
+</div>
+<!-- 右侧固定导航 结束 -->
+
+<!-- 右侧固定二维码 开始 -->
+  <style>
+      .rverc .wxvCode .title ,
+      .rverc .wxvCode img {
+          display: none;
+      }
+      .lword {
+          width: 30px;
+          text-align: center;
+          padding-top: 17px;
+      }
+      .lword.wxgghf {
+          padding-top: 32px;
+      }
+      .rvercxyk  .lword.wxgghf{
+        padding-top: 17px;
+      }
+  </style>
+<div class="rverc mobile_none ">
+    <div class="wxvCode yc_sjyh">
+      <div class="lword">
+          手机银行下载
+      </div>
+    <div class="title">
+      <p style="margin: 0px 8px 3px;">手机银行APP下载</p>
+    </div>
+    <img src="/cn/images/psbc_base_ewmApp_07_fc.png" />
+  </div>
+
+  
+  <div class="wxvCode yc_qyyh" style="display:none">
+      <div class="lword">
+          企业银行下载
+      </div>
+    <div class="title">
+      <p style="margin: 0px 8px 3px;">企业银行APP下载</p>
+    </div>
+	<img src="/cn/images/psbc_base_ewmApp_ycqyyh.jpg" />
+  </div>
+
+  <div class="wxvCode apxz">
+      <div class="lword wxgghf">
+          微信公众号
+      </div>
+    <div class="title">
+      <p>邮储银行微信公众号</p>
+    </div>
+    <img src="/cn/images/psbc_base_ewmWx_09.png" />
+
+  </div>
+  <script>
+     // 右侧固定导航
+     $('.rverc').mouseenter(function () {
+      $(this).find('.wxvCode .lword').hide()
+       $(this).find('.wxvCode .title').show()
+       $(this).find('.wxvCode img').css({'display':'block'})
+      $(this).stop().animate({
+        'right': '0'
+      })
+    })
+  
+    $('.rverc').mouseleave(function () {
+      $(this).stop().animate({
+        'right': '-66px'
+      })
+      $(this).find('.wxvCode .lword').show()
+      $(this).find('.wxvCode .title').hide()
+       $(this).find('.wxvCode img').hide()
+    })
+
+$(function(){
+        $("#ghb").click(function(){
+            setCookie("old",1,1);
+            setCookie("WzaToolCookie",true,1)
+            //console.log(getCookie("old"));
+            location.reload()
+        })
+        $("#bzb_btn").click(function(){
+            setCookie("old",0,1);
+            setCookie("WzaToolCookie",false,1)
+            //console.log(getCookie("old"));
+            location.reload();
+
+        })
+    })
+  </script>
+<script id="_trs_ta_js" src="https://s.psbc.com/c/js/ta.js?mpid=2" async="async" defer="defer"></script>
+</div>
+<div class="rverc mobile_none rvercxyk " style="display: none;">
+
+  <div class="wxvCode">
+      <div class="lword">
+          信用卡小程序
+
+      </div>
+    <div class="title">
+      <p style="margin: 0px 8px 3px;">信用卡微信小程序</p>
+    </div>
+    <img src="/cn/include/include_footer/material/psbc_base_xykxcx2026.png" />
+  </div>
+  <div class="wxvCode apxz">
+      <div class="lword wxgghf">
+          信用卡公众号
+      </div>
+    <div class="title">
+      <p>信用卡微信公众号</p>
+    </div>
+    <img src="/cn/images/psbc_base_wechat2021.png" />
+  </div>
+  <script>
+     // 右侧固定导航
+     $('.rverc').mouseenter(function () {
+      $(this).find('.wxvCode .lword').hide()
+       $(this).find('.wxvCode .title').show()
+       $(this).find('.wxvCode img').css({'display':'block'})
+      $(this).stop().animate({
+        'right': '0'
+      })
+    })
+  
+    $('.rverc').mouseleave(function () {
+      $(this).stop().animate({
+        'right': '-66px'
+      })
+      $(this).find('.wxvCode .lword').show()
+      $(this).find('.wxvCode .title').hide()
+       $(this).find('.wxvCode img').hide()
+    })
+	
+	//去掉理财公告可编辑属性
+	$('[align]').each(function(){
+		$(this).removeAttr('contenteditable');
+    });
+
+//公司服务栏目显示公司服务的二维码  其余栏目还是显示原来的
+//window.onload=function(){
+  
+$(function () {
+  function nav_nav(){
+    var src=window.location.pathname;
+    if(src.indexOf("gsfw")!==-1){
+
+      //$('.footer_ewm .qyyh').css({'display':'block'});
+      //$('.footer_ewm .sjyh').css({'display':'none'});
+
+     $('.yc_qyyh').css({'display':'block'});
+     $('.yc_sjyh').css({'display':'none'});
+
+      }else{
+
+
+      //$('.footer_ewm .qyyh').css({'display':'none'});
+      //$('.footer_ewm .sjyh').css({'display':'block'});
+
+      $('.yc_qyyh').css({'display':'none'});
+      $('.yc_sjyh').css({'display':'block'});
+    }
+  };
+  nav_nav();
+});
+//}
+
+
+
+  </script>
+</div>
+<div style="display: none;"><img src="/cn/images/psbc_hLogoMin_v2020.png" /></div>
+<!-- 右侧固定二维码 结束 -->
+
+
+<!-- 资管业务公告 如果是 外链和搜索过来的则弹窗  内部本网链接过来则不弹窗  开始-->
+<!-- 免责声明弹出框 开始 -->
+<style>
+.mzsmPopup2{
+  display:none;
+}
+</style>
+
+    <div class="mzsmPopup mzsmPopup2">
+        <div class="mzsmtck">
+            <div class="tckT clear">
+                <h3 class="fl">免责声明</h3>
+                <div class="closeBtn rl" ></div>
+            </div>
+            <div class="tckMain">
+                <img src="/cn/images/psbc_zgTmImg_v2020.png" />
+                <!--<img src="../../images/psbc_zgTmImg_v2020.png" alt="" />-->
+                <p>根据证监会《证券期货经营机构私募资产管理业务管理办法》规定，证券期货经营机构资产管理计划的合格投资者应为具备相应风险识别能力和承担能力，且符合家庭金融资产不低于500万元、金融净资产不低于300万元或最近三年本人年均收入不低于40万元的个人。您是否确认本人符合合格投资者的认定？</p>
+                <div class="btns clear">
+                    <div class="sure">确认</div>
+                    <div class="cancel">取消</div>
+                </div>
+            </div>
+
+        </div>
+    </div>
+    <!-- 免责声明弹出框 结束 -->
+ <script type="text/javascript">
+  $(function(){
+ //js判断来源的url是否是本站点过来的url
+
+              //跳转过来的地址
+               var referrerUrl=document.referrer;
+		//目前页面的地址
+		var localUrl = window.location.href.toString();
+		//localHostname 是网址名
+		var localHostname=window.location.hostname;
+		//这是 端口
+		var localPort = window.location.port;
+		//是http
+		var localProtocol=window.location.protocol;
+        //域名不带冒号
+		var domain= localProtocol+"//"+localHostname+""+localPort;
+		
+		//域名带冒号和端口
+		var domain2= localProtocol+"//"+localHostname+":"+localPort;
+		
+
+		 if(localUrl.indexOf(domain2)!==-1){
+			   //console.log('带冒号'+localUrl)
+			 
+				   //判断 跳转来的网址带冒号和端口与现在的网址比较 相等的话==0 不弹窗
+					if(referrerUrl !='' && referrerUrl.indexOf(domain2)==0 ){
+						//来自于本网站url
+						 $('.mzsmPopup2').hide()
+						 if(referrerUrl.indexOf("/common/search/")!==-1 && localUrl.indexOf("/zcgljh/zgywgg/")!==-1){
+							  //alert('如果是来自于本网站搜索页 则弹窗')
+							  $('.mzsmPopup2').show();
+							  // $('.mzsmPopup2').hide()
+							  
+							  
+							  $('.mzsmPopup2 .closeBtn').click(function(){
+									 window.close();
+								 })
+								 $('.mzsmPopup2 .cancel').click(function(){
+								   window.close();
+								 })
+								 $('.mzsmPopup .closeBtn').click(function(){
+									 window.close();
+								 })
+								 $('.mzsmPopup .cancel').click(function(){
+								   window.close();
+								 })
+							  
+							  
+							  }else{
+							   //alert('不是来自于本网站搜索页不弹窗')
+							   $('.mzsmPopup2').hide()
+							}
+							//如果跳转页是资管公告的栏目文章，则资管公告首页不弹窗
+							if(referrerUrl.indexOf("/zgywgg/")!==-1 && localUrl==domain2+'/cn/grfw/tzlc/zcgljh/zgywgg/'){
+								$('.mzsmPopup').hide()
+								$('.mzsmPopup2').hide()
+							}
+					}else{
+						//来自其他网站url  是资产管理计划栏目下的则弹窗
+						 if(localUrl.indexOf("/zcgljh/")!==-1){
+							$('.mzsmPopup2').show();
+						 }
+					}
+			 
+		 }else{
+			 //console.log('不带冒号'+localUrl)
+			   //判断 跳转来的网址不带冒号和端口与现在的网址比较 相等的话==0 不弹窗
+				if(referrerUrl !='' && referrerUrl.indexOf(domain)==0 ){
+					//来自于本网站url
+					 $('.mzsmPopup2').hide()
+					 if(referrerUrl.indexOf("/common/search/")!==-1 && localUrl.indexOf("/zcgljh/zgywgg/")!==-1){
+						  //alert('如果是来自于本网站搜索页 则弹窗')
+						  $('.mzsmPopup2').show();
+						  // $('.mzsmPopup2').hide()
+						  
+						      $('.mzsmPopup2 .closeBtn').click(function(){
+									 window.close();
+								 })
+								 $('.mzsmPopup2 .cancel').click(function(){
+								   window.close();
+								 })
+								 $('.mzsmPopup .closeBtn').click(function(){
+									 window.close();
+								 })
+								 $('.mzsmPopup .cancel').click(function(){
+								   window.close();
+								 })
+								 
+						  }else{
+						   //alert('不是来自于本网站搜索页不弹窗')
+						   $('.mzsmPopup2').hide()
+						}
+						//如果跳转页是资管公告的栏目文章，则资管公告首页不弹窗
+						if(referrerUrl.indexOf("/zgywgg/")!==-1 && localUrl==domain+'/cn/grfw/tzlc/zcgljh/zgywgg/'){
+							$('.mzsmPopup').hide()
+							$('.mzsmPopup2').hide()
+						}
+				}else{
+					//来自其他网站url  是资产管理计划栏目下的则弹窗
+					 if(localUrl.indexOf("/zcgljh/")!==-1){
+						$('.mzsmPopup2').show();
+					 }
+				}
+			 
+			 
+		 }
+		
+		
+               //弹窗按钮处理
+
+              if(referrerUrl =='' ){
+                    //alert('跳转地址为空时')
+                    $('.mzsmPopup2 .closeBtn').click(function(){
+                         window.close();
+                     })
+                     $('.mzsmPopup2 .cancel').click(function(){
+                       window.close();
+                     })
+                     $('.mzsmPopup .closeBtn').click(function(){
+                         window.close();
+                     })
+                     $('.mzsmPopup .cancel').click(function(){
+                       window.close();
+                     })
+               }
+
+               $('.mzsmPopup2 .closeBtn').click(function(){
+                window.history.go(-1)
+               })
+              $('.mzsmPopup2 .cancel').click(function(){
+                window.history.go(-1)
+              })
+              $('.mzsmPopup2 .sure').click(function(){
+                $('.mzsmPopup2').hide()
+              })
+			  
+			 //判断如果弹窗了
+			  if($('.mzsmPopup2').is(':visible')){
+				   var isPC = IsPC(); //获取是否为PC端
+					if (isPC) {
+						//如果是PC端加载PC的弹窗样式
+						$(".mobileStyle").remove();
+						//dynamicLoadCss("../../images/psbc03_pc_v2020.css")
+						dynamicLoadCss("https://www.psbc.com/cn/images/psbc03_pc_v2020.css")
+					} else {
+						//如果是移动端加载移动端的的弹窗样式
+						$(".stylefile").remove();
+						//dynamicLoadCss("../../images/psbc03_mobile_v2020.css")
+						dynamicLoadCss("https://www.psbc.com/cn/images/psbc03_mobile_v2020.css")
+					}
+					
+			  }
+			  
+
+
+})
+    </script>
+<!-- 资管业务公告 如果是 外链和搜索过来的则弹窗  内部本网链接过来则不弹窗  结束-->
+
+<!--微信分享图功能 写在公共底部 开始-->
+<script src="/cn/images/yc-wxshare-v8.js"></script>
+<script src="/cn/images/yc-jweixin-1.6.0.js"></script>
+
+<div class="share-title" style="display:none">
+邮储银行
+</div>
+<div class="share-substr" style="display:none">
+邮储银行概述。
+</div>
+<img class="share-img" style="display:none" src="" width="300" height="300" />
+<!-- 这个图片地址必须为空-->
+
+<script>
+$(function () {
+
+
+//获取 title 并赋值
+  var bt=$('title').text();
+  //alert(bt)
+  $('.share-title').text(bt);
+  var bt2=$('.share-title').text();
+  //alert(bt2)
+  //获取 description 并赋值
+  var  description_nr = $("*[name='description']").attr("content");
+  //alert(description_nr)
+  //如果 自定义的.share-substr2 有值显示自定义 否则 显示默认描述description_nr的内容
+  if($(".share-substr2").text()!=""){
+       $('.share-substr').text($(".share-substr2").text());
+  }else{
+     $('.share-substr').text(description_nr);
+  }
+  
+  var description_nr2=$('.share-substr').text();
+  
+  //alert(description_nr2)
+
+  //如需修改统一的图片功能  在要替换分享的图标页面增加 <img class="share-img2" style="display:none" src="https://www.psbc.com/cn/images/logo4share33333.jpg" width="300" height="300" />
+  //如需替换公共的图片 可在单个专题页面添加这个图片会替换公共的图片  无需替换图片需要src=""为空,如需替换图片可在src=" "写图片的地址，就会替换了默认的图标了
+  var  fx_img_url = $(".share-img").attr("src");
+  var  fxty_img_url = $(".share-img2").attr("src");
+  //alert($(".share-img").attr("src"));
+  
+  if($(".share-img2").attr("src")!=""){
+      $(".share-img").attr("src",fxty_img_url);
+	  //alert($(".share-img").attr("src"));
+  }else{
+     $(".share-img").attr("src",fx_img_url);
+  }
+  
+  var img_url=$(".share-img").attr("src");;
+  
+  //alert(img_url)
+
+	if (wxShareInit) {
+          return true;
+		wxShareInit({
+		title: bt2,
+        desc: description_nr2,
+        link: window.location.href,
+	       // imgUrl: ''   //如果图片链接为空则显示默认邮储标
+           //imgUrl: 'https://www.psbc.com/cn/common/xfzqybhzl/jrzsxc/material/wxfx_jrzsxc.jpg' 
+			 imgUrl: img_url  
+			   
+			})
+			}
+			
+			
+        })
+
+
+</script>
+<!--微信分享图功能 写在公共底部 结束-->
+	<style>
+		.tableCplx1,
+		.tableCplx2,
+		.tableJzx,
+		.tableHbx,
+		.tableYqx {
+			display: none;
+		}
+
+		.fdqB .yieldRate {
+			font-size: 24px;
+		}
+	</style>
+	<!-- footer end -->
+	<script src="../../../../images/psbc_jquery-ui_v2020.js"></script>
+	<script src="../../../../images/psbc_datepicker-zh-CN.js"></script>
+	<script type="text/javascript" src="../../../../images/jquery.SuperSlide.2.1.1.js"></script>
+	<script type="text/javascript" src="../../../../images/swiper.min_v2020.js"></script>
+	<script src="../../../../images/psbc_echarts_v2020.js"></script>
+	<script src="../../../../images/swiper.min_v2020.js"></script>
+	<script type="text/javascript" src="/cn/images/My97DatePicker03_v2020/WdatePicker.js"></script>
+
+	<script src="../../../../images/es5-shim.min.js"></script>
+	<script src="../../../../images/es5-sham.min.js"></script>
+	<script src="../../../../images/json3.min.js"></script>
+
+	<!--<script src="../../../../images/template-web.js"></script>-->
+	<!--<script src="../../../../images/financeFilter.js"></script>-->
+	<!--<script src="../../../../images/financeFilter_cs.js"></script>-->
+	<script type="text/javascript" src="../../../../images/knockout-3.1.0.js"></script>
+	<script>
+		var FinanceSection = function () {
+			//网银购买链接
+			var netBankUrl = "https://pbank.psbc.com";
+			//手机银行购买链接
+			var phoneBankUrl = 'psbc://mainpage:/page/fund/fund_market/fundMarket.html?FUNC_CODE=';
+			//查询接口
+			var queryUrl = settings.serviceurl + '/portal/PsbcService/finquerytwo/';
+			//对比接口
+			var compareUrl = settings.serviceurl + '/portal/PsbcService/fincompare/';
+			//对比页面地址
+			var comparePage = '/cn/grfw/tzlc/lc/cpdb/index.html';
+
+			var globalpageCount = 0;
+			var queryParm = {
+				'currency': '',
+				'deadline': '',
+				'netproduct': '',
+				'risklevel': '',
+				'entruststartamt': '',
+				'buystatus': '',
+				'product_status': '',
+				'zhongyouflag': '',
+				'bankflag': '',
+				'investor_nature': '',
+				'order': '',
+				'finkeyword': '',
+				'pageNum': '1'
+			};
+			var currencyArr = [];/*币种*/
+			var deadlineArr = [];/*期限*/
+			var netproductArr = [];/*产品类型*/
+			var risklevelArr = [];/*风险等级*/
+			var entruststartamtArr = [];/*起购金额*/
+			var buystatusArr = [];/*购买标识*/
+			var productstatusArr = [];/*产品状态*/
+			var zhongyouflagArr = [];/*中邮理财标识*/
+			var bankflagArr = [];/*其他银行标识*/
+			var investornatureArr = [];/*投资性质*/
+			var prodseriesArr = [];/*产品体系*/
+			//请求数据
+			function finqueryCtl(url, parm) {
+				$.getJSON(url + '?callback=?', parm, function (res, stat) {
+					if (res.retCodeEnum == 'RET_CODE_ENUM_000') {
+						//处理结果
+						finqueryServ(url, res);
+					}
+				});
+			}
+
+			//处理数据
+			function finqueryServ(url, res) {
+				finCollection.Resultlist(res.resultList);
+				if (typeof (res.pageCount) != undefined) {
+					globalpageCount = res.pageCount;
+					getPages(res.curpage, globalpageCount);
+				}
+				//某一产品想不展示净值，输入标题即可显示-  
+				/*$('.fsqTitle a').each(function(){
+					  if($(this).text()=='信银邮储日开2-募集开始'){
+						$(this).parent().parent().parent().find('.yieldRate').css({"border":"1px solid #333","display": "none"});
+						$(this).parent().parent().parent().find('.yieldRate').parent().append('<div class="yieldRate fdqbSatmT">-</div>');
+					 }
+				 });*/
+
+
+
+				//新增净值产品业绩比较基准概述 点击弹出全部内容
+				$(".yjbjjjtc dl dt i").click(function (e) {
+					$(".yjbjjjtc dl dd").css({ 'display': 'none', });
+					$(this).parent().parent().parent().find('dd').css({ 'display': 'block', })
+					e.stopPropagation();
+					return false;
+				})
+
+				//点击业绩比较基准概述的关闭按钮 关闭全部或当前
+				$(".yjbjjjtc dl dd a").click(function (e) {
+					//关闭全部
+					$(".yjbjjjtc dl dd").css({ 'display': 'none', });
+					//关闭当前
+					//$(this).parent().parent().parent().find('dd').css({'display':'none',});
+					e.stopPropagation();
+					return false;
+				})
+
+
+				//产品类型
+				processWTF();
+				//申赎规则
+				proSFRULE();
+				//风险等级
+				processRisk();
+				//起购金额
+				proSTARTAMT();
+				//募集期
+				proRaise();
+				//购买判断
+				proBuyButton();
+				//对比
+				processCompare();
+				//专属标识
+				getZSBS();
+				//业绩比较基准描述
+				perbenmark_desc();
+			}
+
+			function preSearch() {
+
+				currencyArr.length = 0;
+				deadlineArr.length = 0;
+				netproductArr.length = 0;
+				risklevelArr.length = 0;
+				entruststartamtArr.length = 0;
+				buystatusArr.length = 0;
+				productstatusArr.length = 0;
+				zhongyouflagArr.length = 0;
+				bankflagArr.length = 0;
+				investornatureArr.length = 0;
+				prodseriesArr.length = 0;
+
+				$('#currency li').each(function () {
+					if ($(this).hasClass('active2')) {
+						return true;
+					}
+					if ($(this).hasClass('active')) {
+						var obj = $(this).attr('data-item') || '';
+						if (obj.length > 0) {
+							currencyArr.push(obj);
+						}
+					}
+				});
+				$('#deadline li').each(function () {
+					if ($(this).hasClass('active2')) {
+						return true;
+					}
+					if ($(this).hasClass('active')) {
+						var obj = $(this).attr('data-item') || '';
+						if (obj.length > 0) {
+							deadlineArr.push(obj);
+						}
+					}
+				});
+				$('#netproduct li').each(function () {
+					if ($(this).hasClass('active2')) {
+						return true;
+					}
+					if ($(this).hasClass('active')) {
+						var obj = $(this).attr('data-item') || '';
+						if (obj.length > 0) {
+							netproductArr.push(obj);
+						}
+					}
+				});
+				$('#risklevel li').each(function () {
+					if ($(this).hasClass('active2')) {
+						return true;
+					}
+					if ($(this).hasClass('active')) {
+						var obj = $(this).attr('data-item') || '';
+						if (obj.length > 0) {
+							risklevelArr.push(obj);
+						}
+					}
+				});
+				$('#entruststartamt li').each(function () {
+					if ($(this).hasClass('active2')) {
+						return true;
+					}
+					if ($(this).hasClass('active')) {
+						var obj = $(this).attr('data-item') || '';
+						if (obj.length > 0) {
+							entruststartamtArr.push(obj);
+						}
+					}
+				});
+				$('[buystatus]').each(function () {
+					if ($(this).hasClass('active2')) {
+						return true;
+					}
+					if ($(this).hasClass('active')) {
+						var obj = $(this).attr('buystatus') || '';
+						if (obj.length > 0) {
+							buystatusArr.push(obj);
+						}
+					}
+				});
+				$('[productstatus]').each(function () {
+					if ($(this).hasClass('active2')) {
+						return true;
+					}
+					if ($(this).hasClass('active')) {
+						var obj = $(this).attr('productstatus') || '';
+						if (obj.length > 0) {
+							productstatusArr.push(obj);
+						}
+					}
+				});
+				$('[bankflag]').each(function () {
+					if ($(this).hasClass('active2')) {
+						return true;
+					}
+					if ($(this).hasClass('active')) {
+						var obj = $(this).attr('bankflag') || '';
+						if (obj.length > 0) {
+							bankflagArr.push(obj);
+						}
+					}
+				});
+				$('[zhongyouflag]').each(function () {
+					if ($(this).hasClass('active2')) {
+						return true;
+					}
+					if ($(this).hasClass('active')) {
+						var obj = $(this).attr('zhongyouflag') || '';
+						if (obj.length > 0) {
+							zhongyouflagArr.push(obj);
+						}
+					}
+				});
+				$('[prodseries]').each(function () {
+					if ($(this).hasClass('active2')) {
+						return true;
+					}
+					if ($(this).hasClass('active')) {
+						var obj = $(this).attr('prodseries') || '';
+						if (obj.length > 0) {
+							prodseriesArr.push(obj);
+						}
+					}
+				});
+				$('[investornature]').each(function () {
+					if ($(this).hasClass('active2')) {
+						return true;
+					}
+					if ($(this).hasClass('active')) {
+						var obj = $(this).attr('investornature') || '';
+						if (obj.length > 0) {
+							investornatureArr.push(obj);
+						}
+					}
+				});
+
+				queryParm.currency = currencyArr.join(',');
+				queryParm.deadline = deadlineArr.join(',');
+				queryParm.netproduct = netproductArr.join(',');
+				queryParm.risklevel = risklevelArr.join(',');
+				queryParm.entruststartamt = entruststartamtArr.join(',');
+				queryParm.buystatus = buystatusArr.join(',');
+				queryParm.product_status = productstatusArr.join(',');
+				queryParm.zhongyouflag = zhongyouflagArr.join(',');
+				queryParm.bankflag = bankflagArr.join(',');
+				queryParm.investor_nature = investornatureArr.join(',');
+				queryParm.order = 'PERBENMARK_UP';
+				queryParm.finkeyword = prodseriesArr.join(',');
+				if ((prodseriesArr || '').length > 0) {
+					$('#pc_finkeyword').val('');
+				}
+				if (queryParm.bankflag !== '' && queryParm.zhongyouflag === '') {
+					queryParm.zhongyouflag = 0
+					queryParm.finkeyword = ''
+				}
+				queryParm.pageNum = '1';
+			}
+
+
+			function processWTF() {
+				$('[WTFVAL]').each(function () {
+					var CURTYPEPRODUCT = $(this).attr('CURTYPEPRODUCT') || '';
+					var NET_EXPECT_PRODUCT = $(this).attr('NET_EXPECT_PRODUCT') || '';
+					var LATEST_NET = $(this).attr('LATEST_NET') || '';
+					var PERBENMARK = $(this).attr('PERBENMARK') || '';
+					var SEVEN_ANNUAL_YIELD = $(this).attr('SEVEN_ANNUAL_YIELD') || '';
+					var EXPTYIELD_LOW = $(this).attr('EXPTYIELD_LOW') || '';
+					var EXPTYIELD = $(this).attr('EXPTYIELD') || '';
+					var text = '';
+					if (CURTYPEPRODUCT == '1') {
+						//货币产品,展示七日年化收益、业绩基准、或详见说明书
+						text = SEVEN_ANNUAL_YIELD.length == 0 ? PERBENMARK.length == 0 ? '详见说明书' : subStr2(PERBENMARK * 100) + '%' : subStr2(SEVEN_ANNUAL_YIELD * 100) + '%';
+						//隐藏业绩比较基准概述
+						//$(".yjbjjjtc").parent().parent().hide();
+						//$(this).parent().parent().find(".yjbjjjtc").parent().parent().hide();
+					} else if ((NET_EXPECT_PRODUCT == '02') || (NET_EXPECT_PRODUCT == '04')) {
+						//预期型产品，展示预期年化收益、或详见说明书
+						text = EXPTYIELD.length == 0 ? '详见说明书' : subStr2(EXPTYIELD * 100) + '%';
+						//隐藏业绩比较基准概述
+						//$(".yjbjjjtc").parent().parent().hide();
+						$(this).parent().parent().find(".yjbjjjtc").parent().parent().hide();
+					} else if ((NET_EXPECT_PRODUCT == '01') || (NET_EXPECT_PRODUCT == '03')) {
+						//净值型产品，展示净值或业绩比较基准
+						text = LATEST_NET.length == 0 ? subStr2(PERBENMARK * 100) + '%' : subStr4(LATEST_NET);
+						//显示业绩比较基准概述
+						//$(".yjbjjjtc").parent().parent().show();
+						$(this).parent().parent().find(".yjbjjjtc").parent().parent().show();
+					}
+					$(this).text(text);
+				});
+				$('[WTFKEY]').each(function () {
+					var CURTYPEPRODUCT = $(this).attr('CURTYPEPRODUCT') || '';
+					var NET_EXPECT_PRODUCT = $(this).attr('NET_EXPECT_PRODUCT') || '';
+					var LATEST_NET = $(this).attr('LATEST_NET') || '';
+					var SEVEN_ANNUAL_YIELD = $(this).attr('SEVEN_ANNUAL_YIELD') || '';
+					var text = '';
+					if (CURTYPEPRODUCT == '1') {
+						//货币产品,展示七日年化收益、业绩比较基准、或详见说明书
+						text = SEVEN_ANNUAL_YIELD.length == 0 ? '业绩比较基准' : '七日年化收益率';
+						//隐藏业绩比较基准概述
+						//$(".yjbjjjtc").parent().parent().hide();
+						//$(this).parent().parent().find(".yjbjjjtc").parent().parent().hide();
+					} else if ((NET_EXPECT_PRODUCT == '02') || (NET_EXPECT_PRODUCT == '04')) {
+						//预期型产品，展示预期年化收益、或详见说明书
+						text = '预期年化收益率';
+						//隐藏业绩比较基准概述
+						//$(".yjbjjjtc").parent().parent().hide();
+						$(this).parent().parent().find(".yjbjjjtc").parent().parent().hide();
+					} else if ((NET_EXPECT_PRODUCT == '01') || (NET_EXPECT_PRODUCT == '03')) {
+						//净值型产品，展示净值或业绩比较基准
+						text = LATEST_NET.length == 0 ? '业绩比较基准' : '当前净值';
+						//显示业绩比较基准概述
+						//$(".yjbjjjtc").parent().parent().show();
+						$(this).parent().parent().find(".yjbjjjtc").parent().parent().show();
+					}
+					$(this).text(text);
+					if (text == '业绩比较基准') {
+						$(this).attr("style", "color:#000;");
+						$(this).parent().parent().children().eq(0).children().attr("style", "color:#000;font-size:14px;");
+					}
+
+				});
+				$('[WTFDESC]').each(function () {
+					var CURTYPEPRODUCT = $(this).attr('CURTYPEPRODUCT') || '';
+					var NET_EXPECT_PRODUCT = $(this).attr('NET_EXPECT_PRODUCT') || '';
+					var LATEST_NET = $(this).attr('LATEST_NET') || '';
+					var SEVEN_ANNUAL_YIELD = $(this).attr('SEVEN_ANNUAL_YIELD') || '';
+					var text = '';
+					if (CURTYPEPRODUCT == '1') {
+						//货币产品,展示七日年化收益、业绩比较基准、或详见说明书
+						text = SEVEN_ANNUAL_YIELD.length == 0 ? '业绩比较基准' : '七日年化收益率';
+						//隐藏业绩比较基准概述
+						//$(".yjbjjjtc").parent().parent().hide();
+						//$(this).parent().parent().find(".yjbjjjtc").parent().parent().hide();
+					} else if ((NET_EXPECT_PRODUCT == '02') || (NET_EXPECT_PRODUCT == '04')) {
+						//预期型产品，展示预期年化收益、或详见说明书
+						text = '预期年化收益率';
+						//隐藏业绩比较基准概述
+						//$(".yjbjjjtc").parent().parent().hide();
+						$(this).parent().parent().find(".yjbjjjtc").parent().parent().hide();
+					} else if ((NET_EXPECT_PRODUCT == '01') || (NET_EXPECT_PRODUCT == '03')) {
+						//净值型产品，展示净值或业绩比较基准
+						text = LATEST_NET.length == 0 ? '业绩比较基准' : '当前净值';
+						//显示业绩比较基准概述
+						//$(".yjbjjjtc").parent().parent().show();
+						$(this).parent().parent().find(".yjbjjjtc").parent().parent().show();
+					}
+					if (text == '业绩比较基准') {
+						$(this).attr("style", "color:#000;font-size:14px;width:80%;line-height:120%;").parent('.fdqbRate').show();
+					}
+				});
+			}
+			//申赎规则
+			function proSFRULE() {
+				$('[SFRULE]').each(function () {
+					var SFRULE = $(this).attr('SFRULE') || '';
+					var html = SFRULE.length == 0 ? '-' : SFRULE;
+					$(this).text(html);
+				});
+			}
+
+			//业绩比较基准描述
+			function perbenmark_desc() {
+				$('[perbenmark_desc]').each(function () {
+					var perbenmark_desc = $(this).attr('perbenmark_desc') || '';
+					var html = perbenmark_desc.length == 0 ? '业绩比较基准综合投资范围、策略和市场环境等测算' : perbenmark_desc;
+					$(this).text(html);
+				});
+			}
+
+			//风险等级
+			function processRisk() {
+				$('[RISKLEVEL]').each(function () {
+					var risk = $(this).attr('RISKLEVEL');
+					var html = ''
+					switch (risk) {
+
+						case '1':
+							html = '<img src="../../../../images/fxdjIcon1.png" />PR1低风险'; break;
+						case '2':
+							html = '<img src="../../../../images/fxdjIcon2.png" />PR2中低风险'; break;
+						case '3':
+							html = '<img src="../../../../images/fxdjIcon3.png" />PR3中风险'; break;
+						case '4':
+							html = '<img src="../../../../images/fxdjIcon4.png" />PR4中高风险'; break;
+						case '5':
+							html = '<img src="../../../../images/fxdjIcon5.png" />PR5高风险'; break;
+					}
+					$(this).html(html);
+				});
+			}
+			//起购金额
+			function proSTARTAMT() {
+				$('[ENTRUSTSTARTAMT]').each(function () {
+					var startamt = $(this).attr('ENTRUSTSTARTAMT');
+					// 币种
+					var bz = $(this).attr('CURRENCY');
+					// var bz = $(this).attr('CURTYPEPRODUCT');
+					startamt = bz == '156' ? ((typeof (startamt) == "undefined" || startamt.length == 0) ? '-' : startamt > 10000 ? parseInt(startamt / 10000) + '万元' : startamt + '元') : ((typeof (startamt) == "undefined" || startamt.length == 0) ? '-' : startamt > 10000 ? parseInt(startamt / 10000) + '万美元' : startamt + '美元');
+					// startamt = (typeof(startamt)=="undefined"||startamt.length==0)?'-':startamt>10000?parseInt(startamt/10000)+'万':startamt+'元';
+					startamt = '<span>起购金额：</span>' + startamt;
+					$(this).html(startamt);
+					// if (bz != '0') {
+					//     console.log($(this));
+					//     // $('.buyNow').css("display","none")
+					//     // $('.buyNowtext').css("display","block")
+					// }
+				});
+			}
+			//募集期
+			function proRaise() {
+				$('[SUBSCRIPTION_DATE]').each(function () {
+					var SUBSCRIPTION_DATE = $(this).attr('SUBSCRIPTION_DATE') || '';
+					var CLOSING_DATE = $(this).attr('CLOSING_DATE') || '';
+					var html = '-';
+					if ((SUBSCRIPTION_DATE.length != 0) || (CLOSING_DATE.length != 0)) {
+						html = dateFormat(SUBSCRIPTION_DATE) + '&nbsp;&nbsp;至&nbsp;&nbsp;' + dateFormat(CLOSING_DATE);
+					}
+					html = '<span>募集期：</span>' + html;
+					$(this).html(html);
+				});
+			}
+			//日期格式化
+			function dateFormat(val) {
+				val = val.split(' ')[0].split('.')
+				var realDate = val[0] + '-' + val[1] + '-' + val[2]
+				var d = new Date(Date.parse(realDate.replace(/-/g, '/')))
+				var ye = d.getFullYear()
+				var mon = (d.getMonth() + 1) < 10 ? ('0' + Number(d.getMonth() + 1)) : (d.getMonth() + 1)
+				var da = d.getDate() < 10 ? ('0' + d.getDate()) : d.getDate()
+				var fullDate = ye + '.' + mon + '.' + da
+				return fullDate;
+			}
+			//购买按钮
+			function proBuyButton() {
+				$('[BUYSTATUS]').each(function () {
+					var BUYSTATUS = $(this).attr('BUYSTATUS');
+					var SECODE = $(this).attr('SECODE');
+					var NET_EXPECT_PRODUCT = $(this).attr('NET_EXPECT_PRODUCT');
+					var CURTYPEPRODUCT = $(this).attr('CURTYPEPRODUCT');
+					var bz = $(this).attr('CURRENCY');
+					if (bz == '156') {
+						if ($(this).hasClass('buyNow')) {
+							var html = '<a class="mobileNone" data-bind="attr:{SECODE:SECODE,NET_EXPECT_PRODUCT:NET_EXPECT_PRODUCT}"  class="fdqBIbtn">立即购买</a><a class="pcNone" class="fdqBIbtn" >立即购买</a>'
+							$(this).html(html);
+						}
+						if (BUYSTATUS == '0') {
+							if ($(this).hasClass('buyNow')) {
+								$(this).addClass('buyNow0');
+							} else if ($(this).hasClass('pcNone')) {
+								$(this).attr('href', phoneBankUrl + SECODE).addClass('fdqBIbtn0');
+							} else {
+								$(this).addClass('fdqBIbtn0').attr('href', netBankUrl + '/perbank/?financialCode^=' + SECODE + '&financialType=' + NET_EXPECT_PRODUCT + '&finaIsCoin=' + CURTYPEPRODUCT);
+							}
+						} else if (BUYSTATUS == '1') {
+							if ($(this).hasClass('buyNow')) {
+								$(this).addClass('buyNow1');
+							} else if ($(this).hasClass('pcNone')) {
+								$(this).attr('href', phoneBankUrl + SECODE).addClass('fdqBIbtn1');
+							} else {
+								$(this).addClass('fdqBIbtn1').attr('href', netBankUrl + '/perbank/?financialCode^=' + SECODE + '&financialType=' + NET_EXPECT_PRODUCT + '&finaIsCoin=' + CURTYPEPRODUCT);
+							}
+						}
+					} else {
+						if ($(this).hasClass('buyNow')) {
+							$(this).css({
+								"width": "165px",
+								"background": "none"
+							})
+							if (BUYSTATUS == '0') {
+								var html = '<div style="line-height: 30px;font-size: 12px;color: #353535;margin-top: 14px;">不可售外币理财不可购买</div>'
+							}else{
+								var html = '<div style="line-height: 30px;font-size: 12px;color: #353535;margin-top: 14px;">外币理财仅支持手机银行购买</div>'
+							}
+							$(this).html(html);
+						}
+						console.log($(this));
+					}
+
+
+				});
+			}
+			
+			
+			//专属标识
+			function getZSBS() {
+				var finSetting = { "wtjg": [{ "code": "000", "name": "邮银理财" }, { "code": "001", "name": "交银理财" }, { "code": "002", "name": "光大理财" }, { "code": "003", "name": "工银理财" }, { "code": "004", "name": "招银理财" }, { "code": "006", "name": "农银理财" }, { "code": "007", "name": "兴银理财" }, { "code": "008", "name": "信银理财" }, { "code": "010", "name": "平安理财" }, { "code": "011", "name": "中银理财" }, { "code": "012", "name": "华夏理财" },{ "code": "014", "name": "浦银理财" },{ "code": "013", "name": "北银理财" },{ "code": "015", "name": "苏银理财" },{ "code": "005", "name": "建信理财" },{ "code": "009", "name": "民生理财" }
+] };
+				$('[zsbs]').each(function () {
+					var zylc_bs = $(this).attr('zsbs').trim().substring(8, 9);
+					var qtlc_bs = $(this).attr('zsbs').trim().substring(10, 13);
+					var banks = finSetting.wtjg;
+					if (zylc_bs == '1') {//中邮理财
+						$(this).html('中邮理财');
+					} else if (qtlc_bs == '000') {//邮银理财
+						$(this).hide();
+					} else {//其他银行理财
+						for (var i in banks) {
+							if (qtlc_bs == banks[i].code) {
+								$(this).html(banks[i].name);
+								break;
+							}
+						}
+					}
+				});
+			}
+
+			//添加对比
+			function processCompare() {
+				$('[compare]').each(function () {
+					var SECODE = $(this).attr('SECODE');
+					$(this).text(showCompareTxt(SECODE));
+					$(this).addClass(showCompareCls(SECODE));
+				});
+			}
+			function showCompareCls(val) {
+				var selectIndex = fundCodeList.indexOf(val)
+				return selectIndex >= 0 ? 'delCompe' : 'addCompe'
+			}
+
+			function showCompareTxt(val) {
+				var selectIndex = fundCodeList.indexOf(val)
+				return selectIndex >= 0 ? '- 移除对比' : '+ 添加对比'
+			}
+
+			//生成分页
+			function getPages(curpage, pageCount) {
+				var curpage = curpage;
+				var pageCount = pageCount;
+				if (pageCount == 0) pageCount = 1;
+				// 循环显示页码
+				var pages = ''
+				// 向前 
+				pages += '<a href="javascript:void(0);" class="pagelmore" onclick="FinanceSection.togo(' + (curpage - 1) + ');">&lt;</a>'
+
+				if (curpage <= 3) {
+					if (pageCount > 5) {
+						for (i = 1; i < 6; i++) {
+							pages += '<a href="javascript:void(0)" onclick="FinanceSection.togo(' + i + ');">' + i + '</a>'
+						}
+					} else {
+						for (i = 1; i <= pageCount; i++) {
+							pages += '<a href="javascript:void(0)" onclick="FinanceSection.togo(' + i + ');">' + i + '</a>'
+						}
+					}
+				} else if (curpage < pageCount - 2 && curpage > 3) {
+					for (i = curpage - 2; i < curpage + 3; i++) {
+						pages += '<a href="javascript:void(0)" onclick="FinanceSection.togo(' + i + ');">' + i + '</a>'
+					}
+				} else if (curpage <= pageCount && curpage > pageCount - 3) {
+					for (i = pageCount - 4; i <= pageCount; i++) {
+						pages += '<a href="javascript:void(0)" onclick="FinanceSection.togo(' + i + ');">' + i + '</a>'
+					}
+				}
+				// 向后 总页数 > 4
+
+				pages += '<a href="javascript:void(0);" class="pagegmore"  onclick="FinanceSection.togo(' + (curpage + 1) + ');">&gt;</a>'
+				pages += '<div class="clearMobile pcNone"></div>\
+            <div class="page_txt">共 <span>'+ pageCount + '</span> 页</div>\
+            <div class="page_txt">到第</div><input type="text" id="num" value="'+ curpage + '" />\
+            <div class="page_txt">页</div> <button onclick="FinanceSection.goPage();">确定</button>\
+            <div style="clear:both;"></div>'
+				$(".page_nr2").html(pages);
+
+				var pageas = $('.page_nr2 a')
+				for (var m = 0; m < pageas.length; m++) {
+					if ($(pageas[m]).text().trim() == curpage) {
+						$(pageas[m]).addClass('current')
+					}
+				}
+				if (curpage == 1) {
+					$('.pagelmore').hide();
+				} else {
+					$('.pagelmore').show();
+				}
+				if (curpage == pageCount) {
+					$('.pagegmore').hide();
+				} else {
+					$('.pagegmore').show();
+				}
+
+			}
+
+			// 产品代码数组(使用英文逗号分隔多个基金代码)
+			var fundCodeList = [];
+			// 添加对比
+			var index = 1;
+			$("#fundLists").on('click', '.addCompe', function () {
+				if (index > 3) return alert('最多只能对比三个！')
+				// 更改文字
+				$(this).addClass('delCompe').removeClass('addCompe').text('- 移除对比').attr('aria-label','- 移除对比');
+				var fundName = $(this).parents('li').find('.fsqTitle a').text();
+				var fundCode = $(this).parents('li').find('.fundCode').text().trim();
+				var fundStr = '<li id="' + fundCode + '">\
+			<span>\
+				'+ fundName + '\
+			</span>\
+			<div class="delCm"></div>\
+		</li>'
+				$("#fundProList").append(fundStr)
+				// 往数组中添加元素
+				fundCodeList.push(fundCode)
+				index++
+			})
+			// 删除对比
+			$("#fundProList").on('click', '.delCm', function () {
+				$(this).parents('li').remove()
+				// 查询到产品代码
+				var code = $(this).parents('li').attr('id')
+				$("#fundLists").find('#' + code).addClass('addCompe').removeClass('delCompe').text('+ 添加对比').attr('aria-label','+ 添加对比');
+				// 从数组中删除元素
+				var i;
+				for (var j = 0; j < fundCodeList.length; j++) {
+					if (code == fundCodeList[j]) {
+						i = j
+					}
+				}
+				fundCodeList.splice(i, 1)
+				index--;
+			})
+			$("#fundLists").on('click', '.delCompe', function () {
+				// 更改文字
+				$(this).addClass('addCompe').removeClass('delCompe').text('+ 添加对比').attr('aria-label','+ 添加对比');
+				// 通过基金名称找到对应的产品
+				var code = $(this).parents('li').find('.fundCode').text().trim();
+				$('#fundProList').find('#' + code).remove()
+				// 从数组中删除元素
+				var i
+				for (var j = 0; j < fundCodeList.length; j++) {
+					if (code == fundCodeList[j]) {
+						i = j;
+					}
+				}
+				fundCodeList.splice(i, 1);
+				index--;
+			})
+			// 比一比
+			$(".compareBtn").click(function () {
+				$.ajax({
+					type: 'get',
+					url: compareUrl,
+					data: {
+						fundlist: fundCodeList.toString()
+					},
+					dataType: "jsonp",
+					jsonp: "callback",
+					success: function (response) {
+						window.location.href = comparePage + "?codes=" + fundCodeList.toString();
+					},
+					error: function () {
+					}
+				});
+			})
+
+			function subStr2(val) {
+				return parseFloat(val).toFixed(2);
+			}
+			function subStr4(val) {
+				return parseFloat(val).toFixed(4);
+			}
+
+			var result = {
+				init: function () {
+
+					finCollection = {
+						Resultlist: ko.observableArray([])
+					};
+					myParentVM = {
+						finCollection: finCollection
+					};
+					ko.applyBindings(myParentVM);
+
+					finqueryCtl(queryUrl, queryParm);
+
+					$("#pc_searchbt").click(function () {
+						var keyword = $('#pc_finkeyword').val();
+						keyword = (keyword == '请输入产品代码和名称' ? "" : keyword);
+						queryParm.finkeyword = keyword;
+						queryParm.pageNum = '1';
+						finqueryCtl(queryUrl, queryParm);
+					});
+
+					//筛选
+					$("#fundFilter .filter-item li").click(function () {
+						//现在逻辑
+						$(this).toggleClass('active');
+						if ($(this).hasClass('active')) {
+							var row = $(this).attr('row') || '';
+							$('.active2').each(function () {
+								if ($(this).attr('row') == row) {
+									$(this).removeClass('active');
+								}
+							});
+						} else {
+							var actCount = 0
+							$(this).siblings().each(function () {
+								if ($(this).hasClass('active')) {
+									actCount++
+								}
+							})
+							if (actCount === 0) {
+								$(this).parent().children().eq(0).addClass('active')
+							}
+						}
+						setTimeout(function () {
+							//点击隐藏 产品体系
+							if ($('.cpglr .filter-item li').eq(2).hasClass('active') || $('.cpglr .filter-item li').eq(0).hasClass('active')) {
+								$('.cptx').css({ "display": "block" });
+							} else {
+								$('.cptx').css({ "display": "none" });
+							}
+							preSearch();
+							finqueryCtl(queryUrl, queryParm);
+						}
+							, 0);
+					});
+
+					$("#fundFilter .filter-item li.active2").click(function () {
+						$(this).addClass('active').siblings().removeClass('active')
+						//alert(111)
+					});
+
+					//增加排序
+					$(".fundSort").on('click', '.fs', function () {
+						if ($(this).hasClass('dactive') || $(this).hasClass('active')) return;
+						$(this).addClass('dactive').siblings().removeClass('active dactive');
+						order = $(this).attr('data-item') + '_DOWN';
+						queryParm.order = order;
+						finqueryCtl(queryUrl, queryParm);
+
+					})
+
+					//升序
+					$(".fundSort").on('click', '.dactive', function () {
+						$(this).removeClass('dactive').addClass('fs active').siblings().removeClass('dactive');
+						order = $(this).attr('data-item') + '_UP';
+						queryParm.order = order;
+						finqueryCtl(queryUrl, queryParm);
+					})
+					// 降序
+					$(".fundSort").on('click', '.active', function () {
+						$(this).removeClass('active').addClass('fs dactive').siblings().removeClass('active');
+						order = $(this).attr('data-item') + '_DOWN';
+						queryParm.order = order;
+						finqueryCtl(queryUrl, queryParm);
+					})
+				},
+
+				//跳转分页
+				togo: function (page) {
+					if (typeof (page) != 'number') {
+						return;
+					}
+					if (page < 1) {
+						page = 1;
+					} else if (page > globalpageCount) {
+						page = globalpageCount;
+					}
+					queryParm.pageNum = page;
+					finqueryCtl(queryUrl, queryParm);
+				},
+
+				goPage: function () {
+					FinanceSection.togo(parseInt($('#num').val()));
+				}
+
+			};
+			return result;
+
+		}();
+		$(function () { FinanceSection.init(); }); 
+	</script>
+
+</body>
+
+</html>

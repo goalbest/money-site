@@ -43,12 +43,9 @@ function httpsGetJson(fullUrl) {
   return new Promise((resolve, reject) => {
     const u = new URL(fullUrl);
     const req = https.request({
-      hostname: u.hostname,
-      port: 443,
+      hostname: u.hostname, port: 443,
       path: u.pathname + u.search,
-      method: 'GET',
-      headers: HEADERS,
-      agent: AGENT,
+      method: 'GET', headers: HEADERS, agent: AGENT,
     }, (res) => {
       let data = '';
       res.setEncoding('utf8');
@@ -78,13 +75,12 @@ function similarity(a, b) {
   return dp[m][n] / Math.max(m, n);
 }
 
-// ★ 搜索关键词策略：完整名优先
+// ★ 强化搜索策略：8 种候选关键词
 function buildSearchQueries(name) {
   const queries = [];
-  // 1. 完整产品名（最精准）
-  queries.push(name);
+  queries.push(name); // 完整名
 
-  // 2. 去掉银行前缀
+  // 去前缀
   let s = name;
   const prefixes = ['中邮理财', '邮储银行', '交银理财', '招银理财', '上银理财', '农银理财', '工银理财', '建信理财', '中银理财', '兴银理财', '浦银理财', '信银理财', '光大理财', '民生理财', '平安理财', '华夏理财', '广银理财'];
   for (const prefix of prefixes) {
@@ -95,15 +91,30 @@ function buildSearchQueries(name) {
   }
   if (s !== name) queries.push(s);
 
-  // 3. 去掉"最短持有X天"（保留产品号）
-  const stripped = s.replace(/最短持有\d+天/, '').replace(/\d+年/, '');
-  if (stripped !== s && stripped.length >= 5) queries.push(stripped);
+  // 去"最短持有X天"
+  const noDays = s.replace(/最短持有\d+天/, '');
+  if (noDays !== s && noDays.length >= 5) queries.push(noDays);
 
-  // 4. 提取核心数字标识（如"7天22号B"）
-  const numMatch = s.match(/(\d+天\d+号[A-Z]?)/);
-  if (numMatch) queries.push(numMatch[1]);
+  // 去"X天持有期"
+  const noHold = s.replace(/\d+天持有期/, '');
+  if (noHold !== s && noHold.length >= 5) queries.push(noHold);
 
-  return Array.from(new Set(queries.filter(q => q.length >= 4)));
+  // ★ 提取核心产品名（去掉所有修饰词）
+  // 例：灵活·鸿运最短持有7天22号B → 鸿运22号
+  const coreMatch = s.match(/·([^\d·]+)\d+号/);
+  if (coreMatch) {
+    queries.push(coreMatch[1] + s.match(/\d+号[A-Z]?/)?.[0]);
+  }
+
+  // ★ 提取前 5 个字
+  if (s.length > 5) queries.push(s.slice(0, 5));
+
+  // ★ 提取"数字+号+字母"（如 22号B）
+  const numMatch = s.match(/\d+号[A-Z]?/);
+  if (numMatch) queries.push(numMatch[0]);
+
+  // 去重、过滤太短的
+  return Array.from(new Set(queries.filter(q => q && q.length >= 3)));
 }
 
 async function searchPsbc(keywords) {
@@ -173,18 +184,16 @@ for (let i = 0; i < products.length; i++) {
   console.log(`\n[${i + 1}/${products.length}] ${p.name}`);
 
   const queries = buildSearchQueries(p.name);
-  console.log(`  搜索词：${queries.join(' | ')}`);
+  console.log(`  搜索词 (${queries.length} 个)：${queries.join(' | ')}`);
 
   let best = null;
   let bestScore = 0;
+  let matchedBy = null;
 
   for (const kw of queries) {
     try {
       const list = await searchPsbc(kw);
-      if (list.length === 0) {
-        console.log(`    [${kw}] 0 结果`);
-        continue;
-      }
+      if (list.length === 0) continue;
       console.log(`    [${kw}] ${list.length} 结果`);
 
       for (const item of list) {
@@ -192,20 +201,20 @@ for (let i = 0; i < products.length; i++) {
         if (score > bestScore) {
           bestScore = score;
           best = item;
+          matchedBy = kw;
         }
       }
 
-      // 高分就停
       if (bestScore >= 0.75) break;
-      await new Promise(r => setTimeout(r, 500));
+      await new Promise(r => setTimeout(r, 400));
     } catch (e) {
       console.log(`    [${kw}] 出错：${e.message}`);
     }
   }
 
-  if (best && bestScore >= 0.55) {
+  if (best && bestScore >= 0.5) {
     console.log(`  ✅ 匹配：${best.wp_name}`);
-    console.log(`     登记编码：${best.wp_registration_code} | 相似度 ${bestScore.toFixed(2)}`);
+    console.log(`     登记编码：${best.wp_registration_code} | 相似度 ${bestScore.toFixed(2)} | 搜索词 "${matchedBy}"`);
     const ok = await updateCode(p.id, best.wp_registration_code);
     if (ok) {
       results.matched.push({ name: p.name, code: best.wp_registration_code });
@@ -217,7 +226,7 @@ for (let i = 0; i < products.length; i++) {
     results.unmatched.push({ name: p.name, best: best?.wp_name });
   }
 
-  await new Promise(r => setTimeout(r, 800));
+  await new Promise(r => setTimeout(r, 500));
 }
 
 console.log(`\n═══════════════════════════════════`);
