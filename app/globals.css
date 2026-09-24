@@ -1,210 +1,522 @@
 @import "tailwindcss";
 
 @theme inline {
-  --font-sans: -apple-system, BlinkMacSystemFont, "Inter", "SF Pro Display",
-    "Segoe UI", "PingFang SC", "Hiragino Sans GB", sans-serif;
+  --font-sans: -apple-system, BlinkMacSystemFont, "SF Pro Display", "Inter",
+    "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
 }
 
 html, body {
   min-height: 100%;
-  background: #0a0524;
-  color: #ffffff;
+  background: #f5f6fa;
+  color: #0f172a;
   font-family: var(--font-sans);
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
-  letter-spacing: -0.01em;
+  letter-spacing: -0.011em;
 }
 
-/* ============ 背景：高饱和彩色光晕 ============ */
+/* 页面顶部一层极其淡的紫光，增加一点点温度 */
 body::before {
-  content: "";
-  position: fixed;
-  inset: 0;
-  z-index: -2;
-  pointer-events: none;
-  background:
-    radial-gradient(circle 500px at 10% -5%, rgba(139, 92, 246, 1), transparent 55%),
-    radial-gradient(circle 550px at 95% 5%, rgba(6, 182, 212, 0.95), transparent 60%),
-    radial-gradient(circle 600px at 100% 85%, rgba(236, 72, 153, 0.9), transparent 60%),
-    radial-gradient(circle 650px at -5% 85%, rgba(99, 102, 241, 0.95), transparent 60%),
-    radial-gradient(circle 500px at 50% 50%, rgba(168, 85, 247, 0.55), transparent 70%),
-    linear-gradient(135deg, #1e0b4d 0%, #0f1a55 45%, #2a0f4a 100%);
-}
-
-/* 细网格纹理 */
-body::after {
   content: "";
   position: fixed;
   inset: 0;
   z-index: -1;
   pointer-events: none;
-  background-image:
-    linear-gradient(rgba(255, 255, 255, 0.03) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(255, 255, 255, 0.03) 1px, transparent 1px);
-  background-size: 40px 40px;
-  mask-image: radial-gradient(ellipse at center, black 20%, transparent 80%);
-  -webkit-mask-image: radial-gradient(ellipse at center, black 20%, transparent 80%);
+  background: radial-gradient(
+    ellipse 800px 400px at 50% -10%,
+    rgba(139, 92, 246, 0.06),
+    transparent 70%
+  );
 }
 
 @layer components {
-  /* ============ 标准玻璃卡片 ============ */
-  .glass {
-    position: relative;
-    background: linear-gradient(
-      135deg,
-      rgba(255, 255, 255, 0.14) 0%,
-      rgba(255, 255, 255, 0.06) 50%,
-      rgba(255, 255, 255, 0.10) 100%
-    );
-    backdrop-filter: blur(30px) saturate(200%) brightness(1.15);
-    -webkit-backdrop-filter: blur(30px) saturate(200%) brightness(1.15);
-    border: 1px solid rgba(255, 255, 255, 0.25);
-    border-radius: 24px;
+  /* ============ 标准白卡片 ============ */
+  .card {
+    background: #ffffff;
+    border-radius: 18px;
     box-shadow:
-      0 20px 50px -12px rgba(0, 0, 0, 0.5),
-      0 8px 20px -8px rgba(0, 0, 0, 0.35),
-      inset 0 1px 0 rgba(255, 255, 255, 0.35),
-      inset 0 -1px 0 rgba(255, 255, 255, 0.06);
-    overflow: hidden;
+      0 1px 2px rgba(15, 23, 42, 0.04),
+      0 4px 16px rgba(15, 23, 42, 0.04);
+    transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
   }
-  /* 顶部高光扫光线 */
-  .glass::before {
+  .card-hover:hover {
+    transform: translateY(-2px);
+    box-shadow:
+      0 2px 4px rgba(15, 23, 42, 0.05),
+      0 12px 28px rgba(15, 23, 42, 0.08);
+  }
+
+  /* ============ 主卡片：紫粉渐变 ============ */
+  .card-hero {
+    background: linear-gradient(135deg, #6366f1 0%, #a855f7 55%, #ec4899 100%);
+    border-radius: 24px;
+    color: #ffffff;
+    position: relative;
+    overflow: hidden;
+    box-shadow:
+      0 8px 24px -6px rgba(139, 92, 246, 0.35),
+      0 2px 6px rgba(139, 92, 246, 0.15);
+  }
+  /* 卡片内右上角一抹亮光，增加质感 */
+  .card-hero::before {
     content: "";
     position: absolute;
-    top: 0;
-    left: 8%;
-    right: 8%;
-    height: 1px;
-    background: linear-gradient(
-      90deg,
-      transparent,
-      rgba(255, 255, 255, 0.9),
-      transparent
-    );
+    top: -60px;
+    right: -60px;
+    width: 200px;
+    height: 200px;
+    border-radius: 50%;
+    background: radial-gradient(circle, rgba(255, 255, 255, 0.25), transparent 70%);
+    pointer-events: none;
+  }
+  /* 卡片底部一层淡光晕，让渐变更饱满 */
+  .card-hero::after {
+    content: "";
+    position: absolute;
+    bottom: -80px;
+    left: -40px;
+    width: 240px;
+    height: 240px;
+    border-radius: 50%;
+    background: radial-gradient(circle, rgba(255, 255, 255, 0.12), transparent 70%);
     pointer-events: none;
   }
 
-  /* ============ 次级玻璃面板 ============ */
-  .glass-soft {
-    background: linear-gradient(
-      135deg,
-      rgba(255, 255, 255, 0.12) 0%,
-      rgba(255, 255, 255, 0.05) 100%
-    );
-    backdrop-filter: blur(20px) saturate(180%) brightness(1.1);
-    -webkit-backdrop-filter: blur(20px) saturate(180%) brightness(1.1);
-    border: 1px solid rgba(255, 255, 255, 0.16);
-    border-radius: 16px;
-    box-shadow:
-      0 8px 22px -8px rgba(0, 0, 0, 0.4),
-      inset 0 1px 0 rgba(255, 255, 255, 0.22);
+  /* ============ 次卡片：淡灰底 ============ */
+  .card-tile {
+    background: #f8f9fc;
+    border: 1px solid #eef0f5;
+    border-radius: 14px;
   }
 
-  /* ============ 玻璃按钮（次） ============ */
-  .glass-btn {
-    background: linear-gradient(
-      135deg,
-      rgba(255, 255, 255, 0.18),
-      rgba(255, 255, 255, 0.08)
-    );
-    backdrop-filter: blur(20px) saturate(180%);
-    -webkit-backdrop-filter: blur(20px) saturate(180%);
-    border: 1px solid rgba(255, 255, 255, 0.25);
-    border-radius: 16px;
-    color: #fff;
-    font-weight: 500;
-    box-shadow:
-      0 4px 16px rgba(0, 0, 0, 0.3),
-      inset 0 1px 0 rgba(255, 255, 255, 0.3);
-    transition: all 0.3s ease-out;
-  }
-  .glass-btn:hover {
-    background: linear-gradient(
-      135deg,
-      rgba(255, 255, 255, 0.24),
-      rgba(255, 255, 255, 0.12)
-    );
-    border-color: rgba(255, 255, 255, 0.35);
-  }
-  .glass-btn:active {
-    transform: scale(0.98);
-  }
-
-  /* ============ 主行动按钮：蓝紫粉渐变 ============ */
-  .glass-btn-primary {
-    background: linear-gradient(135deg, #6366f1 0%, #a855f7 50%, #ec4899 100%);
-    border: 1px solid rgba(255, 255, 255, 0.3);
-    border-radius: 16px;
-    color: #fff;
+  /* ============ 主按钮：紫粉渐变药丸 ============ */
+  .btn-primary {
+    background: linear-gradient(135deg, #6366f1 0%, #a855f7 55%, #ec4899 100%);
+    border-radius: 9999px;
+    color: #ffffff;
     font-weight: 600;
-    box-shadow:
-      0 10px 30px -6px rgba(139, 92, 246, 0.7),
-      0 4px 12px -4px rgba(236, 72, 153, 0.5),
-      inset 0 1px 0 rgba(255, 255, 255, 0.45);
-    transition: all 0.3s ease-out;
+    box-shadow: 0 4px 14px rgba(139, 92, 246, 0.35);
+    transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
   }
-  .glass-btn-primary:hover {
-    box-shadow:
-      0 14px 38px -6px rgba(139, 92, 246, 0.85),
-      0 6px 16px -4px rgba(236, 72, 153, 0.65),
-      inset 0 1px 0 rgba(255, 255, 255, 0.55);
+  .btn-primary:hover {
+    box-shadow: 0 6px 20px rgba(139, 92, 246, 0.45);
     transform: translateY(-1px);
   }
-  .glass-btn-primary:active {
+  .btn-primary:active {
     transform: scale(0.98);
   }
 
-  /* ============ 底部导航：更透明，能透出背后色彩 ============ */
-  .glass-nav {
-    background: linear-gradient(
-      to top,
-      rgba(20, 10, 60, 0.72) 0%,
-      rgba(30, 15, 80, 0.45) 100%
-    );
-    backdrop-filter: blur(30px) saturate(200%) brightness(1.1);
-    -webkit-backdrop-filter: blur(30px) saturate(200%) brightness(1.1);
-    border-top: 1px solid rgba(255, 255, 255, 0.15);
-    box-shadow:
-      0 -20px 40px -10px rgba(0, 0, 0, 0.5),
-      inset 0 1px 0 rgba(255, 255, 255, 0.12);
+  /* ============ 次按钮：白底细边 ============ */
+  .btn-secondary {
+    background: #ffffff;
+    border: 1px solid #e5e8ee;
+    border-radius: 9999px;
+    color: #0f172a;
+    font-weight: 500;
+    transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+  }
+  .btn-secondary:hover {
+    background: #f8f9fc;
+    border-color: #d8dce5;
+  }
+  .btn-secondary:active {
+    transform: scale(0.98);
   }
 
-  /* ============ 下拉框 ============ */
-  .glass-select {
-    background: linear-gradient(
-      135deg,
-      rgba(255, 255, 255, 0.12),
-      rgba(255, 255, 255, 0.05)
-    );
-    backdrop-filter: blur(20px) saturate(180%);
-    -webkit-backdrop-filter: blur(20px) saturate(180%);
-    border: 1px solid rgba(255, 255, 255, 0.18);
-    border-radius: 16px;
-    color: #fff;
-    appearance: none;
+  /* ============ 输入框 ============ */
+  .input-field {
+    background: #ffffff;
+    border: 1px solid #e5e8ee;
+    border-radius: 14px;
+    color: #0f172a;
+    transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
   }
-  .glass-select option {
-    background: #1a1030;
-    color: #fff;
+  .input-field::placeholder {
+    color: #94a3b8;
+  }
+  .input-field:focus {
+    border-color: #a855f7;
+    outline: none;
+    box-shadow: 0 0 0 4px rgba(168, 85, 247, 0.1);
+  }
+
+  /* ============ 分段控件 ============ */
+  .segment-group {
+    background: #f2f3f7;
+    border-radius: 12px;
+    padding: 4px;
+  }
+  .segment-item {
+    border-radius: 9px;
+    color: #64748b;
+    font-weight: 500;
+    transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+  }
+  .segment-item-active {
+    background: #ffffff;
+    color: #0f172a;
+    box-shadow: 0 1px 3px rgba(15, 23, 42, 0.08);
+  }
+
+  /* ============ 底部导航 ============ */
+  .bottom-nav {
+    background: rgba(255, 255, 255, 0.92);
+    backdrop-filter: blur(24px) saturate(180%);
+    -webkit-backdrop-filter: blur(24px) saturate(180%);
+    border-top: 1px solid #eef0f5;
   }
 
   /* ============ 渐变文字 ============ */
   .text-gradient {
-    background: linear-gradient(135deg, #c4b5fd 0%, #f0abfc 50%, #f9a8d4 100%);
-    -webkit-background-clip: text;
-    background-clip: text;
-    -webkit-text-fill-color: transparent;
-    filter: drop-shadow(0 2px 12px rgba(217, 70, 239, 0.4));
-  }
-  .text-gradient-cyan {
-    background: linear-gradient(135deg, #67e8f9 0%, #a5b4fc 100%);
+    background: linear-gradient(135deg, #6366f1 0%, #a855f7 55%, #ec4899 100%);
     -webkit-background-clip: text;
     background-clip: text;
     -webkit-text-fill-color: transparent;
   }
+
+  /* ============ 徽章 ============ */
+  .badge-purple {
+    background: rgba(168, 85, 247, 0.1);
+    color: #9333ea;
+    border-radius: 9999px;
+  }
+  .badge-rose {
+    background: rgba(244, 63, 94, 0.1);
+    color: #e11d48;
+    border-radius: 9999px;
+  }
+  .badge-emerald {
+    background: rgba(16, 185, 129, 0.1);
+    color: #059669;
+    border-radius: 9999px;
+  }
+
+  /* ============ 列表分隔 ============ */
+  .divider {
+    border-color: #f1f3f7;
+  }
+}
+
+* {
+  -webkit-tap-highlight-color: transparent;
 }
 
 .no-scrollbar::-webkit-scrollbar { display: none; }
 .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+/* ============ 动画 ============ */
+@keyframes fadeInUp {
+  from {
+    opacity: 0;
+    transform: translateY(14px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
 
-* { -webkit-tap-highlight-color: transparent; }
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes shimmer {
+  0% { background-position: -200% center; }
+  100% { background-position: 200% center; }
+}
+
+.animate-fade-in-up {
+  animation: fadeInUp 0.6s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+.animate-fade-in {
+  animation: fadeIn 0.5s ease-out both;
+}
+.delay-1 { animation-delay: 0.05s; }
+.delay-2 { animation-delay: 0.10s; }
+.delay-3 { animation-delay: 0.15s; }
+.delay-4 { animation-delay: 0.20s; }
+.delay-5 { animation-delay: 0.25s; }
+
+/* 减少动画偏好 */
+@media (prefers-reduced-motion: reduce) {
+  .animate-fade-in-up,
+  .animate-fade-in {
+    animation: none;
+  }
+}
+
+/* ============ 隐藏滚动条但保留滚动 ============ */
+.no-scrollbar::-webkit-scrollbar { display: none; }
+.no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+
+/* ============ 数字字体特性：等宽数字，避免抖动 ============ */
+.tabular {
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum";
+}
+/* ============ 点阵纹理（Hero 卡内装饰） ============ */
+.dot-pattern {
+  position: absolute;
+  inset: 0;
+  background-image: radial-gradient(rgba(255, 255, 255, 0.18) 1px, transparent 1px);
+  background-size: 18px 18px;
+  pointer-events: none;
+  opacity: 0.5;
+  mask-image: radial-gradient(circle at 90% 0%, black 0%, transparent 55%);
+  -webkit-mask-image: radial-gradient(circle at 90% 0%, black 0%, transparent 55%);
+}
+
+/* ============ 玻璃芯片（Hero 卡内指标） ============ */
+.chip {
+  background: rgba(255, 255, 255, 0.12);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 12px;
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.chip:hover {
+  background: rgba(255, 255, 255, 0.18);
+  border-color: rgba(255, 255, 255, 0.22);
+}
+
+/* ============ 银行首字徽章 ============ */
+.bank-avatar {
+  width: 22px;
+  height: 22px;
+  border-radius: 6px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 10px;
+  font-weight: 700;
+  flex-shrink: 0;
+  letter-spacing: 0;
+}
+.bank-avatar-中邮 { background: #fff0e6; color: #ea580c; }
+.bank-avatar-交银 { background: #e6f0ff; color: #2563eb; }
+.bank-avatar-招银 { background: #fff0f0; color: #dc2626; }
+.bank-avatar-工银 { background: #ffeaea; color: #c81e1e; }
+.bank-avatar-建信 { background: #e8f4ff; color: #0369a1; }
+.bank-avatar-农银 { background: #e6f9ed; color: #059669; }
+.bank-avatar-中银 { background: #fde8e8; color: #b91c1c; }
+.bank-avatar-宁波 { background: #fff4e0; color: #d97706; }
+.bank-avatar-工商 { background: #ffeaea; color: #c81e1e; }
+.bank-avatar-default { background: #f1f3f7; color: #64748b; }
+
+/* ============ 排序徽章微光 ============ */
+.rank-glow-1 {
+  box-shadow: 0 0 0 2px rgba(244, 63, 94, 0.15), 0 4px 12px rgba(244, 63, 94, 0.3);
+}
+.rank-glow-2 {
+  box-shadow: 0 0 0 2px rgba(251, 146, 60, 0.15), 0 4px 12px rgba(251, 146, 60, 0.25);
+}
+.rank-glow-3 {
+  box-shadow: 0 0 0 2px rgba(250, 204, 21, 0.15), 0 4px 12px rgba(250, 204, 21, 0.25);
+}
+
+/* ============ 图标容器高光 ============ */
+.icon-hi {
+  position: relative;
+  overflow: hidden;
+}
+.icon-hi::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 50%;
+  background: linear-gradient(
+    to bottom,
+    rgba(255, 255, 255, 0.35),
+    rgba(255, 255, 255, 0)
+  );
+  border-radius: inherit;
+  pointer-events: none;
+}
+
+/* ============ hover 放大回弹 ============ */
+.hover-bounce {
+  transition: transform 0.4s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+.group:hover .hover-bounce {
+  transform: scale(1.12);
+}
+
+/* ============ 榜单箭头滑入 ============ */
+.row-arrow {
+  opacity: 0;
+  transform: translateX(-4px);
+  transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.group:hover .row-arrow {
+  opacity: 1;
+  transform: translateX(0);
+}
+/* ============ 银行 pill（横向筛选，之后用） ============ */
+.bank-pill {
+  display: inline-flex;
+  align-items: center;
+  padding: 7px 14px;
+  border-radius: 9999px;
+  font-size: 12px;
+  font-weight: 500;
+  white-space: nowrap;
+  background: #ffffff;
+  color: #64748b;
+  border: 1px solid #eef0f5;
+  transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+  cursor: pointer;
+}
+.bank-pill:hover {
+  border-color: #d8dce5;
+  color: #0f172a;
+}
+.bank-pill-active {
+  background: linear-gradient(135deg, #6366f1 0%, #a855f7 55%, #ec4899 100%);
+  color: #ffffff;
+  border-color: transparent;
+  box-shadow: 0 4px 12px -2px rgba(139, 92, 246, 0.4);
+}
+
+
+/* ============ 银行首字彩色徽章 ============ */
+.bank-avatar {
+  width: 22px;
+  height: 22px;
+  border-radius: 6px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 10px;
+  font-weight: 700;
+  flex-shrink: 0;
+  letter-spacing: 0;
+}
+
+
+/* ============ 汇总卡：白底 + 紫色描边 ============ */
+.card-summary {
+  background: #ffffff;
+  border: 1.5px solid rgba(168, 85, 247, 0.15);
+  border-radius: 20px;
+  box-shadow:
+    0 1px 2px rgba(15, 23, 42, 0.03),
+    0 8px 24px rgba(168, 85, 247, 0.06);
+}
+
+/* ============ 榜单箭头滑入 ============ */
+.row-arrow {
+  opacity: 0;
+  transform: translateX(-4px);
+  transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.group:hover .row-arrow {
+  opacity: 1;
+  transform: translateX(0);
+}
+
+/* ============ 动画（如果之前没加过） ============ */
+@keyframes fadeInUp {
+  from { opacity: 0; transform: translateY(14px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.animate-fade-in-up {
+  animation: fadeInUp 0.6s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+.delay-1 { animation-delay: 0.05s; }
+.delay-2 { animation-delay: 0.10s; }
+.delay-3 { animation-delay: 0.15s; }
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-fade-in-up { animation: none; }
+}
+/* ============ 日历格子 ============ */
+.cal-cell {
+  aspect-ratio: 1 / 1;
+  border-radius: 12px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+  cursor: pointer;
+  position: relative;
+  border: 1px solid transparent;
+  padding: 2px;
+}
+
+.cal-cell:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 16px rgba(15, 23, 42, 0.08);
+}
+
+.cal-cell-empty {
+  cursor: default;
+  background: transparent !important;
+  border: none;
+}
+.cal-cell-empty:hover {
+  transform: none;
+  box-shadow: none;
+}
+
+.cal-cell-selected {
+  background: linear-gradient(135deg, #6366f1 0%, #a855f7 55%, #ec4899 100%) !important;
+  box-shadow: 0 8px 20px -4px rgba(139, 92, 246, 0.45);
+  transform: translateY(-2px);
+  border-color: transparent;
+}
+.cal-cell-selected .cal-cell-num,
+.cal-cell-selected .cal-cell-val {
+  color: #ffffff !important;
+}
+
+.cal-cell-today {
+  border-color: rgba(168, 85, 247, 0.35);
+}
+.cal-cell-today::after {
+  content: "";
+  position: absolute;
+  bottom: 4px;
+  width: 3px;
+  height: 3px;
+  border-radius: 50%;
+  background: #a855f7;
+}
+.cal-cell-selected.cal-cell-today::after {
+  background: rgba(255, 255, 255, 0.9);
+}
+
+.cal-cell-num {
+  font-size: 12px;
+  font-weight: 600;
+  color: #0f172a;
+  line-height: 1;
+}
+
+.cal-cell-val {
+  font-size: 9px;
+  font-weight: 700;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  line-height: 1;
+  letter-spacing: -0.02em;
+}
+/* ============ 抖动动画（拖拽排序用） ============ */
+@keyframes wiggle {
+  0%, 100% { transform: rotate(-0.4deg); }
+  50% { transform: rotate(0.4deg); }
+}
+.animate-wiggle {
+  animation: wiggle 0.28s ease-in-out infinite;
+  transform-origin: center center;
+}
+
+/* 长按触发时禁用文本选择 */
+.no-select {
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
+}
