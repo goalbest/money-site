@@ -1,26 +1,210 @@
 @import "tailwindcss";
 
-:root {
-  --background: #ffffff;
-  --foreground: #171717;
-}
-
 @theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+  --font-sans: -apple-system, BlinkMacSystemFont, "Inter", "SF Pro Display",
+    "Segoe UI", "PingFang SC", "Hiragino Sans GB", sans-serif;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
+html, body {
+  min-height: 100%;
+  background: #0a0524;
+  color: #ffffff;
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  letter-spacing: -0.01em;
+}
+
+/* ============ 背景：高饱和彩色光晕 ============ */
+body::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: -2;
+  pointer-events: none;
+  background:
+    radial-gradient(circle 500px at 10% -5%, rgba(139, 92, 246, 1), transparent 55%),
+    radial-gradient(circle 550px at 95% 5%, rgba(6, 182, 212, 0.95), transparent 60%),
+    radial-gradient(circle 600px at 100% 85%, rgba(236, 72, 153, 0.9), transparent 60%),
+    radial-gradient(circle 650px at -5% 85%, rgba(99, 102, 241, 0.95), transparent 60%),
+    radial-gradient(circle 500px at 50% 50%, rgba(168, 85, 247, 0.55), transparent 70%),
+    linear-gradient(135deg, #1e0b4d 0%, #0f1a55 45%, #2a0f4a 100%);
+}
+
+/* 细网格纹理 */
+body::after {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background-image:
+    linear-gradient(rgba(255, 255, 255, 0.03) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 255, 255, 0.03) 1px, transparent 1px);
+  background-size: 40px 40px;
+  mask-image: radial-gradient(ellipse at center, black 20%, transparent 80%);
+  -webkit-mask-image: radial-gradient(ellipse at center, black 20%, transparent 80%);
+}
+
+@layer components {
+  /* ============ 标准玻璃卡片 ============ */
+  .glass {
+    position: relative;
+    background: linear-gradient(
+      135deg,
+      rgba(255, 255, 255, 0.14) 0%,
+      rgba(255, 255, 255, 0.06) 50%,
+      rgba(255, 255, 255, 0.10) 100%
+    );
+    backdrop-filter: blur(30px) saturate(200%) brightness(1.15);
+    -webkit-backdrop-filter: blur(30px) saturate(200%) brightness(1.15);
+    border: 1px solid rgba(255, 255, 255, 0.25);
+    border-radius: 24px;
+    box-shadow:
+      0 20px 50px -12px rgba(0, 0, 0, 0.5),
+      0 8px 20px -8px rgba(0, 0, 0, 0.35),
+      inset 0 1px 0 rgba(255, 255, 255, 0.35),
+      inset 0 -1px 0 rgba(255, 255, 255, 0.06);
+    overflow: hidden;
+  }
+  /* 顶部高光扫光线 */
+  .glass::before {
+    content: "";
+    position: absolute;
+    top: 0;
+    left: 8%;
+    right: 8%;
+    height: 1px;
+    background: linear-gradient(
+      90deg,
+      transparent,
+      rgba(255, 255, 255, 0.9),
+      transparent
+    );
+    pointer-events: none;
+  }
+
+  /* ============ 次级玻璃面板 ============ */
+  .glass-soft {
+    background: linear-gradient(
+      135deg,
+      rgba(255, 255, 255, 0.12) 0%,
+      rgba(255, 255, 255, 0.05) 100%
+    );
+    backdrop-filter: blur(20px) saturate(180%) brightness(1.1);
+    -webkit-backdrop-filter: blur(20px) saturate(180%) brightness(1.1);
+    border: 1px solid rgba(255, 255, 255, 0.16);
+    border-radius: 16px;
+    box-shadow:
+      0 8px 22px -8px rgba(0, 0, 0, 0.4),
+      inset 0 1px 0 rgba(255, 255, 255, 0.22);
+  }
+
+  /* ============ 玻璃按钮（次） ============ */
+  .glass-btn {
+    background: linear-gradient(
+      135deg,
+      rgba(255, 255, 255, 0.18),
+      rgba(255, 255, 255, 0.08)
+    );
+    backdrop-filter: blur(20px) saturate(180%);
+    -webkit-backdrop-filter: blur(20px) saturate(180%);
+    border: 1px solid rgba(255, 255, 255, 0.25);
+    border-radius: 16px;
+    color: #fff;
+    font-weight: 500;
+    box-shadow:
+      0 4px 16px rgba(0, 0, 0, 0.3),
+      inset 0 1px 0 rgba(255, 255, 255, 0.3);
+    transition: all 0.3s ease-out;
+  }
+  .glass-btn:hover {
+    background: linear-gradient(
+      135deg,
+      rgba(255, 255, 255, 0.24),
+      rgba(255, 255, 255, 0.12)
+    );
+    border-color: rgba(255, 255, 255, 0.35);
+  }
+  .glass-btn:active {
+    transform: scale(0.98);
+  }
+
+  /* ============ 主行动按钮：蓝紫粉渐变 ============ */
+  .glass-btn-primary {
+    background: linear-gradient(135deg, #6366f1 0%, #a855f7 50%, #ec4899 100%);
+    border: 1px solid rgba(255, 255, 255, 0.3);
+    border-radius: 16px;
+    color: #fff;
+    font-weight: 600;
+    box-shadow:
+      0 10px 30px -6px rgba(139, 92, 246, 0.7),
+      0 4px 12px -4px rgba(236, 72, 153, 0.5),
+      inset 0 1px 0 rgba(255, 255, 255, 0.45);
+    transition: all 0.3s ease-out;
+  }
+  .glass-btn-primary:hover {
+    box-shadow:
+      0 14px 38px -6px rgba(139, 92, 246, 0.85),
+      0 6px 16px -4px rgba(236, 72, 153, 0.65),
+      inset 0 1px 0 rgba(255, 255, 255, 0.55);
+    transform: translateY(-1px);
+  }
+  .glass-btn-primary:active {
+    transform: scale(0.98);
+  }
+
+  /* ============ 底部导航：更透明，能透出背后色彩 ============ */
+  .glass-nav {
+    background: linear-gradient(
+      to top,
+      rgba(20, 10, 60, 0.72) 0%,
+      rgba(30, 15, 80, 0.45) 100%
+    );
+    backdrop-filter: blur(30px) saturate(200%) brightness(1.1);
+    -webkit-backdrop-filter: blur(30px) saturate(200%) brightness(1.1);
+    border-top: 1px solid rgba(255, 255, 255, 0.15);
+    box-shadow:
+      0 -20px 40px -10px rgba(0, 0, 0, 0.5),
+      inset 0 1px 0 rgba(255, 255, 255, 0.12);
+  }
+
+  /* ============ 下拉框 ============ */
+  .glass-select {
+    background: linear-gradient(
+      135deg,
+      rgba(255, 255, 255, 0.12),
+      rgba(255, 255, 255, 0.05)
+    );
+    backdrop-filter: blur(20px) saturate(180%);
+    -webkit-backdrop-filter: blur(20px) saturate(180%);
+    border: 1px solid rgba(255, 255, 255, 0.18);
+    border-radius: 16px;
+    color: #fff;
+    appearance: none;
+  }
+  .glass-select option {
+    background: #1a1030;
+    color: #fff;
+  }
+
+  /* ============ 渐变文字 ============ */
+  .text-gradient {
+    background: linear-gradient(135deg, #c4b5fd 0%, #f0abfc 50%, #f9a8d4 100%);
+    -webkit-background-clip: text;
+    background-clip: text;
+    -webkit-text-fill-color: transparent;
+    filter: drop-shadow(0 2px 12px rgba(217, 70, 239, 0.4));
+  }
+  .text-gradient-cyan {
+    background: linear-gradient(135deg, #67e8f9 0%, #a5b4fc 100%);
+    -webkit-background-clip: text;
+    background-clip: text;
+    -webkit-text-fill-color: transparent;
   }
 }
 
-body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
-}
+.no-scrollbar::-webkit-scrollbar { display: none; }
+.no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+
+* { -webkit-tap-highlight-color: transparent; }

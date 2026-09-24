@@ -16,14 +16,24 @@ export default function BottomNav() {
   if (pathname?.startsWith("/product/") || pathname?.startsWith("/login")) return null;
 
   return (
-    <div className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-100 z-50 pb-[env(safe-area-inset-bottom)]">
-      <div className="max-w-3xl mx-auto flex items-center justify-around h-14">
+    <div className="glass-nav fixed bottom-0 left-0 right-0 z-50 pb-[env(safe-area-inset-bottom)]">
+      <div className="max-w-3xl mx-auto flex items-center justify-around h-16">
         {TABS.map((tab) => {
           if (tab.key === "add") {
             return (
-              <Link key={tab.key} href={tab.href} className="relative -mt-6">
-                <div className="w-12 h-12 rounded-full bg-gradient-to-br from-blue-500 to-indigo-600 shadow-lg flex items-center justify-center">
-                  <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <Link key={tab.key} href={tab.href} className="relative -mt-7">
+                <div
+                  className="w-14 h-14 rounded-full flex items-center justify-center
+                             transition-all duration-300 ease-out
+                             hover:scale-110 active:scale-95"
+                  style={{
+                    background: "linear-gradient(135deg, #6366f1 0%, #a855f7 50%, #ec4899 100%)",
+                    boxShadow:
+                      "0 12px 32px -4px rgba(139, 92, 246, 0.65), 0 6px 16px -4px rgba(236, 72, 153, 0.5), inset 0 1px 0 rgba(255, 255, 255, 0.5), inset 0 -2px 4px rgba(0, 0, 0, 0.15)",
+                    border: "1px solid rgba(255, 255, 255, 0.3)",
+                  }}
+                >
+                  <svg className="w-7 h-7 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M12 4v16m8-8H4" />
                   </svg>
                 </div>
@@ -32,11 +42,30 @@ export default function BottomNav() {
           }
           const isActive = pathname === tab.href;
           return (
-            <Link key={tab.key} href={tab.href} className="flex-1 flex flex-col items-center justify-center gap-0.5 py-1">
-              <svg className={`w-5 h-5 ${isActive ? "text-blue-600" : "text-gray-400"}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <Link
+              key={tab.key}
+              href={tab.href}
+              className="flex-1 flex flex-col items-center justify-center gap-1 py-1
+                         transition-all duration-300 ease-out"
+            >
+              <svg
+                className={`w-5 h-5 transition-all duration-300 ${
+                  isActive ? "text-white scale-110" : "text-white/40"
+                }`}
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+                style={isActive ? { filter: "drop-shadow(0 0 8px rgba(168, 85, 247, 0.8))" } : undefined}
+              >
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d={tab.icon} />
               </svg>
-              <span className={`text-[10px] ${isActive ? "text-blue-600 font-medium" : "text-gray-400"}`}>{tab.label}</span>
+              <span
+                className={`text-[10px] transition-colors duration-300 ${
+                  isActive ? "text-white font-semibold" : "text-white/40"
+                }`}
+              >
+                {tab.label}
+              </span>
             </Link>
           );
         })}
