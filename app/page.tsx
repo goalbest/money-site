@@ -621,33 +621,6 @@ export default function Home() {
     const id = "ranking";
     const idx = visibleOrder.indexOf(id);
 
-    /* 搜索模式：显示搜索结果 */
-    if (searchMode) {
-      return (
-        <div className={`mb-4 ${editMode ? "animate-wiggle" : ""}`}>
-          <div className="flex items-center justify-between mb-3 px-1">
-            <div className="text-[15px] font-bold text-slate-900">
-              搜索「{searchMode}」
-            </div>
-            {editMode ? (
-              <EditControls
-                canUp={idx > 0}
-                canDown={idx < visibleOrder.length - 1}
-                onMoveUp={() => moveUp(id)}
-                onMoveDown={() => moveDown(id)}
-                onHide={() => toggleHidden(id)}
-              />
-            ) : (
-              <div className="text-[11px] text-slate-400">
-                {searchLoading ? "搜索中..." : `${searchResults.length} 个结果`}
-              </div>
-            )}
-          </div>
-          <SearchResultList items={searchResults} loading={searchLoading} onLinkClick={handleLinkClick} />
-        </div>
-      );
-    }
-
     const display = listItems.slice(0, MAX_PER_MODULE);
     const total = listItems.length;
 
@@ -981,6 +954,30 @@ export default function Home() {
           </div>
         )}
 
+        {/* ============ 搜索结果（紧贴搜索框下方） ============ */}
+        {!editMode && searchMode && (
+          <div className="mb-4 animate-fade-in-up">
+            <div className="flex items-center justify-between mb-3 px-1">
+              <div className="text-[15px] font-bold text-slate-900">
+                搜索「{searchMode}」
+              </div>
+              <div className="text-[11px] text-slate-400">
+                {searchLoading ? "搜索中..." : `${searchResults.length} 个结果`}
+              </div>
+            </div>
+            <SearchResultList items={searchResults} loading={searchLoading} onLinkClick={handleLinkClick} />
+            <button
+              onClick={clearSearch}
+              className="w-full mt-3 py-2.5 rounded-2xl
+                         bg-slate-50 hover:bg-slate-100
+                         text-[12px] text-slate-600 font-medium
+                         transition-colors"
+            >
+              清空搜索
+            </button>
+          </div>
+        )}
+
         {/* 快捷入口 */}
         {!editMode && (
           <div className="mb-5 animate-fade-in-up delay-2">
@@ -1012,22 +1009,24 @@ export default function Home() {
           />
         )}
 
-        {/* 动态模块 */}
-        <div className="animate-fade-in-up delay-3">
-          {visibleOrder.map((moduleId) => (
-            <div
-              key={moduleId}
-              onTouchStart={handleLongPressStart}
-              onTouchEnd={handleLongPressEnd}
-              onTouchMove={handleLongPressEnd}
-              onMouseDown={handleLongPressStart}
-              onMouseUp={handleLongPressEnd}
-              onMouseLeave={handleLongPressEnd}
-            >
-              {renderModule(moduleId)}
-            </div>
-          ))}
-        </div>
+                {/* 动态模块（非搜索模式才显示） */}
+        {!editMode && !searchMode && (
+          <div className="animate-fade-in-up delay-3">
+            {visibleOrder.map((moduleId) => (
+              <div
+                key={moduleId}
+                onTouchStart={handleLongPressStart}
+                onTouchEnd={handleLongPressEnd}
+                onTouchMove={handleLongPressEnd}
+                onMouseDown={handleLongPressStart}
+                onMouseUp={handleLongPressEnd}
+                onMouseLeave={handleLongPressEnd}
+              >
+                {renderModule(moduleId)}
+              </div>
+            ))}
+          </div>
+        )}
 
         {/* 免责声明 */}
         {!editMode && (
