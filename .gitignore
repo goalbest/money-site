@@ -49,3 +49,6 @@ next-env.d.ts
 !.dev.vars.example
 
 !.env.example
+
+out.txt
+psbc_out.txt
