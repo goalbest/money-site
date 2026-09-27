@@ -139,12 +139,18 @@ async function createProduct(p) {
 // ── 名字相似度 ──
 function similarity(a, b) {
   if (!a || !b) return 0;
-  a = a.replace(/[\s·\-—_（）()【】]/g, '');
-  b = b.replace(/[\s·\-—_（）()【】]/g, '');
-  const m = a.length, n = b.length;
+  const norm = s => s.replace(/[\s·\-—_（）()【】]/g, '');
+  const na = norm(a), nb = norm(b);
+
+  // ★ 数字集合不同 → 直接判不匹配（天数/期数/序号是核心标识）
+  const numsA = (a.match(/\d+/g) || []).sort().join(',');
+  const numsB = (b.match(/\d+/g) || []).sort().join(',');
+  if (numsA !== numsB) return 0;
+
+  const m = na.length, n = nb.length;
   const dp = Array.from({ length: m + 1 }, () => new Array(n + 1).fill(0));
   for (let i = 1; i <= m; i++) for (let j = 1; j <= n; j++)
-    dp[i][j] = a[i-1] === b[j-1] ? dp[i-1][j-1]+1 : Math.max(dp[i-1][j], dp[i][j-1]);
+    dp[i][j] = na[i-1] === nb[j-1] ? dp[i-1][j-1]+1 : Math.max(dp[i-1][j], dp[i][j-1]);
   return dp[m][n] / Math.max(m, n);
 }
 
