@@ -100,11 +100,14 @@ for (const p of CMB_PRODUCTS) {
     if (error) { console.log(`   ❌ upsert 失败: ${error.message}\n`); continue; }
     totalUpserted += rows.length;
 
-    await supabase.from('products').update({
+        const { error: updErr } = await supabase.from('products').update({
       unit_nav: parseFloat(latest.unitNetValue),
       nav_date: latest.date,
       bank_code: p.ripInn,
     }).eq('id', p.dbId);
+    if (updErr) {
+      console.log(`   ⚠️ products 更新失败: ${updErr.message} | code: ${updErr.code}`);
+    }
 
     console.log(`   ✅ 写入 ${rows.length} 条\n`);
     await page.waitForTimeout(500);
