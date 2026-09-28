@@ -36,11 +36,18 @@ jobs:
           SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
         run: node crawler/fetch_psbc_bank.mjs
 
-      - name: 邮储全量产品净值入库
+      - name: 邮储全量产品净值入库（诊断）
         env:
           NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+          MAX_NEW: '50'
         run: node crawler/fetch_psbc_api.mjs
+
+      - name: 邮储产品日常更新
+        env:
+          NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+        run: node crawler/fetch_psbc_daily.mjs
 
       - name: Run NAV update script
         env:
