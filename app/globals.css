@@ -550,3 +550,190 @@ body::before {
   .card-hover:hover,
   .card-hover:active { transform: none !important; }
 }
+/* ============================================================
+   首页模块系统 · 补充样式
+   ============================================================ */
+
+/* ---------- 1. 磁贴区横向滚动 ---------- */
+/* 隐藏滚动条（兼容 iOS / Android / 桌面） */
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+/* ---------- 2. 折叠动画（grid-template-rows） ---------- */
+/* 已由组件内联控制，这里只是备用兜底 */
+.collapse-grid {
+  display: grid;
+  transition: grid-template-rows 0.32s cubic-bezier(0.16, 1, 0.3, 1);
+  will-change: grid-template-rows;
+}
+
+/* ---------- 3. 拖动状态 ---------- */
+.drag-ghost {
+  opacity: 0.3;
+  transform: scale(0.98);
+}
+
+.drag-target {
+  outline: 2px solid rgb(168, 85, 247);
+  outline-offset: 2px;
+  border-radius: 16px;
+}
+
+/* ---------- 4. 抽屉滑入滑出 ---------- */
+@keyframes drawerSlideUp {
+  from {
+    transform: translateY(100%);
+  }
+  to {
+    transform: translateY(0);
+  }
+}
+
+@keyframes drawerSlideDown {
+  from {
+    transform: translateY(0);
+  }
+  to {
+    transform: translateY(100%);
+  }
+}
+
+.animate-drawer-in {
+  animation: drawerSlideUp 0.35s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.animate-drawer-out {
+  animation: drawerSlideDown 0.28s cubic-bezier(0.4, 0, 0.6, 1) both;
+}
+
+/* ---------- 5. 磁贴 hover/active 反馈 ---------- */
+.tile-hover {
+  transition: transform 0.15s cubic-bezier(0.16, 1, 0.3, 1),
+              box-shadow 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.tile-hover:hover {
+  transform: translateY(-2px);
+  box-shadow:
+    0 2px 4px rgba(15, 23, 42, 0.05),
+    0 12px 28px rgba(15, 23, 42, 0.08);
+}
+.tile-hover:active {
+  transform: scale(0.97);
+  transition-duration: 0.1s;
+}
+
+/* ---------- 6. 数字入场（首屏 Hero） ---------- */
+@keyframes numberRise {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+.animate-number-rise {
+  animation: numberRise 0.5s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+/* ---------- 7. 列表行 hover 微光 ---------- */
+.row-glow {
+  position: relative;
+  overflow: hidden;
+}
+.row-glow::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    rgba(168, 85, 247, 0.04) 50%,
+    transparent 100%
+  );
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.3s ease-out;
+}
+.row-glow:hover::after {
+  opacity: 1;
+}
+
+/* ---------- 8. 眼睛按钮切换动画 ---------- */
+@keyframes eyeBlink {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(0.88); }
+}
+.eye-blink {
+  animation: eyeBlink 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+/* ---------- 9. 拖动握把脉冲 ---------- */
+@keyframes handlePulse {
+  0%, 100% { opacity: 0.85; }
+  50% { opacity: 1; }
+}
+.handle-pulse {
+  animation: handlePulse 1.2s ease-in-out infinite;
+}
+
+/* ---------- 10. 数字滚动指示 ---------- */
+/* Hero 卡数字滚动时轻微呼吸，避免用户误以为没数据 */
+@keyframes valueBreath {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.85; }
+}
+.value-breathing {
+  animation: valueBreath 1.4s ease-in-out infinite;
+}
+
+/* ---------- 11. 分区块之间的轻分割线 ---------- */
+.section-divider {
+  height: 1px;
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    #f1f3f7 20%,
+    #f1f3f7 80%,
+    transparent 100%
+  );
+  margin: 20px 0;
+}
+
+/* ---------- 12. 通用进入过渡（可选给子组件用） ---------- */
+@keyframes gentleFade {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+.gentle-fade {
+  animation: gentleFade 0.4s ease-out both;
+}
+
+/* ============================================================
+   无障碍：减少动画偏好
+   ============================================================ */
+@media (prefers-reduced-motion: reduce) {
+  .animate-drawer-in,
+  .animate-drawer-out,
+  .animate-number-rise,
+  .eye-blink,
+  .handle-pulse,
+  .value-breathing,
+  .gentle-fade,
+  .tile-hover,
+  .tile-hover:hover,
+  .tile-hover:active {
+    animation: none !important;
+    transform: none !important;
+    transition: none !important;
+  }
+  .collapse-grid {
+    transition: none !important;
+  }
+}
