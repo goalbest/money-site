@@ -60,14 +60,14 @@ function get(url) {
   });
 }
 
-async function fetchPage(pageNum) {
+async function fetchPage(pageNum, keyword = '') {
   const ts = Date.now();
   const params = new URLSearchParams({
     callback: 'cb',
     currency: '', deadline: '', netproduct: '', risklevel: '',
     entruststartamt: '', buystatus: '', product_status: '',
     zhongyouflag: '', bankflag: '', investor_nature: '', order: '',
-    finkeyword: '', pageNum: String(pageNum), _: String(ts),
+    finkeyword: keyword, pageNum: String(pageNum), _: String(ts),
   });
   const text = await get(`${API}?${params}`);
   const m = text.match(/^[^(]+\(([\s\S]*)\)\s*;?\s*$/);
@@ -119,14 +119,18 @@ if (USE_CACHE) {
     process.exit(0);
   }
 
-  console.log('\n开始全量抓取...');
+  // ★ MAX_PAGES 控制抓取范围
+  const MAX_PAGES = parseInt(process.env.MAX_PAGES || String(first.pageCount), 10);
+  const endPage = Math.min(first.pageCount, MAX_PAGES);
+  console.log(`\n开始抓取 (1 ~ ${endPage} / 共 ${first.pageCount} 页)...`);
+
   all.push(...(first.resultList || []));
-  for (let p = 2; p <= first.pageCount; p++) {
+  for (let p = 2; p <= endPage; p++) {
     try {
       const data = await fetchPage(p);
       all.push(...(data.resultList || []));
-      if (p % 20 === 0 || p === first.pageCount) {
-        console.log(`  页 ${p}/${first.pageCount} → 累计 ${all.length}`);
+      if (p % 20 === 0 || p === endPage) {
+        console.log(`  页 ${p}/${endPage} → 累计 ${all.length}`);
       }
       await new Promise(r => setTimeout(r, 150));
     } catch (e) {

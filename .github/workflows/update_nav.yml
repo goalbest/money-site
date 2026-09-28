@@ -2,20 +2,12 @@ name: Daily NAV Update
 
 "on":
   schedule:
-    # 北京时间（UTC+8）
-    # 08:00 → UTC 00:00
     - cron: '0 0 * * *'
-    # 10:00 → UTC 02:00
     - cron: '0 2 * * *'
-    # 12:00 → UTC 04:00
     - cron: '0 4 * * *'
-    # 15:00 → UTC 07:00
     - cron: '0 7 * * *'
-    # 18:00 → UTC 10:00
     - cron: '0 10 * * *'
-    # 21:00 → UTC 13:00
     - cron: '0 13 * * *'
-    # 22:00 → UTC 14:00
     - cron: '0 14 * * *'
   workflow_dispatch:
 
@@ -43,6 +35,12 @@ jobs:
           NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
         run: node crawler/fetch_psbc_bank.mjs
+
+      - name: 邮储全量产品净值入库
+        env:
+          NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+        run: node crawler/fetch_psbc_api.mjs
 
       - name: Run NAV update script
         env:
