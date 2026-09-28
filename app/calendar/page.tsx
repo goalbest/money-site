@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useRef } from "react";
 import Link from "next/link";
 import { supabase } from "../../lib/supabase";
 import { useCountUp } from "../../lib/useCountUp";
@@ -50,29 +50,58 @@ export default function CalendarPage() {
   const [viewMode, setViewMode] = useState<ViewMode>("calendar");
   const [selectedProduct, setSelectedProduct] = useState<number | null>(null);
 
+  // ★ 优化：holdings 只加载一次 + nav 按月缓存
+  const [holdingsLoaded, setHoldingsLoaded] = useState(false);
+  const [navCache, setNavCache] = useState<Record<string, any[]>>({});
+  const [navLoading, setNavLoading] = useState(false);
+  const hasLoadedOnceRef = useRef(false);
+
   const isCurrentMonth = month === currentMonth;
 
+  /* ============ 1. holdings 只加载一次 ============ */
   useEffect(() => {
     const userId = localStorage.getItem("user_id");
     if (!userId) {
       setLoading(false);
+      setHoldingsLoaded(true);
       return;
     }
-    async function load() {
-      setLoading(true);
+    (async () => {
       const { data: hd } = await supabase
         .from("user_holdings")
-        .select("id, product_id, shares, holding_amount, hold_date, products(id, name, bank)")
+        .select("id, product_id, shares, holding_amount, hold_date, products(id, name, bank, daily_return)")
         .eq("user_id", userId)
         .eq("status", "active");
-      if (!hd || hd.length === 0) {
-        setHoldings([]);
-        setNavRows([]);
-        setLoading(false);
-        return;
-      }
-      setHoldings(hd);
-      const productIds = hd.map((h: any) => h.product_id);
+      const rows = hd || [];
+      setHoldings(rows);
+      setHoldingsLoaded(true);
+      if (rows.length === 0) setLoading(false);
+    })();
+  }, []);
+
+  /* ============ 2. nav_history 按月加载（带缓存） ============ */
+  useEffect(() => {
+    if (!holdingsLoaded) return;
+    if (holdings.length === 0) {
+      setLoading(false);
+      return;
+    }
+
+    // 缓存命中 → 秒回
+    if (navCache[month]) {
+      setNavRows(navCache[month]);
+      setLoading(false);
+      setNavLoading(false);
+      return;
+    }
+
+    // 首屏：骨架；切月：清空 + spinner
+    if (!hasLoadedOnceRef.current) setLoading(true);
+    setNavRows([]);
+    setNavLoading(true);
+
+    (async () => {
+      const productIds = holdings.map((h: any) => h.product_id);
       const start = prevMonthLastDay(month);
       const end = monthEnd(month);
       const { data: navs } = await supabase
@@ -82,13 +111,23 @@ export default function CalendarPage() {
         .gte("nav_date", start)
         .lte("nav_date", end)
         .order("nav_date", { ascending: true });
-      setNavRows(navs || []);
+      const rows = navs || [];
+      setNavRows(rows);
+      setNavCache(prev => ({ ...prev, [month]: rows }));
       setLoading(false);
-    }
-    load();
-  }, [month]);
+      setNavLoading(false);
+      hasLoadedOnceRef.current = true;
+    })();
+  }, [month, holdingsLoaded, holdings.length]);
 
-  const { dayMap, productDayMap, productMonthlyMap, totalProfit, tradedDays } = useMemo(() => {
+  const {
+    dayMap,
+    productDayMap,
+    productMonthlyMap,
+    productZeroDaysMap,
+    totalProfit,
+    tradedDays,
+  } = useMemo(() => {
     const sharesMap: Record<number, number> = {};
     const amountMap: Record<number, number> = {};
     const holdDateMap: Record<number, string | null> = {};
@@ -107,9 +146,11 @@ export default function CalendarPage() {
     const dayMap: Record<string, number> = {};
     const productDayMap: Record<string, Record<number, number>> = {};
     const productMonthlyMap: Record<number, number> = {};
+    const productZeroDaysMap: Record<number, number> = {};
     const mStart = `${month}-01`;
     const mEnd = monthEnd(month);
 
+    // ---- 1. 历史天：nav_history 相邻日净值差 ----
     Object.entries(navByProduct).forEach(([pidStr, list]) => {
       const pid = Number(pidStr);
       const shares = sharesMap[pid] || 0;
@@ -134,18 +175,52 @@ export default function CalendarPage() {
         if (!productDayMap[t.date]) productDayMap[t.date] = {};
         productDayMap[t.date][pid] = profit;
         productMonthlyMap[pid] = (productMonthlyMap[pid] || 0) + profit;
+        if (profit <= 0) {
+          productZeroDaysMap[pid] = (productZeroDaysMap[pid] || 0) + 1;
+        }
       }
     });
+
+    // ---- 2. 今天回退：只给"净值还没落库"的产品补 daily_return ----
+    if (today >= mStart && today <= mEnd) {
+      const missingToday: number[] = [];
+      holdings.forEach((h: any) => {
+        const list = navByProduct[h.product_id] || [];
+        const lastDate = list.length > 0 ? list[list.length - 1].date : null;
+        if (lastDate !== today) {
+          if (h.hold_date && h.hold_date > today) return;
+          missingToday.push(h.product_id);
+        }
+      });
+
+      missingToday.forEach((pid) => {
+        const holdAmount = amountMap[pid] || 0;
+        if (holdAmount <= 0) return;
+        const h = holdings.find((x: any) => x.product_id === pid);
+        const dailyReturn = Number(h?.products?.daily_return) || 0;
+        const profit = (holdAmount * dailyReturn) / 10000;
+
+        if (!productDayMap[today]) productDayMap[today] = {};
+        productDayMap[today][pid] = profit;
+        productMonthlyMap[pid] = (productMonthlyMap[pid] || 0) + profit;
+        if (profit <= 0) {
+          productZeroDaysMap[pid] = (productZeroDaysMap[pid] || 0) + 1;
+        }
+        if (!dayMap[today]) dayMap[today] = 0;
+        dayMap[today] += profit;
+      });
+    }
 
     const values = Object.values(dayMap);
     return {
       dayMap,
       productDayMap,
       productMonthlyMap,
+      productZeroDaysMap,
       totalProfit: values.reduce((a, b) => a + b, 0),
       tradedDays: values.length,
     };
-  }, [holdings, navRows, month]);
+  }, [holdings, navRows, month, today]);
 
   const availableBanks = useMemo(() => {
     const set = new Set<string>();
@@ -221,11 +296,12 @@ export default function CalendarPage() {
         bank: meta.bank,
         profit,
         days,
+        zeroDays: productZeroDaysMap[pid] || 0,
         holdingId: holding?.id,
       });
     });
     return rows.sort((a, b) => b.profit - a.profit);
-  }, [productMonthlyMap, productDayMap, holdings, bankFilter]);
+  }, [productMonthlyMap, productDayMap, productZeroDaysMap, holdings, bankFilter]);
 
   const dailyList = useMemo(() => {
     if (viewMode === "byProduct" && selectedProduct != null) {
@@ -315,13 +391,15 @@ export default function CalendarPage() {
   }
   function fmtCell(n: number) {
     if (privacy) return "••";
-    const sign = n >= 0 ? "+" : "";
+    if (n === 0) return "0";
+    const sign = n > 0 ? "+" : "";
     if (Math.abs(n) >= 1000) return `${sign}${(n / 1000).toFixed(1)}k`;
     return `${sign}${n.toFixed(0)}`;
   }
   function fmtCellSmall(n: number) {
     if (privacy) return "••";
-    const sign = n >= 0 ? "+" : "";
+    if (n === 0) return "0";
+    const sign = n > 0 ? "+" : "";
     return `${sign}${n.toFixed(1)}`;
   }
 
@@ -385,14 +463,11 @@ export default function CalendarPage() {
 
   const isProductDetailMode = viewMode === "byProduct" && selectedProductMeta;
 
-  /* 计算产品列表里应显示的按钮数量，用于 grid-cols-N */
-  const tabCount = 2;
-
   return (
     <div className="min-h-screen pb-24">
       <div className="container mx-auto px-5 pt-8 max-w-3xl">
 
-                {/* 顶部标题 */}
+        {/* 顶部标题 */}
         <div className="flex items-center gap-3 mb-4 animate-fade-in-up">
           <div className="flex-1 min-w-0">
             <div className="text-[22px] font-bold tracking-tight text-slate-900 truncate">
@@ -424,7 +499,6 @@ export default function CalendarPage() {
           </button>
         </div>
 
-
         {/* Hero 卡 */}
         <div className="card-hero p-6 mb-5 animate-fade-in-up delay-1">
           <div className="dot-pattern" />
@@ -440,11 +514,20 @@ export default function CalendarPage() {
                     maximumFractionDigits: 2,
                   })}`}
             </div>
-            <div className="grid grid-cols-2 gap-2">
+
+            <div className={`grid ${isProductDetailMode ? "grid-cols-3" : "grid-cols-2"} gap-2`}>
               <div className="chip px-3 py-2.5">
                 <div className="text-[10px] text-white/65 mb-1">交易日</div>
                 <div className="font-semibold text-[13px] text-white tabular">{displayTradedDays} 天</div>
               </div>
+              {isProductDetailMode && (
+                <div className="chip px-3 py-2.5">
+                  <div className="text-[10px] text-white/65 mb-1">挂 0</div>
+                  <div className="font-semibold text-[13px] text-white tabular">
+                    {productZeroDaysMap[selectedProduct!] || 0} 天
+                  </div>
+                </div>
+              )}
               <div className="chip px-3 py-2.5">
                 <div className="text-[10px] text-white/65 mb-1">日均收益</div>
                 <div className="font-semibold text-[13px] text-white tabular">
@@ -457,7 +540,7 @@ export default function CalendarPage() {
           </div>
         </div>
 
-        {/* 银行筛选（全部模式下） */}
+        {/* 银行筛选 */}
         {!isProductDetailMode && (
           <div className="mb-4 animate-fade-in-up delay-2">
             <div className="flex gap-2 overflow-x-auto no-scrollbar -mx-5 px-5 pb-1">
@@ -496,7 +579,13 @@ export default function CalendarPage() {
               <div className="text-[15px] font-semibold text-slate-900 tabular">
                 {fmtMonthCN(month)}
               </div>
-              {!isCurrentMonth && (
+              {navLoading && (
+                <svg className="w-3.5 h-3.5 text-purple-500 animate-spin" fill="none" viewBox="0 0 24 24">
+                  <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="3" opacity="0.25" />
+                  <path fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+                </svg>
+              )}
+              {!isCurrentMonth && !navLoading && (
                 <button
                   onClick={goToToday}
                   className="flex items-center gap-1 px-2.5 py-1 rounded-full
@@ -587,44 +676,20 @@ export default function CalendarPage() {
           </div>
         </div>
 
-                {/* ============ 日历 / 产品 切换 / 返回 ============ */}
+       {/* ============ 日历 / 产品 切换 ============ */}
         <div className="mb-4 animate-fade-in-up delay-3">
-          {isProductDetailMode ? (
-            /* 产品详情模式 → 显示返回按钮 */
+          <div className="segment-group flex">
             <button
               onClick={() => {
+                setViewMode("calendar");
                 setSelectedProduct(null);
                 setSelectedDate(null);
               }}
-              className="w-full flex items-center justify-center gap-2 py-3 rounded-2xl
-                         bg-white border border-slate-200
-                         text-[13px] text-slate-700 font-medium
-                         hover:border-slate-300 hover:bg-slate-50
-                         active:scale-[0.99] transition-all duration-200"
-            >
-              <svg className="w-4 h-4 text-slate-500" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2.5}>
-                <path strokeLinecap="round" strokeLinejoin="round" d="M15 19l-7-7 7-7" />
-              </svg>
-              返回产品列表
-            </button>
-          ) : (
-            /* 普通模式 → 日历 / 产品 两个大按钮 */
-            <div className="grid grid-cols-2 gap-3">
-              <button
-                onClick={() => {
-                  setViewMode("calendar");
-                  setSelectedProduct(null);
-                  setSelectedDate(null);
-                }}
-                className={`py-3 rounded-2xl text-[13px] font-semibold
+                className={`flex-1 py-2.5 text-[13px] segment-item
                             flex items-center justify-center gap-1.5
-                            transition-all duration-200 active:scale-[0.98]
-                            ${viewMode === "calendar"
-                              ? "bg-gradient-to-r from-violet-500 to-purple-600 text-white shadow-md shadow-purple-500/25"
-                              : "bg-white text-slate-600 border border-slate-200 hover:border-slate-300 hover:bg-slate-50"
-                            }`}
+                            ${viewMode === "calendar" ? "segment-item-active" : "hover:text-slate-700"}`}
               >
-                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
+                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
                   <rect x="3" y="5" width="18" height="16" rx="2.5" />
                   <path d="M3 10h18M8 3v4M16 3v4" strokeLinecap="round" />
                 </svg>
@@ -635,26 +700,20 @@ export default function CalendarPage() {
                   setViewMode("byProduct");
                   setSelectedDate(null);
                 }}
-                className={`py-3 rounded-2xl text-[13px] font-semibold
+                className={`flex-1 py-2.5 text-[13px] segment-item
                             flex items-center justify-center gap-1.5
-                            transition-all duration-200 active:scale-[0.98]
-                            ${viewMode === "byProduct"
-                              ? "bg-gradient-to-r from-violet-500 to-purple-600 text-white shadow-md shadow-purple-500/25"
-                              : "bg-white text-slate-600 border border-slate-200 hover:border-slate-300 hover:bg-slate-50"
-                            }`}
+                            ${viewMode === "byProduct" ? "segment-item-active" : "hover:text-slate-700"}`}
               >
-                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
+                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
                   <path d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" strokeLinecap="round" strokeLinejoin="round" />
                 </svg>
                 产品
-              </button>
+               </button>
             </div>
-          )}
-        </div>
+          </div>
 
         {/* ============ 下方列表 ============ */}
         <div className="animate-fade-in-up delay-3">
-          {/* 产品模式 + 未选产品 → 产品列表 */}
           {viewMode === "byProduct" && !selectedProduct ? (
             <div className="card overflow-hidden">
               <div className="px-5 py-4 border-b divider flex items-center justify-between">
@@ -679,6 +738,8 @@ export default function CalendarPage() {
                 <div>
                   {productMonthlyList.map((row, i) => {
                     const info = getBankInfo(row.bank);
+                    const zeroRatio = row.days > 0 ? row.zeroDays / row.days : 0;
+                    const zeroColor = zeroRatio >= 0.5 ? "text-amber-500" : "text-slate-400";
                     return (
                       <button
                         key={row.productId}
@@ -708,8 +769,18 @@ export default function CalendarPage() {
                           <div className="text-[12px] text-slate-900 font-medium truncate">
                             {row.name}
                           </div>
-                          <div className="text-[10px] text-slate-400 mt-0.5">
-                            {row.bank} · {row.days} 天收益
+                          <div className="text-[10px] text-slate-400 mt-0.5 flex items-center gap-1 flex-wrap">
+                            <span>{row.bank}</span>
+                            <span className="text-slate-300">·</span>
+                            <span>{row.days} 天</span>
+                            {row.zeroDays > 0 && (
+                              <>
+                                <span className="text-slate-300">·</span>
+                                <span className={zeroColor}>
+                                  挂 0 {row.zeroDays} 天
+                                </span>
+                              </>
+                            )}
                           </div>
                         </div>
                         <div className="text-right flex-shrink-0">
@@ -831,23 +902,65 @@ export default function CalendarPage() {
               )}
             </div>
           ) : (
-            /* ============ 本月每日明细 ============ */
+            /* ============ 本月每日明细（★ 产品详情时头部和日历明细一致） ============ */
             <div className="card overflow-hidden">
-              <div className="px-5 py-4 border-b divider flex items-center justify-between">
-                <div className="min-w-0 flex-1">
-                  <div className="text-[14px] font-semibold text-slate-900">
-                    本月每日明细
+              {isProductDetailMode ? (
+                /* 产品详情：圆形返回 + 银行方块 + 产品名 + 累计收益 */
+                <div className="px-5 py-4 bg-slate-50/60 border-b divider flex items-center gap-3">
+                  <button
+                    onClick={() => {
+                      setSelectedProduct(null);
+                      setSelectedDate(null);
+                    }}
+                    className="w-9 h-9 rounded-full bg-white border border-slate-200
+                               hover:border-slate-300 hover:bg-slate-50
+                               flex items-center justify-center flex-shrink-0
+                               transition-all active:scale-90"
+                    aria-label="返回产品列表"
+                  >
+                    <svg className="w-4 h-4 text-slate-600" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2.5}>
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M15 19l-7-7 7-7" />
+                    </svg>
+                  </button>
+                  <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-violet-500 to-purple-600
+                                  flex items-center justify-center
+                                  text-white font-bold text-[14px]
+                                  shadow-md shadow-purple-500/20 flex-shrink-0">
+                    {getBankInfo(selectedProductMeta.bank).label}
                   </div>
-                  <div className="text-[11px] text-slate-400 mt-0.5 truncate">
-                    {isProductDetailMode
-                      ? selectedProductMeta.name
-                      : "点击上方日历格子查看单日明细"}
+                  <div className="flex-1 min-w-0">
+                    <div className="text-[13px] font-semibold text-slate-900 truncate">
+                      {selectedProductMeta.name}
+                    </div>
+                    <div className="text-[10px] text-slate-400 mt-0.5 truncate">
+                      {selectedProductMeta.bank} · 本月 {dailyList.length} 天
+                    </div>
+                  </div>
+                  <div className={`font-mono font-bold text-[16px] tabular flex-shrink-0 ${
+                    displayTotalProfit > 0 ? "text-rose-500"
+                    : displayTotalProfit < 0 ? "text-emerald-500"
+                    : "text-slate-400"
+                  }`}>
+                    {fmtProfit(displayTotalProfit)}
                   </div>
                 </div>
-                <div className="text-[11px] text-slate-400 tabular flex-shrink-0">
-                  {dailyList.length} 天
+              ) : (
+                /* 普通视图：标题 + 说明 */
+                <div className="px-5 py-4 border-b divider flex items-center justify-between">
+                  <div className="min-w-0 flex-1">
+                    <div className="text-[14px] font-semibold text-slate-900">
+                      本月每日明细
+                    </div>
+                    <div className="text-[11px] text-slate-400 mt-0.5 truncate">
+                      点击上方日历格子查看单日明细
+                    </div>
+                  </div>
+                  <div className="text-[11px] text-slate-400 tabular flex-shrink-0">
+                    {dailyList.length} 天
+                  </div>
                 </div>
-              </div>
+              )}
+
               <div>
                 {dailyList.length === 0 ? (
                   <div className="py-12 text-center text-slate-300 text-xs">

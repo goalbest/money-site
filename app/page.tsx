@@ -1009,18 +1009,20 @@ export default function Home() {
           />
         )}
 
-                {/* 动态模块（非搜索模式才显示） */}
-        {!editMode && !searchMode && (
+          {/* 动态模块（非搜索模式才显示） */}
+        {!searchMode && (
           <div className="animate-fade-in-up delay-3">
             {visibleOrder.map((moduleId) => (
               <div
                 key={moduleId}
-                onTouchStart={handleLongPressStart}
-                onTouchEnd={handleLongPressEnd}
-                onTouchMove={handleLongPressEnd}
-                onMouseDown={handleLongPressStart}
-                onMouseUp={handleLongPressEnd}
-                onMouseLeave={handleLongPressEnd}
+                {...(!editMode && {
+                  onTouchStart: handleLongPressStart,
+                  onTouchEnd: handleLongPressEnd,
+                  onTouchMove: handleLongPressEnd,
+                  onMouseDown: handleLongPressStart,
+                  onMouseUp: handleLongPressEnd,
+                  onMouseLeave: handleLongPressEnd,
+                })}
               >
                 {renderModule(moduleId)}
               </div>

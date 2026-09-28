@@ -1,11 +1,12 @@
 "use client";
 
-import { useState, useEffect, useMemo, useRef } from "react";
+import { useState, useEffect, useLayoutEffect, useMemo, useRef } from "react";
 import Link from "next/link";
 import { supabase } from "../../lib/supabase";
 import { useCountUp } from "../../lib/useCountUp";
 import { getBankInfo } from "../../lib/banks";
 import HoldingDistribution from "../components/HoldingDistribution";
+import MonitorPanel from "../components/MonitorPanel";
 
 function daysHeld(holdDate?: string | null, endDate?: string | null): number {
   if (!holdDate) return 0;
@@ -43,6 +44,8 @@ const STATUS_TABS: { key: StatusFilter; label: string }[] = [
   { key: "confirmed", label: "持仓" },
   { key: "transit", label: "在途" },
 ];
+
+type View = "active" | "closed" | "monitor";
 
 function MiniChart({ points }: { points: number[] }) {
   if (points.length < 2) return <div className="w-[60px] h-5" />;
@@ -97,13 +100,15 @@ export default function HoldingsPage() {
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
   const [summaryCollapsed, setSummaryCollapsed] = useState(false);
   const [scrolled, setScrolled] = useState(false);
-  const [view, setView] = useState<"active" | "closed">("active");
+  const [view, setView] = useState<View>("active");
 
   const [menuItem, setMenuItem] = useState<any | null>(null);
   const longPressTimer = useRef<NodeJS.Timeout | null>(null);
   const longPressed = useRef(false);
 
-  /* ============ 拉数据：active + closed ============ */
+  const [mounted, setMounted] = useState(false);
+
+  /* ============ 拉数据 ============ */
   useEffect(() => {
     const userId = localStorage.getItem("user_id");
     if (!userId) {
@@ -115,6 +120,8 @@ export default function HoldingsPage() {
     setLastUpdated(`${hh}:${mm}`);
 
     async function fetchData() {
+      const startTs = Date.now();
+
       const { data } = await supabase
         .from("user_holdings")
         .select(
@@ -122,43 +129,73 @@ export default function HoldingsPage() {
         )
         .eq("user_id", userId)
         .in("status", ["active", "closed"]);
+
       if (!data) {
+        const elapsed = Date.now() - startTs;
+        if (elapsed < 300) await new Promise(r => setTimeout(r, 300 - elapsed));
         setLoading(false);
         return;
       }
       setAllHoldings(data);
 
-      /* 只给 active 拉近 7 天净值（做迷你图） */
+      const elapsed = Date.now() - startTs;
+      if (elapsed < 300) await new Promise(r => setTimeout(r, 300 - elapsed));
+      setLoading(false);
+
       const activeIds = data
         .filter((h: any) => h.status === "active")
         .map((h: any) => h.products?.id)
         .filter(Boolean);
       if (activeIds.length > 0) {
-        const { data: navData } = await supabase
+        supabase
           .from("nav_history")
           .select("product_id, nav_date, unit_nav")
           .in("product_id", activeIds)
           .gte("nav_date", daysAgoStr(7))
-          .order("nav_date", { ascending: true });
-        if (navData) {
-          const grouped: Record<number, number[]> = {};
-          navData.forEach((r: any) => {
-            if (!grouped[r.product_id]) grouped[r.product_id] = [];
-            grouped[r.product_id].push(Number(r.unit_nav));
+          .order("nav_date", { ascending: true })
+          .then(({ data: navData }) => {
+            if (!navData) return;
+            const grouped: Record<number, number[]> = {};
+            navData.forEach((r: any) => {
+              if (!grouped[r.product_id]) grouped[r.product_id] = [];
+              grouped[r.product_id].push(Number(r.unit_nav));
+            });
+            setNavHistory(grouped);
           });
-          setNavHistory(grouped);
-        }
       }
-      setLoading(false);
     }
     fetchData();
   }, []);
 
+  /* ============ 首帧同步：读 URL 参数 + 滚动归零 + mounted ============ */
+  useLayoutEffect(() => {
+    // ★ 读 URL 参数 ?view=monitor / ?view=closed，支持从 /monitor 重定向过来
+    if (typeof window !== "undefined") {
+      const v = new URLSearchParams(window.location.search).get("view");
+      if (v === "monitor" || v === "closed" || v === "active") {
+        setView(v as View);
+      }
+    }
+    window.scrollTo(0, 0);
+    setScrolled(false);
+    setMounted(true);
+  }, []);
+
+  /* ============ 滚动监听 ============ */
   useEffect(() => {
     const onScroll = () => setScrolled(window.scrollY > 180);
     window.addEventListener("scroll", onScroll, { passive: true });
     return () => window.removeEventListener("scroll", onScroll);
   }, []);
+
+  /* ============ 切换视图：同时更新 URL ============ */
+  function switchView(v: View) {
+    setView(v);
+    if (typeof window !== "undefined") {
+      const url = v === "active" ? "/holdings" : `/holdings?view=${v}`;
+      window.history.replaceState(null, "", url);
+    }
+  }
 
   const holdings = useMemo(
     () => allHoldings.filter(h => h.status === "active"),
@@ -175,7 +212,7 @@ export default function HoldingsPage() {
     [allHoldings]
   );
 
-  /* ============ 汇总（active） ============ */
+  /* ============ 汇总 ============ */
   const totalHolding = holdings.reduce((s, h) => s + Number(h.holding_amount || 0), 0);
   const totalInTransit = holdings.reduce((s, h) => s + Number(h.in_transit_amount || 0), 0);
   const totalAssets = totalHolding + totalInTransit;
@@ -228,7 +265,7 @@ export default function HoldingsPage() {
 
   const animatedClosedProfit = useCountUp(closedStats.totalProfit, 1200);
 
-  /* ============ 活跃持仓的今日最佳/最差 ============ */
+  /* ============ 今日最佳/最差 ============ */
   const { bestToday, worstToday } = useMemo(() => {
     if (holdings.length === 0) return { bestToday: null, worstToday: null };
     const ranked = holdings
@@ -297,7 +334,7 @@ export default function HoldingsPage() {
           let diff = 0;
           if (sortKey === "value") {
             diff = Number(b.holding_amount || 0) - Number(a.holding_amount || 0);
-                    } else if (sortKey === "today") {
+          } else if (sortKey === "today") {
             const aP = Number(a.holding_amount || 0) * Number(a.products?.daily_return || 0);
             const bP = Number(b.holding_amount || 0) * Number(b.products?.daily_return || 0);
             diff = bP - aP;
@@ -360,7 +397,6 @@ export default function HoldingsPage() {
     }
   };
 
-  /* ============ 删除已清仓记录 ============ */
   async function handleDeleteClosed(h: any, e: React.MouseEvent) {
     e.preventDefault();
     e.stopPropagation();
@@ -369,173 +405,132 @@ export default function HoldingsPage() {
     setAllHoldings(prev => prev.filter(x => x.id !== h.id));
   }
 
-  /* ============ 加载中 ============ */
-  if (loading) {
-    return (
-      <div className="min-h-screen pb-24">
-        <div className="container mx-auto px-5 pt-8 max-w-3xl">
-          <div className="h-7 w-24 bg-slate-200/60 rounded-lg animate-pulse mb-2" />
-          <div className="h-4 w-40 bg-slate-200/60 rounded animate-pulse mb-6" />
-          <div className="card-summary p-6 mb-5 h-44 animate-pulse" />
-          <div className="card p-5 mb-4 h-40 animate-pulse" />
-        </div>
-      </div>
-    );
-  }
-
-  /* ============ 空状态（无任何持仓/清仓记录） ============ */
-  if (holdings.length === 0 && closedHoldings.length === 0) {
-    return (
-      <div className="min-h-screen pb-24">
-        <div className="container mx-auto px-5 pt-8 max-w-3xl">
-          <div className="text-[22px] font-bold tracking-tight text-slate-900 mb-5">
-            我的理财
-          </div>
-          <div className="segment-group flex mb-5">
-            <button className="flex-1 py-2.5 text-[13px] segment-item segment-item-active">
-              持仓
-            </button>
-            <button className="flex-1 py-2.5 text-[13px] segment-item text-slate-400">
-              已清仓
-            </button>
-            <Link
-              href="/monitor"
-              className="flex-1 py-2.5 text-[13px] segment-item text-center hover:text-slate-700"
-            >
-              监控
-            </Link>
-          </div>
-        </div>
-        <div className="flex items-center justify-center px-5 mt-8">
-          <div className="max-w-sm w-full text-center animate-fade-in-up">
-            <div className="w-20 h-20 mx-auto mb-6 rounded-3xl
-                            bg-gradient-to-br from-violet-500 to-purple-600
-                            flex items-center justify-center
-                            shadow-xl shadow-purple-500/25">
-              <svg className="w-9 h-9 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
-                <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
-              </svg>
-            </div>
-            <div className="text-[20px] font-bold text-slate-900 mb-2">还没有理财记录</div>
-            <div className="text-[13px] text-slate-400 mb-8 leading-relaxed">
-              添加第一笔理财，开始记录你的净值变化
-            </div>
-            <Link href="/add" className="btn-primary inline-block text-sm px-8 py-3">
-              添加持仓
-            </Link>
-          </div>
-        </div>
-      </div>
-    );
-  }
+  /* ============ 副标题文案 ============ */
+  const subtitleText = useMemo(() => {
+    if (view === "active") {
+      return `${holdings.length} 个产品 · ${Math.max(0, bankList.length - 1)} 家机构 · 更新于 ${lastUpdated}`;
+    }
+    if (view === "closed") {
+      return `${closedHoldings.length} 笔清仓记录`;
+    }
+    return "监控净值规则 · 全部满足时触发";
+  }, [view, holdings.length, bankList.length, lastUpdated, closedHoldings.length]);
 
   return (
     <div className="min-h-screen pb-24">
       {/* 吸顶条 */}
-      <div
-        className={`fixed top-0 left-0 right-0 z-40 transition-all duration-300 ${
-          scrolled ? "translate-y-0 opacity-100" : "-translate-y-full opacity-0"
-        }`}
-        style={{
-          background: "rgba(245, 246, 250, 0.85)",
-          backdropFilter: "blur(20px) saturate(180%)",
-          WebkitBackdropFilter: "blur(20px) saturate(180%)",
-          borderBottom: "1px solid rgba(15, 23, 42, 0.06)",
-        }}
-      >
-        <div className="max-w-3xl mx-auto px-5 py-3 flex items-center justify-between">
-          <div className="flex flex-col">
-            <span className="text-[10px] text-slate-400">
-              {view === "active" ? "总资产" : "已清仓累计"}
-            </span>
-            <span className="font-mono font-bold text-[15px] text-slate-900 tabular">
-              ¥{privacy
-                ? "••••"
-                : (view === "active" ? totalAssets : closedStats.totalProfit).toLocaleString("zh-CN", {
-                    minimumFractionDigits: 2,
-                    maximumFractionDigits: 2,
-                  })}
-            </span>
+      {mounted && (
+        <div
+          className={`fixed top-0 left-0 right-0 z-40 transition-all duration-300 ${
+            scrolled ? "translate-y-0 opacity-100" : "-translate-y-full opacity-0"
+          }`}
+          style={{
+            background: "rgba(255, 255, 255, 0.88)",
+            backdropFilter: "blur(20px) saturate(180%)",
+            WebkitBackdropFilter: "blur(20px) saturate(180%)",
+            borderBottom: "1px solid rgba(15, 23, 42, 0.06)",
+          }}
+        >
+          <div className="max-w-3xl mx-auto px-5 py-3 flex items-center justify-between">
+            <div className="flex flex-col">
+              <span className="text-[10px] text-slate-400">
+                {view === "active" ? "总资产" : view === "closed" ? "已清仓累计" : "净值监控"}
+              </span>
+              <span className="font-mono font-bold text-[15px] text-slate-900 tabular">
+                {view === "monitor"
+                  ? "监控规则"
+                  : `¥${privacy
+                      ? "••••"
+                      : (view === "active" ? totalAssets : closedStats.totalProfit).toLocaleString("zh-CN", {
+                          minimumFractionDigits: 2,
+                          maximumFractionDigits: 2,
+                        })}`}
+              </span>
+            </div>
+            {view === "active" ? (
+              <div className="flex flex-col items-end">
+                <span className="text-[10px] text-slate-400">今日</span>
+                <span className={`font-mono font-bold text-[14px] tabular ${
+                  totalProfitToday > 0 ? "text-rose-500"
+                  : totalProfitToday < 0 ? "text-emerald-500"
+                  : "text-slate-700"
+                }`}>
+                  {fmtProfit(totalProfitToday)}
+                </span>
+              </div>
+            ) : view === "closed" ? (
+              <div className="flex flex-col items-end">
+                <span className="text-[10px] text-slate-400">胜率</span>
+                <span className="font-mono font-bold text-[14px] tabular text-slate-700">
+                  {closedStats.total > 0
+                    ? `${Math.round((closedStats.winCount / closedStats.total) * 100)}%`
+                    : "—"}
+                </span>
+              </div>
+            ) : (
+              <div />
+            )}
+            {view !== "monitor" && (
+              <button
+                onClick={() => setPrivacy(p => !p)}
+                className="w-8 h-8 rounded-full bg-white border border-slate-200
+                           flex items-center justify-center active:scale-90
+                           transition-all duration-200"
+              >
+                <svg className="w-3.5 h-3.5 text-slate-500" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
+                  {privacy ? (
+                    <path d="M17.94 17.94A10.07 10.07 0 0112 20c-7 0-11-8-11-8a18.45 18.45 0 015.06-5.94M9.9 4.24A9.12 9.12 0 0112 4c7 0 11 8 11 8a18.5 18.5 0 01-2.16 3.19m-6.72-1.07a3 3 0 11-4.24-4.24M1 1l22 22" strokeLinecap="round" strokeLinejoin="round" />
+                  ) : (
+                    <>
+                      <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" strokeLinecap="round" strokeLinejoin="round" />
+                      <circle cx="12" cy="12" r="3" strokeLinecap="round" strokeLinejoin="round" />
+                    </>
+                  )}
+                </svg>
+              </button>
+            )}
           </div>
-          {view === "active" ? (
-            <div className="flex flex-col items-end">
-              <span className="text-[10px] text-slate-400">今日</span>
-              <span className={`font-mono font-bold text-[14px] tabular ${
-                totalProfitToday > 0 ? "text-rose-500"
-                : totalProfitToday < 0 ? "text-emerald-500"
-                : "text-slate-700"
-              }`}>
-                {fmtProfit(totalProfitToday)}
-              </span>
-            </div>
-          ) : (
-            <div className="flex flex-col items-end">
-              <span className="text-[10px] text-slate-400">胜率</span>
-              <span className="font-mono font-bold text-[14px] tabular text-slate-700">
-                {closedStats.total > 0
-                  ? `${Math.round((closedStats.winCount / closedStats.total) * 100)}%`
-                  : "—"}
-              </span>
-            </div>
-          )}
-          <button
-            onClick={() => setPrivacy(p => !p)}
-            className="w-8 h-8 rounded-full bg-white border border-slate-200
-                       flex items-center justify-center active:scale-90
-                       transition-all duration-200"
-          >
-            <svg className="w-3.5 h-3.5 text-slate-500" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
-              {privacy ? (
-                <path d="M17.94 17.94A10.07 10.07 0 0112 20c-7 0-11-8-11-8a18.45 18.45 0 015.06-5.94M9.9 4.24A9.12 9.12 0 0112 4c7 0 11 8 11 8a18.5 18.5 0 01-2.16 3.19m-6.72-1.07a3 3 0 11-4.24-4.24M1 1l22 22" strokeLinecap="round" strokeLinejoin="round" />
-              ) : (
-                <>
-                  <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" strokeLinecap="round" strokeLinejoin="round" />
-                  <circle cx="12" cy="12" r="3" strokeLinecap="round" strokeLinejoin="round" />
-                </>
-              )}
-            </svg>
-          </button>
         </div>
-      </div>
+      )}
 
       <div className="container mx-auto px-5 pt-8 max-w-3xl">
 
         {/* ============ 顶部标题 ============ */}
-        <div className="flex items-center gap-3 mb-5 animate-fade-in-up">
+        <div className="flex items-center gap-3 mb-5">
           <div className="flex-1">
             <div className="text-[22px] font-bold tracking-tight text-slate-900">
               我的理财
             </div>
             <div className="text-[12px] text-slate-400 mt-0.5">
-              {view === "active"
-                ? `${holdings.length} 个产品 · ${bankList.length - 1} 家机构 · 更新于 ${lastUpdated}`
-                : `${closedHoldings.length} 笔清仓记录`}
+              {subtitleText}
             </div>
           </div>
-          <button
-            onClick={() => setPrivacy(p => !p)}
-            className="w-9 h-9 rounded-full bg-white border border-slate-200
-                       hover:border-slate-300 hover:bg-slate-50
-                       flex items-center justify-center flex-shrink-0
-                       transition-all duration-300 active:scale-90"
-          >
-            {privacy ? (
-              <svg className="w-4 h-4 text-slate-500" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
-                <path d="M17.94 17.94A10.07 10.07 0 0112 20c-7 0-11-8-11-8a18.45 18.45 0 015.06-5.94M9.9 4.24A9.12 9.12 0 0112 4c7 0 11 8 11 8a18.5 18.5 0 01-2.16 3.19m-6.72-1.07a3 3 0 11-4.24-4.24M1 1l22 22" strokeLinecap="round" strokeLinejoin="round" />
-              </svg>
-            ) : (
-              <svg className="w-4 h-4 text-slate-500" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
-                <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" strokeLinecap="round" strokeLinejoin="round" />
-                <circle cx="12" cy="12" r="3" strokeLinecap="round" strokeLinejoin="round" />
-              </svg>
-            )}
-          </button>
+          {view !== "monitor" && (
+            <button
+              onClick={() => setPrivacy(p => !p)}
+              className="w-9 h-9 rounded-full bg-white border border-slate-200
+                         hover:border-slate-300 hover:bg-slate-50
+                         flex items-center justify-center flex-shrink-0
+                         transition-all duration-300 active:scale-90"
+            >
+              {privacy ? (
+                <svg className="w-4 h-4 text-slate-500" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
+                  <path d="M17.94 17.94A10.07 10.07 0 0112 20c-7 0-11-8-11-8a18.45 18.45 0 015.06-5.94M9.9 4.24A9.12 9.12 0 0112 4c7 0 11 8 11 8a18.5 18.5 0 01-2.16 3.19m-6.72-1.07a3 3 0 11-4.24-4.24M1 1l22 22" strokeLinecap="round" strokeLinejoin="round" />
+                </svg>
+              ) : (
+                <svg className="w-4 h-4 text-slate-500" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
+                  <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" strokeLinecap="round" strokeLinejoin="round" />
+                  <circle cx="12" cy="12" r="3" strokeLinecap="round" strokeLinejoin="round" />
+                </svg>
+              )}
+            </button>
+          )}
         </div>
 
-        {/* ============ 三个 Tab ============ */}
+        {/* ============ 三个 Tab（★ 全部用 button，不再跳路由） ============ */}
         <div className="segment-group flex mb-5 animate-fade-in-up delay-1">
           <button
-            onClick={() => setView("active")}
+            onClick={() => switchView("active")}
             className={`flex-1 py-2.5 text-[13px] segment-item ${
               view === "active" ? "segment-item-active" : "hover:text-slate-700"
             }`}
@@ -543,19 +538,21 @@ export default function HoldingsPage() {
             持仓 {holdings.length > 0 ? `(${holdings.length})` : ""}
           </button>
           <button
-            onClick={() => setView("closed")}
+            onClick={() => switchView("closed")}
             className={`flex-1 py-2.5 text-[13px] segment-item ${
               view === "closed" ? "segment-item-active" : "hover:text-slate-700"
             }`}
           >
             已清仓 {closedHoldings.length > 0 ? `(${closedHoldings.length})` : ""}
           </button>
-          <Link
-            href="/monitor"
-            className="flex-1 py-2.5 text-[13px] segment-item text-center hover:text-slate-700"
+          <button
+            onClick={() => switchView("monitor")}
+            className={`flex-1 py-2.5 text-[13px] segment-item ${
+              view === "monitor" ? "segment-item-active" : "hover:text-slate-700"
+            }`}
           >
             监控
-          </Link>
+          </button>
         </div>
 
         {/* ============================================================ */}
@@ -563,7 +560,33 @@ export default function HoldingsPage() {
         {/* ============================================================ */}
         {view === "active" && (
           <>
-            {holdings.length === 0 ? (
+            {loading ? (
+              <>
+                <div className="card-summary p-6 mb-5 h-44 animate-pulse" />
+                <div className="card p-5 mb-4 h-40 animate-pulse" />
+              </>
+            ) : holdings.length === 0 && closedHoldings.length === 0 ? (
+              /* 完全新用户：大图标空状态 */
+              <div className="flex items-center justify-center px-1 mt-8">
+                <div className="max-w-sm w-full text-center animate-fade-in-up">
+                  <div className="w-20 h-20 mx-auto mb-6 rounded-3xl
+                                  bg-gradient-to-br from-violet-500 to-purple-600
+                                  flex items-center justify-center
+                                  shadow-xl shadow-purple-500/25">
+                    <svg className="w-9 h-9 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
+                    </svg>
+                  </div>
+                  <div className="text-[20px] font-bold text-slate-900 mb-2">还没有理财记录</div>
+                  <div className="text-[13px] text-slate-400 mb-8 leading-relaxed">
+                    添加第一笔理财，开始记录你的净值变化
+                  </div>
+                  <Link href="/add" className="btn-primary inline-block text-sm px-8 py-3">
+                    添加持仓
+                  </Link>
+                </div>
+              </div>
+            ) : holdings.length === 0 ? (
               <div className="card p-12 text-center animate-fade-in-up">
                 <div className="text-slate-300 text-sm mb-3">暂无持仓</div>
                 <Link href="/add" className="btn-primary inline-block text-xs px-6 py-2.5">
@@ -573,17 +596,18 @@ export default function HoldingsPage() {
             ) : (
               <>
                 {/* 汇总卡 */}
-                <div className="card-summary mb-5 animate-fade-in-up delay-1 overflow-hidden relative">
-                  <div className="p-6">
+                <div className="card-hero mb-5 animate-fade-in-up delay-1">
+                  <div className="dot-pattern" />
+                  <div className="p-6 relative z-10">
                     <button
                       onClick={() => setSummaryCollapsed(c => !c)}
-                      className="absolute top-4 right-4 w-7 h-7 rounded-full
-                                 bg-slate-50 hover:bg-slate-100
+                      className="absolute top-4 right-4 w-8 h-8 rounded-full
+                                 bg-white/15 hover:bg-white/25
                                  flex items-center justify-center
                                  transition-all duration-300 active:scale-90"
                     >
                       <svg
-                        className={`w-3.5 h-3.5 text-slate-400 transition-transform duration-300 ${
+                        className={`w-3.5 h-3.5 text-white transition-transform duration-300 ${
                           summaryCollapsed ? "rotate-180" : ""
                         }`}
                         fill="none"
@@ -595,11 +619,11 @@ export default function HoldingsPage() {
                       </svg>
                     </button>
 
-                    <div className="text-[11px] text-slate-500 tracking-wider mb-2">
+                    <div className="text-[11px] text-white/70 tracking-wider mb-2">
                       总资产（元）
                     </div>
-                    <div className={`leading-none font-bold tracking-tight text-gradient tabular transition-all duration-500 ${
-                      summaryCollapsed ? "text-[28px]" : "text-[34px] mb-5"
+                    <div className={`text-white leading-none font-bold tracking-tight tabular transition-all duration-500 ${
+                      summaryCollapsed ? "text-[28px]" : "text-[36px] mb-5"
                     }`}>
                       {privacy
                         ? "••••••"
@@ -613,55 +637,43 @@ export default function HoldingsPage() {
                       summaryCollapsed ? "max-h-0 opacity-0" : "max-h-[400px] opacity-100"
                     }`}>
                       {totalAssets > 0 && (
-                        <div className="mb-5">
-                          <div className="h-1.5 w-full bg-slate-100 rounded-full overflow-hidden flex">
+                        <div className="mb-4">
+                          <div className="h-1.5 w-full bg-white/20 rounded-full overflow-hidden flex">
                             <div
-                              className="h-full bg-gradient-to-r from-violet-500 to-purple-600"
+                              className="h-full bg-white"
                               style={{ width: `${(totalHolding / totalAssets) * 100}%` }}
                             />
                             <div
-                              className="h-full bg-amber-400"
+                              className="h-full bg-amber-300"
                               style={{ width: `${(totalInTransit / totalAssets) * 100}%` }}
                             />
                           </div>
-                          <div className="flex justify-between mt-2 text-[10px] text-slate-400">
+                          <div className="flex justify-between mt-2 text-[10px] text-white/75">
                             <span>
-                              <span className="inline-block w-1.5 h-1.5 bg-violet-500 rounded-full mr-1" />
+                              <span className="inline-block w-1.5 h-1.5 bg-white rounded-full mr-1" />
                               持仓 {fmtMoney(animatedHolding)}
                             </span>
                             <span>
-                              <span className="inline-block w-1.5 h-1.5 bg-amber-400 rounded-full mr-1" />
+                              <span className="inline-block w-1.5 h-1.5 bg-amber-300 rounded-full mr-1" />
                               在途 {fmtMoney(animatedInTransit)}
                             </span>
                           </div>
                         </div>
                       )}
 
-                      <div className="grid grid-cols-2 gap-4 pt-4 border-t divider">
-                        <div>
-                          <div className="text-[11px] text-slate-400 mb-1">今日收益</div>
-                          <div className={`font-mono font-bold text-[17px] tabular ${
-                            totalProfitToday > 0 ? "text-rose-500"
-                            : totalProfitToday < 0 ? "text-emerald-500"
-                            : "text-slate-700"
-                          }`}>
+                      <div className="grid grid-cols-2 gap-3 pt-4 border-t border-white/15">
+                        <div className="chip px-3 py-2.5">
+                          <div className="text-[10px] text-white/65 mb-1">今日收益</div>
+                          <div className="font-mono font-bold text-[15px] text-white tabular">
                             {fmtProfit(animatedToday)}
                           </div>
-                          <div className={`text-[10px] mt-0.5 font-mono ${
-                            todayRate > 0 ? "text-rose-500"
-                            : todayRate < 0 ? "text-emerald-500"
-                            : "text-slate-400"
-                          }`}>
+                          <div className="text-[10px] text-white/60 font-mono mt-0.5">
                             {fmtPct(todayRate)}
                           </div>
                         </div>
-                        <div>
-                          <div className="text-[11px] text-slate-400 mb-1">累计收益</div>
-                          <div className={`font-mono font-bold text-[17px] tabular ${
-                            totalProfitCumulative > 0 ? "text-rose-500"
-                            : totalProfitCumulative < 0 ? "text-emerald-500"
-                            : "text-slate-700"
-                          }`}>
+                        <div className="chip px-3 py-2.5">
+                          <div className="text-[10px] text-white/65 mb-1">累计收益</div>
+                          <div className="font-mono font-bold text-[15px] text-white tabular">
                             {fmtProfit(animatedCum)}
                           </div>
                         </div>
@@ -934,62 +946,62 @@ export default function HoldingsPage() {
                                     )}
                                   </div>
 
-                                                           <div className="grid grid-cols-4 gap-2 items-end mt-2">
-                            <div>
-                              <div className="text-[10px] text-slate-400 mb-1">市值</div>
-                              <div className="font-mono font-bold text-[14px] text-slate-900 tabular">
-                                {privacy ? "••••" : hold.toLocaleString("zh-CN", { minimumFractionDigits: 2 })}
-                              </div>
-                            </div>
-                            <div className="text-right">
-                              <div className="text-[10px] text-slate-400 mb-1 flex items-center justify-end gap-1">
-                                今日
-                                {p.nav_date && p.nav_date !== todayStr() && (
-                                  <span className="text-[9px] text-amber-500">
-                                    {p.nav_date.slice(5)}
-                                  </span>
-                                )}
-                              </div>
-                              <div className={`font-mono font-semibold text-[14px] tabular ${
-                                today > 0 ? "text-rose-500"
-                                : today < 0 ? "text-emerald-500"
-                                : "text-slate-400"
-                              }`}>
-                                {today >= 0 ? "+" : ""}{privacy ? "••" : today.toFixed(2)}
-                              </div>
-                            </div>
-                            <div className="text-right">
-                              <div className="text-[10px] text-slate-400 mb-1">万收</div>
-                              <div className={`font-mono font-semibold text-[14px] tabular ${
-                                daily > 0 ? "text-rose-500"
-                                : daily < 0 ? "text-emerald-500"
-                                : "text-slate-400"
-                              }`}>
-                                {privacy ? "••" : daily.toFixed(2)}
-                              </div>
-                            </div>
-                            <div className="text-right flex items-end justify-end gap-1">
-                              <div>
-                                <div className="text-[10px] text-slate-400 mb-1">年化</div>
-                                <div className={`font-mono font-semibold text-[14px] tabular ${
-                                  annual > 0 ? "text-rose-500"
-                                  : annual < 0 ? "text-emerald-500"
-                                  : "text-slate-400"
-                                }`}>
-                                  {annual > 0 ? "+" : ""}{annual.toFixed(2)}%
-                                </div>
-                              </div>
-                              <svg
-                                className="w-3.5 h-3.5 text-slate-300 row-arrow mb-0.5"
-                                fill="none"
-                                stroke="currentColor"
-                                viewBox="0 0 24 24"
-                                strokeWidth={2.5}
-                              >
-                                <path d="M9 5l7 7-7 7" strokeLinecap="round" strokeLinejoin="round" />
-                              </svg>
-                            </div>
-                          </div>
+                                  <div className="grid grid-cols-4 gap-2 items-end mt-2">
+                                    <div>
+                                      <div className="text-[10px] text-slate-400 mb-1">市值</div>
+                                      <div className="font-mono font-bold text-[14px] text-slate-900 tabular">
+                                        {privacy ? "••••" : hold.toLocaleString("zh-CN", { minimumFractionDigits: 2 })}
+                                      </div>
+                                    </div>
+                                    <div className="text-right">
+                                      <div className="text-[10px] text-slate-400 mb-1 flex items-center justify-end gap-1">
+                                        今日
+                                        {p.nav_date && p.nav_date !== todayStr() && (
+                                          <span className="text-[9px] text-amber-500">
+                                            {p.nav_date.slice(5)}
+                                          </span>
+                                        )}
+                                      </div>
+                                      <div className={`font-mono font-semibold text-[14px] tabular ${
+                                        today > 0 ? "text-rose-500"
+                                        : today < 0 ? "text-emerald-500"
+                                        : "text-slate-400"
+                                      }`}>
+                                        {today >= 0 ? "+" : ""}{privacy ? "••" : today.toFixed(2)}
+                                      </div>
+                                    </div>
+                                    <div className="text-right">
+                                      <div className="text-[10px] text-slate-400 mb-1">万收</div>
+                                      <div className={`font-mono font-semibold text-[14px] tabular ${
+                                        daily > 0 ? "text-rose-500"
+                                        : daily < 0 ? "text-emerald-500"
+                                        : "text-slate-400"
+                                      }`}>
+                                        {privacy ? "••" : daily.toFixed(2)}
+                                      </div>
+                                    </div>
+                                    <div className="text-right flex items-end justify-end gap-1">
+                                      <div>
+                                        <div className="text-[10px] text-slate-400 mb-1">年化</div>
+                                        <div className={`font-mono font-semibold text-[14px] tabular ${
+                                          annual > 0 ? "text-rose-500"
+                                          : annual < 0 ? "text-emerald-500"
+                                          : "text-slate-400"
+                                        }`}>
+                                          {annual > 0 ? "+" : ""}{annual.toFixed(2)}%
+                                        </div>
+                                      </div>
+                                      <svg
+                                        className="w-3.5 h-3.5 text-slate-300 row-arrow mb-0.5"
+                                        fill="none"
+                                        stroke="currentColor"
+                                        viewBox="0 0 24 24"
+                                        strokeWidth={2.5}
+                                      >
+                                        <path d="M9 5l7 7-7 7" strokeLinecap="round" strokeLinejoin="round" />
+                                      </svg>
+                                    </div>
+                                  </div>
 
                                   {p.nav_date && hi === group.items.length - 1 && (
                                     <div className="mt-3 pt-3 border-t divider flex items-center gap-1.5">
@@ -1018,7 +1030,12 @@ export default function HoldingsPage() {
         {/* ============================================================ */}
         {view === "closed" && (
           <>
-            {closedHoldings.length === 0 ? (
+            {loading ? (
+              <>
+                <div className="card-summary p-6 mb-5 h-44 animate-pulse" />
+                <div className="card p-5 mb-4 h-40 animate-pulse" />
+              </>
+            ) : closedHoldings.length === 0 ? (
               <div className="card p-12 text-center animate-fade-in-up">
                 <div className="w-16 h-16 mx-auto mb-5 rounded-2xl
                                 bg-gradient-to-br from-slate-200 to-slate-300
@@ -1034,7 +1051,6 @@ export default function HoldingsPage() {
               </div>
             ) : (
               <>
-                {/* 已清仓汇总卡 */}
                 <div className="card-summary p-6 mb-5 animate-fade-in-up delay-1">
                   <div className="text-[11px] text-slate-500 tracking-wider mb-2">
                     累计收益（元）
@@ -1080,7 +1096,6 @@ export default function HoldingsPage() {
                   </div>
                 </div>
 
-                {/* 已清仓列表 */}
                 <div className="space-y-3">
                   {closedHoldings.map((h, i) => {
                     const p = h.products;
@@ -1104,7 +1119,6 @@ export default function HoldingsPage() {
                                    animate-fade-in-up"
                         style={{ animationDelay: `${0.04 * Math.min(i, 8)}s` }}
                       >
-                        {/* 第一行：银行 + 产品名 + 已清仓标签 */}
                         <div className="flex items-start gap-3 mb-3">
                           <span
                             className="bank-avatar flex-shrink-0 mt-0.5"
@@ -1150,7 +1164,6 @@ export default function HoldingsPage() {
                           </div>
                         </div>
 
-                        {/* 第二行：三列数据（买入 / 卖出 / 盈亏） */}
                         <div className="grid grid-cols-3 gap-3 py-3 border-t divider">
                           <div>
                             <div className="text-[10px] text-slate-400 mb-1">买入金额</div>
@@ -1193,7 +1206,6 @@ export default function HoldingsPage() {
                           </div>
                         </div>
 
-                        {/* 第三行：清仓日期 */}
                         <div className="pt-2.5 border-t divider flex items-center gap-1.5">
                           <svg className="w-3 h-3 text-slate-300" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
                             <rect x="3" y="5" width="18" height="16" rx="2.5" />
@@ -1216,11 +1228,16 @@ export default function HoldingsPage() {
           </>
         )}
 
+        {/* ============================================================ */}
+        {/* ============ VIEW: 监控（★ 同级 Tab，不跳路由） ============ */}
+        {/* ============================================================ */}
+        {view === "monitor" && <MonitorPanel />}
+
         <div className="h-8" />
       </div>
 
-      {/* 长按快捷菜单（仅持仓） */}
-      {menuItem && (
+      {/* 长按快捷菜单（仅持仓视图） */}
+      {view === "active" && menuItem && (
         <>
           <div
             className="fixed inset-0 bg-black/40 z-50 animate-fade-in"

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { getBankInfo } from "../../lib/banks";
 
 type Condition = {
@@ -15,10 +15,12 @@ type Props = {
   open: boolean;
   holdings: any[];
   editing?: any;
+  editingGroup?: any;
   onClose: () => void;
   onSave: (data: {
     product_ids: number[];
     conditions: { indicator: string; operator: string; threshold: number }[];
+    condition_logic: "and" | "or";
   }) => Promise<void>;
 };
 
@@ -82,82 +84,113 @@ function newCondition(): Condition {
   };
 }
 
-export default function NewRuleModal({ open, holdings, editing, onClose, onSave }: Props) {
+function conditionsToState(conditions: any[]): Condition[] {
+  if (Array.isArray(conditions) && conditions.length > 0) {
+    return conditions.map((c: any) => {
+      const parsed = parseIndicator(c.indicator);
+      return {
+        id: uid(),
+        indicatorType: parsed.type,
+        period: parsed.period || "1m",
+        operator: c.operator,
+        threshold: String(c.threshold),
+      };
+    });
+  }
+  return [newCondition()];
+}
+
+export default function NewRuleModal({
+  open, holdings, editing, editingGroup, onClose, onSave,
+}: Props) {
   const [productIds, setProductIds] = useState<number[]>([]);
   const [conditions, setConditions] = useState<Condition[]>([newCondition()]);
+  const [logic, setLogic] = useState<"and" | "or">("and");
   const [saving, setSaving] = useState(false);
   const [msg, setMsg] = useState("");
   const [productPickerOpen, setProductPickerOpen] = useState(false);
 
+  const isEditing = !!(editing || editingGroup);
+
   useEffect(() => {
     if (!open) return;
 
-    if (editing) {
+    if (editingGroup) {
+      setProductIds(editingGroup.rules.map((r: any) => r.product_id));
+      const first = editingGroup.rules[0];
+      setConditions(conditionsToState(first?.conditions || [first]));
+      setLogic(first?.condition_logic === "or" ? "or" : "and");
+    } else if (editing) {
       setProductIds([editing.product_id]);
       if (Array.isArray(editing.conditions) && editing.conditions.length > 0) {
-        setConditions(
-          editing.conditions.map((c: any) => {
-            const parsed = parseIndicator(c.indicator);
-            return {
-              id: uid(),
-              indicatorType: parsed.type,
-              period: parsed.period || "1m",
-              operator: c.operator,
-              threshold: String(c.threshold),
-            };
-          })
-        );
+        setConditions(conditionsToState(editing.conditions));
       } else {
-        const parsed = parseIndicator(editing.indicator || "annualized_1m");
         setConditions([
           {
             id: uid(),
-            indicatorType: parsed.type,
-            period: parsed.period || "1m",
+            indicatorType: parseIndicator(editing.indicator || "annualized_1m").type,
+            period: parseIndicator(editing.indicator || "annualized_1m").period || "1m",
             operator: editing.operator || "<",
             threshold: String(editing.threshold ?? ""),
           },
         ]);
       }
+      setLogic(editing.condition_logic === "or" ? "or" : "and");
     } else {
       setProductIds(holdings[0]?.product_id ? [holdings[0].product_id] : []);
       setConditions([newCondition()]);
+      setLogic("and");
     }
     setMsg("");
-  }, [open, editing, holdings]);
+  }, [open, editing, editingGroup, holdings]);
+
+  const productsByBank = useMemo(() => {
+    const map: Record<string, any[]> = {};
+    holdings.forEach(h => {
+      if (!h.products) return;
+      const bank = h.products.bank || "其他";
+      if (!map[bank]) map[bank] = [];
+      map[bank].push(h);
+    });
+    return map;
+  }, [holdings]);
+
+  const bankList = useMemo(() => Object.keys(productsByBank), [productsByBank]);
 
   if (!open) return null;
 
-  const isEditing = !!editing;
-
   function toggleProduct(pid: number) {
-    if (isEditing) {
-      setProductIds([pid]);
-      return;
-    }
     setProductIds(prev =>
       prev.includes(pid) ? prev.filter(x => x !== pid) : [...prev, pid]
     );
   }
-
-  function selectAll() {
-    if (isEditing) return;
-    setProductIds(holdings.map(h => h.product_id));
+  function selectAll() { setProductIds(holdings.map(h => h.product_id)); }
+  function clearAll() { setProductIds([]); }
+  function invertSelection() {
+    const all = holdings.map(h => h.product_id);
+    setProductIds(all.filter(pid => !productIds.includes(pid)));
   }
-
-  function clearAll() {
-    if (isEditing) return;
-    setProductIds([]);
+  function toggleBank(bank: string) {
+    const pids = (productsByBank[bank] || []).map(h => h.product_id);
+    if (pids.length === 0) return;
+    const allSelected = pids.every(pid => productIds.includes(pid));
+    if (allSelected) {
+      setProductIds(prev => prev.filter(pid => !pids.includes(pid)));
+    } else {
+      setProductIds(prev => {
+        const set = new Set(prev);
+        pids.forEach(pid => set.add(pid));
+        return Array.from(set);
+      });
+    }
   }
 
   function updateCondition(id: string, patch: Partial<Condition>) {
     setConditions(prev => prev.map(c => (c.id === id ? { ...c, ...patch } : c)));
   }
-
   function addCondition() {
     setConditions(prev => [...prev, newCondition()]);
   }
-
   function removeCondition(id: string) {
     if (conditions.length <= 1) return;
     setConditions(prev => prev.filter(c => c.id !== id));
@@ -183,6 +216,7 @@ export default function NewRuleModal({ open, holdings, editing, onClose, onSave 
       await onSave({
         product_ids: productIds,
         conditions: conditionsPayload,
+        condition_logic: conditions.length > 1 ? logic : "and",
       });
       onClose();
     } catch (e: any) {
@@ -193,16 +227,32 @@ export default function NewRuleModal({ open, holdings, editing, onClose, onSave 
 
   const selectedProducts = holdings.filter(h => productIds.includes(h.product_id));
 
+  const title = editingGroup
+    ? `编辑规则组 · ${editingGroup.rules.length} 个产品`
+    : editing
+    ? "编辑规则"
+    : "新建规则";
+
+  const saveText = saving
+    ? "保存中..."
+    : isEditing
+    ? productIds.length > 1
+      ? `保存到 ${productIds.length} 个产品`
+      : "保存修改"
+    : productIds.length > 1
+    ? `保存到 ${productIds.length} 个产品`
+    : "保存";
+
+  const logicLabel = logic === "or" ? "OR" : "AND";
+
   return (
     <>
-      {/* ============ 遮罩 ============ */}
       <div
         className="fixed inset-0 bg-black/40 z-[80] animate-fade-in"
         style={{ backdropFilter: "blur(4px)" }}
         onClick={onClose}
       />
 
-      {/* ============ 底部弹窗（唯一的一个） ============ */}
       <div
         className="fixed bottom-0 left-0 right-0 z-[90] animate-fade-in-up"
         style={{ animationDuration: "0.3s" }}
@@ -213,7 +263,7 @@ export default function NewRuleModal({ open, holdings, editing, onClose, onSave 
             {/* 头部 */}
             <div className="px-5 py-4 border-b divider flex items-center justify-between flex-shrink-0">
               <div className="text-[15px] font-semibold text-slate-900">
-                {isEditing ? "编辑规则" : "新建规则"}
+                {title}
               </div>
               <button
                 onClick={onClose}
@@ -234,25 +284,15 @@ export default function NewRuleModal({ open, holdings, editing, onClose, onSave 
               <div>
                 <div className="flex items-center justify-between mb-2">
                   <div className="text-[11px] text-slate-500">
-                    选择产品 {!isEditing && <span className="text-slate-400">（可多选）</span>}
+                    选择产品 <span className="text-slate-400">（可多选）</span>
                   </div>
-                  {!isEditing && (
-                    <div className="flex gap-2">
-                      <button
-                        onClick={selectAll}
-                        className="text-[11px] text-purple-600 font-medium hover:text-purple-700 transition-colors"
-                      >
-                        全选
-                      </button>
-                      <span className="text-slate-300">·</span>
-                      <button
-                        onClick={clearAll}
-                        className="text-[11px] text-slate-400 font-medium hover:text-slate-600 transition-colors"
-                      >
-                        清空
-                      </button>
-                    </div>
-                  )}
+                  <div className="flex gap-2">
+                    <button onClick={selectAll} className="text-[11px] text-purple-600 font-medium hover:text-purple-700 transition-colors">全选</button>
+                    <span className="text-slate-300">·</span>
+                    <button onClick={clearAll} className="text-[11px] text-slate-400 font-medium hover:text-slate-600 transition-colors">清空</button>
+                    <span className="text-slate-300">·</span>
+                    <button onClick={invertSelection} className="text-[11px] text-slate-400 font-medium hover:text-slate-600 transition-colors">反选</button>
+                  </div>
                 </div>
 
                 <button
@@ -298,7 +338,7 @@ export default function NewRuleModal({ open, holdings, editing, onClose, onSave 
                   </svg>
                 </button>
 
-                {!isEditing && selectedProducts.length > 1 && (
+                {selectedProducts.length > 1 && (
                   <div className="flex flex-wrap gap-1.5 mt-2.5">
                     {selectedProducts.map(p => {
                       const info = getBankInfo(p.products.bank);
@@ -337,18 +377,52 @@ export default function NewRuleModal({ open, holdings, editing, onClose, onSave 
                 )}
               </div>
 
-              {/* 2. 条件列表 */}
+              {/* 2. 条件组合逻辑（★ 只有 2+ 条件时显示） */}
+              {conditions.length > 1 && (
+                <div>
+                  <div className="text-[11px] text-slate-500 mb-2">
+                    条件组合方式
+                  </div>
+                  <div className="segment-group flex">
+                    <button
+                      onClick={() => setLogic("and")}
+                      className={`flex-1 py-2.5 text-[12px] segment-item ${
+                        logic === "and" ? "segment-item-active" : "hover:text-slate-700"
+                      }`}
+                    >
+                      全部满足（AND）
+                    </button>
+                    <button
+                      onClick={() => setLogic("or")}
+                      className={`flex-1 py-2.5 text-[12px] segment-item ${
+                        logic === "or" ? "segment-item-active" : "hover:text-slate-700"
+                      }`}
+                    >
+                      任意满足（OR）
+                    </button>
+                  </div>
+                  <div className="text-[10px] text-slate-400 mt-1.5 px-1">
+                    {logic === "and"
+                      ? "只有全部条件同时成立时才触发"
+                      : "只要满足其中任意一条就触发"}
+                  </div>
+                </div>
+              )}
+
+              {/* 3. 条件列表 */}
               <div>
                 <div className="flex items-center justify-between mb-2">
                   <div className="text-[11px] text-slate-500">
                     触发条件 {conditions.length > 1 && (
-                      <span className="text-slate-400">（全部满足时触发）</span>
+                      <span className="text-slate-400">
+                        （{logic === "or" ? "任意" : "全部"}满足时触发）
+                      </span>
                     )}
                   </div>
                   {conditions.length > 1 && (
                     <span className="text-[10px] text-purple-600 bg-purple-50
                                      px-2 py-0.5 rounded-full font-medium">
-                      AND 组合
+                      {logicLabel} 组合
                     </span>
                   )}
                 </div>
@@ -471,7 +545,7 @@ export default function NewRuleModal({ open, holdings, editing, onClose, onSave 
                 </button>
               </div>
 
-              {/* 3. 预览 */}
+              {/* 4. 预览 */}
               {selectedProducts.length > 0 && conditions.every(c => c.threshold) && (
                 <div className="bg-purple-50 border border-purple-100 rounded-xl p-3.5">
                   <div className="text-[10px] text-purple-500 mb-1.5 font-medium tracking-wider">
@@ -489,7 +563,11 @@ export default function NewRuleModal({ open, holdings, editing, onClose, onSave 
                       const ind = buildIndicator(c.indicatorType, c.period);
                       return (
                         <span key={c.id}>
-                          {i > 0 && <span className="mx-1 font-semibold text-purple-500">AND</span>}
+                          {i > 0 && (
+                            <span className="mx-1 font-semibold text-purple-500">
+                              {logicLabel}
+                            </span>
+                          )}
                           <span className="font-semibold">{getLabel(ind)}</span>{" "}
                           {OPERATORS.find(o => o.key === c.operator)?.label}{" "}
                           <span className="font-mono font-bold">{c.threshold}{getUnit(ind)}</span>
@@ -504,7 +582,7 @@ export default function NewRuleModal({ open, holdings, editing, onClose, onSave 
               {msg && <div className="text-sm text-rose-500 bg-rose-50 rounded-xl px-4 py-3">{msg}</div>}
             </div>
 
-            {/* 底部按钮：只有这一组 */}
+            {/* 底部按钮 */}
             <div className="px-5 py-4 border-t divider flex gap-2 flex-shrink-0">
               <button onClick={onClose} className="btn-secondary flex-1 py-3 text-sm">
                 取消
@@ -514,20 +592,14 @@ export default function NewRuleModal({ open, holdings, editing, onClose, onSave 
                 disabled={saving}
                 className="btn-primary flex-1 py-3 text-sm disabled:opacity-50"
               >
-                {saving
-                  ? "保存中..."
-                  : isEditing
-                  ? "保存修改"
-                  : productIds.length > 1
-                  ? `保存到 ${productIds.length} 个产品`
-                  : "保存"}
+                {saveText}
               </button>
             </div>
           </div>
         </div>
       </div>
 
-      {/* ============ 产品选择器（独立弹层） ============ */}
+      {/* 产品选择器 */}
       {productPickerOpen && (
         <>
           <div
@@ -544,112 +616,136 @@ export default function NewRuleModal({ open, holdings, editing, onClose, onSave 
                 <div className="px-5 py-4 border-b divider flex items-center justify-between flex-shrink-0">
                   <div className="flex items-center gap-2">
                     <div className="text-[15px] font-semibold text-slate-900">选择产品</div>
-                    {!isEditing && (
-                      <span className="text-[11px] text-slate-400">
-                        已选 {productIds.length}
-                      </span>
-                    )}
+                    <span className="text-[11px] text-slate-400">
+                      已选 {productIds.length} / {holdings.length}
+                    </span>
                   </div>
-                  <div className="flex items-center gap-1">
-                    {!isEditing && (
-                      <>
-                        <button
-                          onClick={selectAll}
-                          className="text-[12px] text-purple-600 font-medium
-                                     hover:text-purple-700 transition-colors px-2 py-1"
-                        >
-                          全选
-                        </button>
-                        <button
-                          onClick={clearAll}
-                          className="text-[12px] text-slate-400 font-medium
-                                     hover:text-slate-600 transition-colors px-2 py-1"
-                        >
-                          清空
-                        </button>
-                      </>
-                    )}
-                    <button
-                      onClick={() => setProductPickerOpen(false)}
-                      className="w-7 h-7 rounded-full bg-slate-50 hover:bg-slate-100
-                                 flex items-center justify-center ml-1
-                                 transition-colors active:scale-90"
-                    >
-                      <svg className="w-3.5 h-3.5 text-slate-500" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2.5}>
-                        <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
-                      </svg>
-                    </button>
-                  </div>
+                  <button
+                    onClick={() => setProductPickerOpen(false)}
+                    className="w-7 h-7 rounded-full bg-slate-50 hover:bg-slate-100
+                               flex items-center justify-center ml-1
+                               transition-colors active:scale-90"
+                  >
+                    <svg className="w-3.5 h-3.5 text-slate-500" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2.5}>
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                    </svg>
+                  </button>
                 </div>
 
-                <div className="overflow-y-auto flex-1">
-                  {holdings.map((h) => {
-                    const p = h.products;
-                    if (!p) return null;
-                    const info = getBankInfo(p.bank);
-                    const isSelected = productIds.includes(h.product_id);
-                    return (
-                      <button
-                        key={h.product_id}
-                        onClick={() => toggleProduct(h.product_id)}
-                        className={`w-full flex items-center gap-3 px-5 py-3.5
-                                    border-b divider last:border-b-0
-                                    transition-colors text-left
-                                    ${isSelected ? "bg-purple-50" : "hover:bg-slate-50 active:bg-slate-100"}`}
-                      >
-                        {!isEditing && (
-                          <span
-                            className={`w-5 h-5 rounded-md flex items-center justify-center
-                                        flex-shrink-0 border-2 transition-all
-                                        ${isSelected
-                                          ? "bg-gradient-to-br from-violet-500 to-purple-600 border-transparent"
-                                          : "border-slate-300 bg-white"
-                                        }`}
-                          >
-                            {isSelected && (
-                              <svg className="w-3 h-3 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={3.5}>
-                                <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
-                              </svg>
-                            )}
-                          </span>
-                        )}
-                        <span
-                          className="bank-avatar flex-shrink-0"
-                          style={{ background: info.bg, color: info.color }}
+                <div className="px-5 py-3 border-b divider flex items-center gap-2 flex-shrink-0">
+                  <button onClick={selectAll} className="flex-1 py-1.5 rounded-lg bg-purple-50 text-purple-600 text-[11px] font-semibold hover:bg-purple-100 active:scale-[0.97] transition-all">全选</button>
+                  <button onClick={clearAll} className="flex-1 py-1.5 rounded-lg bg-slate-50 text-slate-600 text-[11px] font-semibold hover:bg-slate-100 active:scale-[0.97] transition-all">清空</button>
+                  <button onClick={invertSelection} className="flex-1 py-1.5 rounded-lg bg-slate-50 text-slate-600 text-[11px] font-semibold hover:bg-slate-100 active:scale-[0.97] transition-all">反选</button>
+                </div>
+
+                {bankList.length > 1 && (
+                  <div className="px-5 py-2.5 border-b divider flex gap-1.5 overflow-x-auto no-scrollbar flex-shrink-0">
+                    {bankList.map(bank => {
+                      const info = getBankInfo(bank);
+                      const pids = productsByBank[bank].map((h: any) => h.product_id);
+                      const selectedCount = pids.filter((pid: number) => productIds.includes(pid)).length;
+                      const allSelected = selectedCount === pids.length && pids.length > 0;
+                      const someSelected = selectedCount > 0 && !allSelected;
+                      return (
+                        <button
+                          key={bank}
+                          onClick={() => toggleBank(bank)}
+                          className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full
+                                      text-[11px] font-medium whitespace-nowrap
+                                      border transition-all duration-200 active:scale-95
+                                      ${allSelected
+                                        ? "bg-purple-500 border-purple-500 text-white"
+                                        : someSelected
+                                        ? "bg-purple-50 border-purple-200 text-purple-600"
+                                        : "bg-white border-slate-200 text-slate-600 hover:border-slate-300"}`}
                         >
-                          {info.label}
-                        </span>
-                        <div className="flex-1 min-w-0">
-                          <div className={`text-[13px] truncate ${
-                            isSelected ? "text-purple-700 font-semibold" : "text-slate-800 font-medium"
-                          }`}>
-                            {p.name}
-                          </div>
-                          <div className="text-[10px] text-slate-400 mt-0.5">
-                            {p.bank}
-                          </div>
+                          <span
+                            className="w-3.5 h-3.5 rounded flex items-center justify-center text-[7px] font-bold flex-shrink-0"
+                            style={
+                              allSelected
+                                ? { background: "rgba(255,255,255,0.25)", color: "#fff" }
+                                : { background: info.bg, color: info.color }
+                            }
+                          >
+                            {info.label}
+                          </span>
+                          <span>{bank}</span>
+                          <span className={allSelected ? "text-white/80" : "text-slate-400"}>
+                            {selectedCount}/{pids.length}
+                          </span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+
+                <div className="overflow-y-auto flex-1">
+                  {bankList.map(bank => {
+                    const info = getBankInfo(bank);
+                    const bankHoldings = productsByBank[bank];
+                    return (
+                      <div key={bank}>
+                        <div className="px-5 py-2 bg-slate-50/70 border-b divider
+                                        flex items-center gap-2 sticky top-0 z-[1]">
+                          <span className="bank-avatar" style={{ background: info.bg, color: info.color }}>
+                            {info.label}
+                          </span>
+                          <span className="text-[11px] font-semibold text-slate-600">{bank}</span>
+                          <span className="text-[10px] text-slate-400">
+                            · {bankHoldings.filter((h: any) => productIds.includes(h.product_id)).length}/{bankHoldings.length}
+                          </span>
                         </div>
-                        {isEditing && isSelected && (
-                          <svg className="w-4 h-4 text-purple-600 flex-shrink-0"
-                               fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={3}>
-                            <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
-                          </svg>
-                        )}
-                      </button>
+                        {bankHoldings.map((h: any) => {
+                          const p = h.products;
+                          if (!p) return null;
+                          const isSelected = productIds.includes(h.product_id);
+                          return (
+                            <button
+                              key={h.product_id}
+                              onClick={() => toggleProduct(h.product_id)}
+                              className={`w-full flex items-center gap-3 px-5 py-3
+                                          border-b divider last:border-b-0
+                                          transition-colors text-left
+                                          ${isSelected ? "bg-purple-50/60" : "hover:bg-slate-50 active:bg-slate-100"}`}
+                            >
+                              <span
+                                className={`w-5 h-5 rounded-md flex items-center justify-center
+                                            flex-shrink-0 border-2 transition-all
+                                            ${isSelected
+                                              ? "bg-gradient-to-br from-violet-500 to-purple-600 border-transparent"
+                                              : "border-slate-300 bg-white"
+                                            }`}
+                              >
+                                {isSelected && (
+                                  <svg className="w-3 h-3 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={3.5}>
+                                    <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                                  </svg>
+                                )}
+                              </span>
+                              <div className="flex-1 min-w-0">
+                                <div className={`text-[13px] truncate ${
+                                  isSelected ? "text-purple-700 font-semibold" : "text-slate-800 font-medium"
+                                }`}>
+                                  {p.name}
+                                </div>
+                                <div className="text-[10px] text-slate-400 mt-0.5">{p.bank}</div>
+                              </div>
+                            </button>
+                          );
+                        })}
+                      </div>
                     );
                   })}
                 </div>
 
-                {!isEditing && (
-                  <div className="px-5 py-4 border-t divider flex-shrink-0">
-                    <button
-                      onClick={() => setProductPickerOpen(false)}
-                      className="btn-primary w-full py-3 text-sm"
-                    >
-                      确定{productIds.length > 0 ? `（已选 ${productIds.length}）` : ""}
-                    </button>
-                  </div>
-                )}
+                <div className="px-5 py-4 border-t divider flex-shrink-0">
+                  <button
+                    onClick={() => setProductPickerOpen(false)}
+                    className="btn-primary w-full py-3 text-sm"
+                  >
+                    确定{productIds.length > 0 ? `（已选 ${productIds.length}）` : ""}
+                  </button>
+                </div>
               </div>
             </div>
           </div>

@@ -33,7 +33,11 @@ const TABS = [
 
 export default function BottomNav() {
   const pathname = usePathname();
-  if (pathname?.startsWith("/product/") || pathname?.startsWith("/login")) return null;
+    if (
+    pathname?.startsWith("/product/") ||
+    pathname?.startsWith("/login") ||
+    pathname?.startsWith("/add")
+  ) return null;
 
   return (
     <div className="bottom-nav fixed bottom-0 left-0 right-0 z-50 pb-[env(safe-area-inset-bottom)]">
@@ -59,7 +63,9 @@ export default function BottomNav() {
               </Link>
             );
           }
-          const isActive = pathname === tab.href;
+          const isActive = tab.href === "/"
+  ? pathname === "/"
+  : pathname?.startsWith(tab.href);
           return (
             <Link
               key={tab.key}
