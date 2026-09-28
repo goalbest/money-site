@@ -106,15 +106,31 @@ const endPage = Math.min(first.pageCount, MAX_PAGES);
 console.log(`📊 totalCount: ${first.totalCount}, 共 ${first.pageCount} 页，本轮抓 ${endPage} 页\n`);
 
 const all = [...(first.resultList || [])];
+let consecutiveFail = 0;
 for (let p = 2; p <= endPage; p++) {
-  try {
-    const data = await fetchPage(p);
-    all.push(...(data.resultList || []));
-    if (p % 50 === 0 || p === endPage) console.log(`  页 ${p}/${endPage} → 累计 ${all.length}`);
-    await sleep(180);
-  } catch (e) {
-    console.log(`  ⚠️ 页 ${p} 失败`);
+  let ok = false;
+  for (let retry = 0; retry < 2 && !ok; retry++) {
+    try {
+      const data = await fetchPage(p);
+      all.push(...(data.resultList || []));
+      ok = true;
+      consecutiveFail = 0;
+      await sleep(500);
+    } catch (e) {
+      if (retry === 0) await sleep(1500); // 失败等 1.5s 再试
+    }
   }
+  if (!ok) {
+    consecutiveFail++;
+    console.log(`  ⚠️ 页 ${p} 失败（连续 ${consecutiveFail}）`);
+    // 连续 5 页失败 → 停 15 秒（等限流恢复）
+    if (consecutiveFail >= 5) {
+      console.log(`  ⏸️ 连续失败 5 页，暂停 15s...`);
+      await sleep(15000);
+      consecutiveFail = 0;
+    }
+  }
+  if (p % 50 === 0 || p === endPage) console.log(`  页 ${p}/${endPage} → 累计 ${all.length}`);
 }
 console.log(`\n抓取完成: ${all.length} 条（${((Date.now()-t0)/1000).toFixed(0)}s）\n`);
 
