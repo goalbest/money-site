@@ -43,6 +43,13 @@ jobs:
           MAX_PAGES: '400'
         run: node crawler/fetch_psbc_api.mjs
 
+      - name: 招银/交银净值更新
+        env:
+          NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+        run: node crawler/fetch_cmb.mjs
+
+
       - name: Run NAV update script
         env:
           NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
