@@ -638,9 +638,9 @@ export default function MonitorPanel() {
                       }
 
                       return (
-                        <div
+                                                <div
                           key={rule.id}
-                          className={`flex items-center gap-3 px-5 py-3.5 group
+                          className={`flex items-start gap-3 px-5 py-3.5 group
                                       border-t divider
                                       hover:bg-slate-50
                                       transition-colors duration-150
@@ -648,23 +648,23 @@ export default function MonitorPanel() {
                         >
                           <Link
                             href={`/holdings/${holding!.id}`}
-                            className="flex items-center gap-3 flex-1 min-w-0"
+                            className="flex items-start gap-2.5 flex-1 min-w-0"
                           >
                             {info && (
                               <span
-                                className="bank-avatar flex-shrink-0"
+                                className="bank-avatar flex-shrink-0 mt-0.5"
                                 style={{ background: info.bg, color: info.color }}
                               >
                                 {info.label}
                               </span>
                             )}
                             <div className="flex-1 min-w-0">
-                              <div className="text-[12px] text-slate-900 font-medium truncate">
+                              <div className="text-[13px] text-slate-900 font-medium leading-snug line-clamp-2">
                                 {product.name}
                               </div>
-                              <div className="flex items-center gap-2 mt-1">
+                              <div className="flex items-center gap-2 mt-1.5 flex-wrap">
                                 <span
-                                  className={`px-1.5 py-0.5 rounded text-[9px] font-semibold ${
+                                  className={`px-1.5 py-0.5 rounded text-[9px] font-semibold flex-shrink-0 ${
                                     !rule.enabled
                                       ? "bg-slate-100 text-slate-500"
                                       : triggered
@@ -681,37 +681,35 @@ export default function MonitorPanel() {
                             </div>
                           </Link>
 
-                          <div className="text-right flex-shrink-0">
-                            <div className={`font-mono font-bold text-[12px] tabular ${
+                          {/* 右侧：数值 + 去处理 */}
+                          <div className="text-right flex-shrink-0 min-w-[64px] flex flex-col items-end">
+                            <div className={`font-mono font-bold text-[13px] tabular ${
                               triggered ? "text-rose-500" : "text-slate-700"
                             }`}>
                               {currentValuesText(rule)}
                             </div>
-                            <div className="text-[10px] text-slate-400 mt-0.5">
-                              当前值
-                            </div>
+                            {triggered ? (
+                              <button
+                                onClick={(e) => {
+                                  e.preventDefault();
+                                  e.stopPropagation();
+                                  openBankApp(product.bank, product.name);
+                                }}
+                                className="mt-1 flex items-center gap-0.5
+                                           text-[10px] text-rose-600 font-semibold
+                                           active:scale-95 transition-all"
+                              >
+                                去处理
+                                <svg className="w-2.5 h-2.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={3}>
+                                  <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
+                                </svg>
+                              </button>
+                            ) : (
+                              <div className="text-[10px] text-slate-400 mt-0.5">
+                                当前值
+                              </div>
+                            )}
                           </div>
-
-                          {triggered && (
-                            <button
-                              onClick={(e) => {
-                                e.preventDefault();
-                                e.stopPropagation();
-                                openBankApp(product.bank, product.name);
-                              }}
-                              className="flex items-center gap-1 ml-1 flex-shrink-0
-                                         px-2 py-1 rounded-full
-                                         bg-rose-50 text-rose-600
-                                         text-[10px] font-semibold
-                                         hover:bg-rose-100 active:scale-95
-                                         transition-all duration-200"
-                            >
-                              去处理
-                              <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2.5}>
-                                <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
-                              </svg>
-                            </button>
-                          )}
                         </div>
                       );
                     })}
