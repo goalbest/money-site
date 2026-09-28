@@ -160,10 +160,11 @@ for (const item of all) {
 }
 console.log(`待更新 ${toUpdate.length}，待新建 ${toCreate.length}\n`);
 
-// ── 批量新建（每批 100） ──
-let created = 0;
-for (let i = 0; i < toCreate.length; i += 100) {
-  const batch = toCreate.slice(i, i + 100);
+// ── 批量新建（每批 30 + 逐行重试）──
+let created = 0, retried = 0;
+const BATCH = 30;
+for (let i = 0; i < toCreate.length; i += BATCH) {
+  const batch = toCreate.slice(i, i + BATCH);
   const rows = batch.map(item => {
     const y = parseYield(item);
     const wfEarn = parseFloat(item.WF_EARN);
@@ -178,13 +179,23 @@ for (let i = 0; i < toCreate.length; i += 100) {
       nav_date: y.type !== 'none' ? today : null,
     };
   });
+
   const { error: e } = await supabase.from('products').insert(rows);
-  if (e) console.log(`  ⚠️ 批次 ${Math.floor(i/100)+1} 失败: ${e.message}`);
-  else created += rows.length;
-  if ((Math.floor(i/100)+1) % 5 === 0 || i + 100 >= toCreate.length) {
-    console.log(`  新建进度: ${created}/${toCreate.length}`);
+  if (!e) {
+    created += rows.length;
+  } else {
+    // 批次失败 → 逐行插入（最稳）
+    for (const r of rows) {
+      const { error: e2 } = await supabase.from('products').insert(r);
+      if (!e2) created++;
+      else retried++;
+    }
   }
-  await new Promise(r => setTimeout(r, 200));
+
+  if ((Math.floor(i/BATCH)+1) % 5 === 0 || i + BATCH >= toCreate.length) {
+    console.log(`  新建进度: ${created}/${toCreate.length}（失败 ${retried}）`);
+  }
+  await new Promise(r => setTimeout(r, 100));
 }
 
 // ── 更新已有的 ──
