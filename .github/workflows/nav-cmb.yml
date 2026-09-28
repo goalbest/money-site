@@ -1,0 +1,27 @@
+name: CMB NAV Update
+
+"on":
+  schedule:
+    - cron: '0 */4 * * *'  # 每 4 小时跑一次
+  workflow_dispatch:
+
+jobs:
+  cmb:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - run: npm ci
+
+      - run: npx playwright install chromium
+
+      - name: 招银/交银净值更新
+        env:
+          NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+        run: node crawler/fetch_cmb.mjs
