@@ -46,8 +46,7 @@ function get(url) {
       hostname: u.hostname, port: 443, path: u.pathname + u.search, method: 'GET',
       headers: {
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/130.0.0.0 Safari/537.36',
-        'Accept': '*/*',
-        'Referer': 'https://www.psbc.com/',
+        'Accept': '*/*', 'Referer': 'https://www.psbc.com/',
       }, agent: AGENT,
     }, res => {
       let d = ''; res.setEncoding('utf8');
@@ -85,6 +84,11 @@ function parseYield(item) {
   return { type: 'none', value: null };
 }
 
+function riskToLevel(code) {
+  const map = { '1': 'PR1', '2': 'PR2', '3': 'PR3', '4': 'PR4', '5': 'PR5' };
+  return map[String(code)] || null;
+}
+
 // ══════════════ 主流程 ══════════════
 console.log('═══════════════════════════════');
 console.log('邮储全量产品 JSONP 接口');
@@ -95,43 +99,25 @@ let all = [];
 
 if (USE_CACHE) {
   console.log(`📦 从缓存读取: ${CACHE_FILE}`);
-  if (!existsSync(CACHE_FILE)) {
-    console.error('❌ 缓存文件不存在，请先不用 USE_CACHE 跑一次');
-    process.exit(1);
-  }
+  if (!existsSync(CACHE_FILE)) { console.error('❌ 缓存不存在'); process.exit(1); }
   all = JSON.parse(readFileSync(CACHE_FILE, 'utf-8'));
   console.log(`  共 ${all.length} 个产品\n`);
 } else {
   const first = await fetchPage(1);
-  console.log(`📊 totalCount: ${first.totalCount}, pageCount: ${first.pageCount}, pageSize: ${first.pageSize}`);
+  console.log(`📊 totalCount: ${first.totalCount}, pageCount: ${first.pageCount}`);
 
-  const sample = first.resultList[0];
-  const y = parseYield(sample);
-  console.log(`\n样本: ${sample.FPNAME}`);
-  console.log(`  SECODE: ${sample.SECODE}`);
-  console.log(`  LATEST_NET: ${sample.LATEST_NET || '(空)'}`);
-  console.log(`  SEVEN_ANNUAL_YIELD: ${sample.SEVEN_ANNUAL_YIELD}`);
-  console.log(`  WF_EARN: ${sample.WF_EARN}`);
-  console.log(`  → 采用: ${y.type} = ${y.value}`);
+  if (DRY_RUN) { console.log('[DRY_RUN] 退出'); process.exit(0); }
 
-  if (DRY_RUN) {
-    console.log('\n[DRY_RUN] 只抓了第 1 页，退出。');
-    process.exit(0);
-  }
-
-  // ★ MAX_PAGES 控制抓取范围
   const MAX_PAGES = parseInt(process.env.MAX_PAGES || String(first.pageCount), 10);
   const endPage = Math.min(first.pageCount, MAX_PAGES);
-  console.log(`\n开始抓取 (1 ~ ${endPage} / 共 ${first.pageCount} 页)...`);
+  console.log(`\n抓取 (1 ~ ${endPage} / 共 ${first.pageCount} 页)...`);
 
   all.push(...(first.resultList || []));
   for (let p = 2; p <= endPage; p++) {
     try {
       const data = await fetchPage(p);
       all.push(...(data.resultList || []));
-      if (p % 20 === 0 || p === endPage) {
-        console.log(`  页 ${p}/${endPage} → 累计 ${all.length}`);
-      }
+      if (p % 20 === 0 || p === endPage) console.log(`  页 ${p}/${endPage} → 累计 ${all.length}`);
       await new Promise(r => setTimeout(r, 150));
     } catch (e) {
       console.log(`  ⚠️ 页 ${p} 失败: ${e.message}`);
@@ -139,40 +125,71 @@ if (USE_CACHE) {
   }
   console.log(`\n抓取完成: ${all.length} 个产品`);
   writeFileSync(CACHE_FILE, JSON.stringify(all));
-  console.log(`💾 已缓存到 ${CACHE_FILE}\n`);
+  console.log(`💾 已缓存\n`);
 }
 
 // ── 统计收益类型 ──
 const typeCount = { nav: 0, seven_yield: 0, wf_earn: 0, none: 0 };
-for (const item of all) {
-  const y = parseYield(item);
-  typeCount[y.type]++;
-}
+for (const item of all) typeCount[parseYield(item).type]++;
 console.log('收益类型分布:', typeCount);
 
-// ── 入库 ──
+// ── 读已有 products ──
 console.log('\n→ 读 products 表...');
-const { data: prods, error } = await supabase.from('products').select('id, name, bank_code');
+const { data: prods, error } = await supabase
+  .from('products').select('id, bank_code').not('bank_code', 'is', null);
 if (error) {
   console.error('❌ 读取失败:', error.message);
-  console.log('\n（本地网络不通，缓存已保存，去 GitHub Actions 跑 USE_CACHE=1）');
+  console.log('\n（本地网络不通，缓存已保存，去 GitHub Actions 跑）');
   process.exit(0);
 }
-console.log(`← 已读 ${prods.length} 条\n`);
-
 const byBankCode = new Map();
-prods.forEach(p => { if (p.bank_code) byBankCode.set(p.bank_code, p); });
+prods.forEach(p => byBankCode.set(p.bank_code, p));
+console.log(`← 已有 bank_code 的产品: ${byBankCode.size} 条\n`);
 
+// ── 分流：更新 vs 新建 ──
 const today = new Date().toISOString().slice(0, 10);
-let matched = 0, navWrote = 0, yieldWrote = 0, skipped = 0;
+const toUpdate = [], toCreate = [];
+let skipped = 0;
 
 for (const item of all) {
-  const code = item.SECODE;
-  if (!code) { skipped++; continue; }
+  const code = item.SECODE, name = item.FPNAME;
+  if (!code || !name) { skipped++; continue; }
   const p = byBankCode.get(code);
-  if (!p) { skipped++; continue; }
-  matched++;
+  if (p) toUpdate.push({ p, item });
+  else toCreate.push(item);
+}
+console.log(`待更新 ${toUpdate.length}，待新建 ${toCreate.length}\n`);
 
+// ── 批量新建（每批 100） ──
+let created = 0;
+for (let i = 0; i < toCreate.length; i += 100) {
+  const batch = toCreate.slice(i, i + 100);
+  const rows = batch.map(item => {
+    const y = parseYield(item);
+    const wfEarn = parseFloat(item.WF_EARN);
+    return {
+      name: item.FPNAME,
+      bank: '邮储银行',
+      bank_code: item.SECODE,
+      unit_nav: y.type === 'nav' ? y.value : null,
+      annual_7d_yield: y.type === 'seven_yield' ? y.value : null,
+      daily_income: isFinite(wfEarn) && wfEarn > 0 ? wfEarn : null,
+      risk_level: riskToLevel(item.RISKLEVEL),
+      nav_date: y.type !== 'none' ? today : null,
+    };
+  });
+  const { error: e } = await supabase.from('products').insert(rows);
+  if (e) console.log(`  ⚠️ 批次 ${Math.floor(i/100)+1} 失败: ${e.message}`);
+  else created += rows.length;
+  if ((Math.floor(i/100)+1) % 5 === 0 || i + 100 >= toCreate.length) {
+    console.log(`  新建进度: ${created}/${toCreate.length}`);
+  }
+  await new Promise(r => setTimeout(r, 200));
+}
+
+// ── 更新已有的 ──
+let matched = 0, navWrote = 0, yieldWrote = 0;
+for (const { p, item } of toUpdate) {
   const y = parseYield(item);
   if (y.type === 'none') { skipped++; continue; }
 
@@ -192,6 +209,7 @@ for (const item of all) {
     await supabase.from('products').update(updates).eq('id', p.id);
     yieldWrote++;
   }
+  matched++;
 }
 
-console.log(`\n🎉 匹配 ${matched}，净值写入 ${navWrote}，收益指标写入 ${yieldWrote}，跳过 ${skipped}`);
+console.log(`\n🎉 更新 ${matched}，新建 ${created}，净值写入 ${navWrote}，收益指标写入 ${yieldWrote}，跳过 ${skipped}`);
