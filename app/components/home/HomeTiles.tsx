@@ -210,13 +210,16 @@ export default function HomeTiles({
 
   return (
     <div className="mb-4">
-      <div
+            <div
         className="flex gap-2.5 overflow-x-auto no-scrollbar
                    snap-x snap-mandatory
-                   -mx-5 px-5 py-1.5
+                   -mx-5 py-1.5
                    scroll-smooth"
         style={{ scrollbarWidth: "none" }}
       >
+        {/* ★ 左 spacer：解决 iOS Safari 滚动时 padding 塌陷问题 */}
+        <div className="w-5 flex-shrink-0" aria-hidden />
+
         {visible.map((id, i) => {
           const meta = MODULE_MAP[id];
           if (!meta) return null;
@@ -307,7 +310,7 @@ export default function HomeTiles({
               </Link>
             );
           }
-          return (
+                    return (
             <div
               key={id}
               className="animate-fade-in-up"
@@ -317,6 +320,9 @@ export default function HomeTiles({
             </div>
           );
         })}
+
+        {/* ★ 右 spacer：让最后一个磁贴右侧留白 */}
+        <div className="w-5 flex-shrink-0" aria-hidden />
       </div>
     </div>
   );
