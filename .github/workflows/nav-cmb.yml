@@ -2,7 +2,7 @@ name: CMB NAV Update
 
 "on":
   schedule:
-    - cron: '0 */4 * * *'  # 每 4 小时跑一次
+    - cron: '0 */4 * * *'
   workflow_dispatch:
 
 jobs:
