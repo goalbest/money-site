@@ -84,8 +84,14 @@ for (const p of CMB_PRODUCTS) {
     if (list.length === 0) { console.log('   ⚠️ 无数据\n'); continue; }
     console.log(`   拿到 ${list.length} 条净值`);
 
-    const latest = list[0];
+        const latest = list[0];
+    const prev = list[1];
     console.log(`   最新: ${latest.unitNetValue} @ ${latest.date}`);
+
+    // 万份收益 = (今天净值 - 昨天净值) × 10000
+    const dailyReturn = prev
+      ? (parseFloat(latest.unitNetValue) - parseFloat(prev.unitNetValue)) * 10000
+      : null;
 
     const rows = list.map(x => ({
       product_id: p.dbId,
@@ -100,13 +106,23 @@ for (const p of CMB_PRODUCTS) {
     if (error) { console.log(`   ❌ upsert 失败: ${error.message}\n`); continue; }
     totalUpserted += rows.length;
 
-        const { error: updErr } = await supabase.from('products').update({
+        const updates = {
       unit_nav: parseFloat(latest.unitNetValue),
       nav_date: latest.date,
       bank_code: p.ripInn,
-    }).eq('id', p.dbId);
+    };
+    if (dailyReturn != null && isFinite(dailyReturn)) {
+      updates.daily_return = Math.round(dailyReturn * 10000) / 10000;
+    }
+    // daily_return = 最近一天的涨跌幅
+    const chg = parseFloat(latest.netValueChange);
+    if (isFinite(chg)) updates.daily_return = chg;
+
+    const { error: updErr } = await supabase.from('products').update(updates).eq('id', p.dbId);
     if (updErr) {
       console.log(`   ⚠️ products 更新失败: ${updErr.message} | code: ${updErr.code}`);
+    } else {
+      console.log(`   📝 daily_return = ${chg}`);
     }
 
     console.log(`   ✅ 写入 ${rows.length} 条\n`);
