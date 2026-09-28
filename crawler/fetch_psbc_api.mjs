@@ -1,14 +1,14 @@
 import { createClient } from '@supabase/supabase-js';
 import https from 'https';
 import crypto from 'crypto';
-import { readFileSync, existsSync, writeFileSync } from 'fs';
+import { readFileSync, existsSync } from 'fs';
 import { resolve, dirname } from 'path';
 import { fileURLToPath } from 'url';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 const USE_CACHE = process.env.USE_CACHE === '1';
-const MAX_NEW = parseInt(process.env.MAX_NEW || '999999', 10);
+const MAX_PAGES = parseInt(process.env.MAX_PAGES || '400', 10);
 
 (function loadEnv() {
   for (const p of [resolve(__dirname, '..', '.env.local'), resolve(process.cwd(), '.env.local')]) {
@@ -32,7 +32,6 @@ if (!SUPABASE_URL || !SUPABASE_KEY) { console.error('❌ env 缺失'); process.e
 const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 
-// ── HTTP ──
 const AGENT = new https.Agent({
   rejectUnauthorized: false, minVersion: 'TLSv1', ciphers: 'DEFAULT@SECLEVEL=1',
   secureOptions: 0x4 | crypto.constants.SSL_OP_NO_SSLv2 | crypto.constants.SSL_OP_NO_SSLv3,
@@ -82,102 +81,85 @@ function parseYield(item) {
   if (isFinite(wf) && wf > 0) return { type: 'wf_earn', value: wf };
   return { type: 'none', value: null };
 }
-function riskToLevel(code) {
-  return ({ '1': 'PR1', '2': 'PR2', '3': 'PR3', '4': 'PR4', '5': 'PR5' })[String(code)] || null;
-}
 
 // ══════════════ 主流程 ══════════════
 console.log('═══════════════════════════════');
-console.log('邮储全量入库');
+console.log('邮储产品日常更新（只更新已有）');
 console.log('═══════════════════════════════\n');
 
-const CACHE_FILE = resolve(__dirname, 'psbc_cache.json');
-let all = [];
+const t0 = Date.now();
 
-if (USE_CACHE && existsSync(CACHE_FILE)) {
-  all = JSON.parse(readFileSync(CACHE_FILE, 'utf-8'));
-  console.log(`📦 从缓存读: ${all.length} 条\n`);
-} else {
-  const first = await fetchPage(1);
-  const endPage = first.pageCount;
-  console.log(`📊 totalCount: ${first.totalCount}, 共 ${endPage} 页\n`);
-  all.push(...(first.resultList || []));
-  for (let p = 2; p <= endPage; p++) {
-    try {
-      const data = await fetchPage(p);
-      all.push(...(data.resultList || []));
-      if (p % 50 === 0 || p === endPage) console.log(`  页 ${p}/${endPage} → 累计 ${all.length}`);
-      await sleep(200);
-    } catch { console.log(`  ⚠️ 页 ${p} 失败`); }
-  }
-  console.log(`\n抓取完成: ${all.length} 条`);
-  writeFileSync(CACHE_FILE, JSON.stringify(all));
-  console.log(`💾 缓存到 ${CACHE_FILE}\n`);
-}
-
-// ── 读已有 ──
+// ── 读已有的 bank_code → id 映射（先读，减少抓取量）──
 console.log('→ 读 products 表...');
 const { data: prods, error } = await supabase
-  .from('products').select('id, bank_code').not('bank_code', 'is', null);
+  .from('products').select('id, bank_code')
+  .eq('bank', '邮储银行')
+  .not('bank_code', 'is', null);
 if (error) { console.error('❌', error.message); process.exit(1); }
-const existing = new Map();
-prods.forEach(p => existing.set(p.bank_code, p.id));
-console.log(`← 已有 bank_code: ${existing.size} 条\n`);
+const idByCode = new Map();
+prods.forEach(p => idByCode.set(p.bank_code, p.id));
+console.log(`← 已有 bank_code: ${idByCode.size} 条\n`);
 
-// ── 分流 ──
-const toCreate = [];
-let skipped = 0;
-for (const item of all) {
-  if (!item.SECODE || !item.FPNAME) { skipped++; continue; }
-  if (existing.has(item.SECODE)) { skipped++; continue; }
-  if (parseYield(item).type === 'none') { skipped++; continue; }
-  toCreate.push(item);
+// ── 抓取 ──
+const first = await fetchPage(1);
+const endPage = Math.min(first.pageCount, MAX_PAGES);
+console.log(`📊 totalCount: ${first.totalCount}, 共 ${first.pageCount} 页，本轮抓 ${endPage} 页\n`);
+
+const all = [...(first.resultList || [])];
+for (let p = 2; p <= endPage; p++) {
+  try {
+    const data = await fetchPage(p);
+    all.push(...(data.resultList || []));
+    if (p % 50 === 0 || p === endPage) console.log(`  页 ${p}/${endPage} → 累计 ${all.length}`);
+    await sleep(180);
+  } catch (e) {
+    console.log(`  ⚠️ 页 ${p} 失败`);
+  }
 }
-const endN = Math.min(toCreate.length, MAX_NEW);
-console.log(`待新建: ${toCreate.length}，本轮跑: ${endN}，跳过: ${skipped}\n`);
+console.log(`\n抓取完成: ${all.length} 条（${((Date.now()-t0)/1000).toFixed(0)}s）\n`);
 
-// ── 逐条新建 + 详细错误 ──
+// ── 筛选需要更新的 ──
 const today = new Date().toISOString().slice(0, 10);
-let created = 0, failed = 0;
-const errorSamples = [];
-
-for (let i = 0; i < endN; i++) {
-  const item = toCreate[i];
+const tasks = [];
+for (const item of all) {
+  const pid = idByCode.get(item.SECODE);
+  if (!pid) continue;
   const y = parseYield(item);
-  const wfEarn = parseFloat(item.WF_EARN);
+  if (y.type === 'none') continue;
+  tasks.push({ pid, y, item });
+}
+console.log(`需更新: ${tasks.length} 条\n`);
 
-  const row = {
-    name: item.FPNAME,
-    bank: '邮储银行',
-    bank_code: item.SECODE,
-    unit_nav: y.type === 'nav' ? y.value : null,
-    annual_7d_yield: y.type === 'seven_yield' ? y.value : null,
-    daily_income: isFinite(wfEarn) && wfEarn > 0 ? wfEarn : null,
-    risk_level: riskToLevel(item.RISKLEVEL),
-    nav_date: today,
-  };
+// ── 5 并发更新 ──
+let updated = 0, failed = 0;
+const CONCURRENCY = 5;
 
-  const { error: e } = await supabase.from('products').insert(row);
-  if (e) {
-    failed++;
-    if (errorSamples.length < 5) errorSamples.push({ code: item.SECODE, msg: e.message, details: e.details, hint: e.hint });
-  } else {
-    created++;
+for (let i = 0; i < tasks.length; i += CONCURRENCY) {
+  const batch = tasks.slice(i, i + CONCURRENCY);
+  await Promise.all(batch.map(async ({ pid, y, item }) => {
+    try {
+      if (y.type === 'nav') {
+        await supabase.from('products').update({ unit_nav: y.value, nav_date: today }).eq('id', pid);
+        await supabase.from('nav_history').upsert(
+          { product_id: pid, nav_date: today, unit_nav: y.value },
+          { onConflict: 'product_id,nav_date' }
+        );
+      } else {
+        const updates = { nav_date: today };
+        const sy = parseFloat(item.SEVEN_ANNUAL_YIELD);
+        const wf = parseFloat(item.WF_EARN);
+        if (isFinite(sy) && sy > 0) updates.annual_7d_yield = sy;
+        if (isFinite(wf) && wf > 0) updates.daily_income = wf;
+        await supabase.from('products').update(updates).eq('id', pid);
+      }
+      updated++;
+    } catch (e) {
+      failed++;
+    }
+  }));
+  if ((i + CONCURRENCY) % 200 < CONCURRENCY) {
+    console.log(`  进度 ${Math.min(i+CONCURRENCY, tasks.length)}/${tasks.length} → 成功 ${updated}，失败 ${failed}`);
   }
-
-  if ((i + 1) % 10 === 0) {
-    console.log(`  ${i+1}/${endN} → 成功 ${created}，失败 ${failed}`);
-  }
-  await sleep(400);
 }
 
-console.log(`\n🎉 成功 ${created}，失败 ${failed}`);
-if (errorSamples.length > 0) {
-  console.log('\n错误样本:');
-  errorSamples.forEach(s => {
-    console.log(`\n❌ ${s.code}`);
-    console.log(`   message: ${s.msg}`);
-    if (s.details) console.log(`   details: ${s.details}`);
-    if (s.hint) console.log(`   hint: ${s.hint}`);
-  });
-}
+console.log(`\n🎉 更新 ${updated}，失败 ${failed}（总耗时 ${((Date.now()-t0)/1000).toFixed(0)}s）`);
