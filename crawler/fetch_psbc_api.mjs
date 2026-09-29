@@ -71,6 +71,20 @@ async function fetchPage(pageNum) {
   if (!m) throw new Error('JSONP 解析失败');
   return JSON.parse(m[1]);
 }
+async function searchByKeyword(keyword) {
+  const ts = Date.now();
+  const params = new URLSearchParams({
+    callback: 'cb', currency: '', deadline: '', netproduct: '', risklevel: '',
+    entruststartamt: '', buystatus: '', product_status: '',
+    zhongyouflag: '', bankflag: '', investor_nature: '', order: '',
+    finkeyword: keyword, pageNum: '1', _: String(ts),
+  });
+  const text = await get(`${API}?${params}`);
+  const m = text.match(/^[^(]+\(([\s\S]*)\)\s*;?\s*$/);
+  if (!m) throw new Error('JSONP 解析失败');
+  return JSON.parse(m[1]);
+}
+
 
 function parseYield(item) {
   const nav = parseFloat(item.LATEST_NET);
@@ -100,39 +114,56 @@ const idByCode = new Map();
 prods.forEach(p => idByCode.set(p.bank_code, p.id));
 console.log(`← 已有 bank_code: ${idByCode.size} 条\n`);
 
-// ── 抓取 ──
-const first = await fetchPage(1);
-const endPage = Math.min(first.pageCount, MAX_PAGES);
-console.log(`📊 totalCount: ${first.totalCount}, 共 ${first.pageCount} 页，本轮抓 ${endPage} 页\n`);
+// ── 读 product_sources，决定按需 or 全量 ──
+const { data: sources } = await supabase
+  .from('product_sources')
+  .select('id, product_id, params')
+  .eq('source_type', 'psbc')
+  .eq('enabled', true);
 
-const all = [...(first.resultList || [])];
-let consecutiveFail = 0;
-for (let p = 2; p <= endPage; p++) {
-  let ok = false;
-  for (let retry = 0; retry < 2 && !ok; retry++) {
+const useTargeted = sources && sources.length > 0 && sources.length <= 50;
+console.log(`📌 product_sources: ${sources?.length || 0} 条 → ${useTargeted ? '按需' : '全量'}模式\n`);
+
+let all = [];
+
+if (useTargeted) {
+  // ── 按需模式：逐个搜索 ──
+  for (const s of sources) {
+    const code = s.params?.product_code;
+    if (!code) continue;
+    try {
+      const data = await searchByKeyword(code);
+      const hit = (data.resultList || []).find(x => x.SECODE === code);
+      if (hit) {
+        all.push(hit);
+        console.log(`  ✅ ${code}`);
+      } else {
+        console.log(`  ⚠️ ${code} 未找到`);
+      }
+      await sleep(400);
+    } catch (e) {
+      console.log(`  ❌ ${code}: ${e.message}`);
+    }
+  }
+  console.log(`\n抓取完成: ${all.length} 条（按需模式）\n`);
+} else {
+  // ── 全量模式 ──
+  const first = await fetchPage(1);
+  const endPage = Math.min(first.pageCount, MAX_PAGES);
+  console.log(`📊 totalCount: ${first.totalCount}, 共 ${first.pageCount} 页，本轮抓 ${endPage} 页\n`);
+  all.push(...(first.resultList || []));
+  for (let p = 2; p <= endPage; p++) {
     try {
       const data = await fetchPage(p);
       all.push(...(data.resultList || []));
-      ok = true;
-      consecutiveFail = 0;
-      await sleep(500);
+      if (p % 50 === 0 || p === endPage) console.log(`  页 ${p}/${endPage} → 累计 ${all.length}`);
+      await sleep(180);
     } catch (e) {
-      if (retry === 0) await sleep(1500); // 失败等 1.5s 再试
+      console.log(`  ⚠️ 页 ${p} 失败`);
     }
   }
-  if (!ok) {
-    consecutiveFail++;
-    console.log(`  ⚠️ 页 ${p} 失败（连续 ${consecutiveFail}）`);
-    // 连续 5 页失败 → 停 15 秒（等限流恢复）
-    if (consecutiveFail >= 5) {
-      console.log(`  ⏸️ 连续失败 5 页，暂停 15s...`);
-      await sleep(15000);
-      consecutiveFail = 0;
-    }
-  }
-  if (p % 50 === 0 || p === endPage) console.log(`  页 ${p}/${endPage} → 累计 ${all.length}`);
+  console.log(`\n抓取完成: ${all.length} 条（${((Date.now()-t0)/1000).toFixed(0)}s）\n`);
 }
-console.log(`\n抓取完成: ${all.length} 条（${((Date.now()-t0)/1000).toFixed(0)}s）\n`);
 
 // ── 筛选需要更新的 ──
 const today = new Date().toISOString().slice(0, 10);
