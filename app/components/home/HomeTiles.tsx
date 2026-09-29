@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useMemo, useRef } from "react";
 import { MODULE_MAP } from "../../../lib/homeModules";
 import type { HomeMetrics } from "../../../lib/homeMetrics";
+import type { SnapData } from "../../../lib/useAssetSnapshots";
 import { useDragSort } from "./useDragSort";
 
 /* ============================================================
@@ -45,16 +46,37 @@ function fmtCompact(n: number): string {
 function fmtPercent(n: number): string {
   return `${n >= 0 ? "+" : ""}${n.toFixed(2)}%`;
 }
+function fmtDelta(n: number): string {
+  const sign = n >= 0 ? "+" : "-";
+  const abs = Math.abs(n);
+  if (abs >= 10000) return `${sign}${(abs / 10000).toFixed(2)}万`;
+  if (abs >= 1000) return `${sign}${(abs / 1000).toFixed(1)}k`;
+  return `${sign}${abs.toFixed(2)}`;
+}
 
 /* ============================================================
-   内容
+   磁贴内容
    ============================================================ */
 type TileContent = { value: string; valueColor?: string; sub: string; unit?: string };
 
-function getTileContent(id: string, m: HomeMetrics): TileContent {
+function getTileContent(id: string, m: HomeMetrics, snap: SnapData): TileContent {
   switch (id) {
-    case "assetTrend":
-      return { value: m.totalAssets > 0 ? fmtCompact(m.totalAssets) : "—", sub: "近 30 天" };
+    case "assetTrend": {
+      // ★ 真实走势
+      if (snap.has7d) {
+        const p = snap.trend7dPercent;
+        return {
+          value: fmtDelta(snap.trend7d),
+          valueColor: p > 0 ? "text-rose-500" : p < 0 ? "text-emerald-500" : "text-slate-500",
+          sub: `近 7 天 ${fmtPercent(p)}`,
+        };
+      }
+      // 数据不足：显示总资产
+      return {
+        value: m.totalAssets > 0 ? fmtCompact(m.totalAssets) : "—",
+        sub: snap.snapshots.length >= 2 ? `${snap.snapshots.length} 天记录` : "开始记录中",
+      };
+    }
     case "pending":
       return { value: String(m.pendingCount), valueColor: m.pendingCount > 0 ? "text-rose-500" : undefined, sub: m.pendingCount > 0 ? "条触发" : "全部正常" };
     case "monthStats":
@@ -141,6 +163,7 @@ function getTileHref(id: string): string | null {
 type Props = {
   ids: string[];
   metrics: HomeMetrics;
+  snap: SnapData;
   editMode: boolean;
   onEnterEditMode: () => void;
   onReorder: (from: number, to: number) => void;
@@ -150,6 +173,7 @@ type Props = {
 export default function HomeTiles({
   ids,
   metrics,
+  snap,
   editMode,
   onEnterEditMode,
   onReorder,
@@ -163,17 +187,14 @@ export default function HomeTiles({
     dataKey: "tile-index",
   });
 
-  // 长按进入编辑模式的计时器
   const pressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const longPressedRef = useRef(false);
 
   function handleTilePointerDown(e: React.PointerEvent, index: number) {
     if (editMode) {
-      // 编辑模式：立即开始拖动
       startDrag(e, index);
       return;
     }
-    // 非编辑模式：长按 500ms 进入编辑模式
     longPressedRef.current = false;
     if (pressTimer.current) clearTimeout(pressTimer.current);
     pressTimer.current = setTimeout(() => {
@@ -210,21 +231,17 @@ export default function HomeTiles({
 
   return (
     <div className="mb-4">
-            <div
+      <div
         className="flex gap-2.5 overflow-x-auto no-scrollbar
                    snap-x snap-mandatory
-                   -mx-5 py-1.5
-                   scroll-smooth"
+                   py-1.5 scroll-smooth"
         style={{ scrollbarWidth: "none" }}
       >
-        {/* ★ 左 spacer：解决 iOS Safari 滚动时 padding 塌陷问题 */}
-        <div className="w-5 flex-shrink-0" aria-hidden />
-
         {visible.map((id, i) => {
           const meta = MODULE_MAP[id];
           if (!meta) return null;
           const theme = TILE_THEMES[id] || DEFAULT_THEME;
-          const content = getTileContent(id, metrics);
+          const content = getTileContent(id, metrics, snap);
           const href = getTileHref(id);
           const valueColor = content.valueColor || "text-slate-900";
 
@@ -301,28 +318,18 @@ export default function HomeTiles({
           if (href && !editMode) {
             return (
               <Link key={id} href={href} className="block" draggable={false}>
-                <div
-                  className="animate-fade-in-up"
-                  style={{ animationDelay: `${0.04 * i}s` }}
-                >
+                <div className="animate-fade-in-up" style={{ animationDelay: `${0.04 * i}s` }}>
                   {inner}
                 </div>
               </Link>
             );
           }
-                    return (
-            <div
-              key={id}
-              className="animate-fade-in-up"
-              style={{ animationDelay: `${0.04 * i}s` }}
-            >
+          return (
+            <div key={id} className="animate-fade-in-up" style={{ animationDelay: `${0.04 * i}s` }}>
               {inner}
             </div>
           );
         })}
-
-        {/* ★ 右 spacer：让最后一个磁贴右侧留白 */}
-        <div className="w-5 flex-shrink-0" aria-hidden />
       </div>
     </div>
   );

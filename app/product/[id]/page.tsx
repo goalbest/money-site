@@ -8,6 +8,10 @@ import NavChart from "./NavChart";
 import MetricsPanel from "./MetricsPanel";
 import TransactionList from "./TransactionList";
 import QuickBuyModal from "./QuickBuyModal";
+import QuickSellModal from "../../components/QuickSellModal";
+import NavHistoryList from "../../components/NavHistoryList";
+import { useDragSort } from "../../components/home/useDragSort";
+import { useProductLayout, type ProductModuleKey } from "../../../lib/useProductLayout";
 
 type Range = "7d" | "30d" | "90d" | "1y" | "all";
 const RANGES: { key: Range; label: string; days: number }[] = [
@@ -30,17 +34,29 @@ export default function ProductPage() {
   const [watchRules, setWatchRules] = useState<any[]>([]);
   const [range, setRange] = useState<Range>("30d");
   const [quickBuyOpen, setQuickBuyOpen] = useState(false);
+  const [quickSellOpen, setQuickSellOpen] = useState(false);
   const [copied, setCopied] = useState(false);
   const [inWatchlist, setInWatchlist] = useState(false);
-  const [scrollDir, setScrollDir] = useState<"up" | "down">("up");
-  const lastYRef = useRef(0);
+
+  const { order: productOrder, hydrated: productLayoutHydrated, move: moveProductModule } = useProductLayout();
+  const [editMode, setEditMode] = useState(false);
+  const pressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const {
+    draggingIndex: cardDraggingIdx,
+    overIndex: cardOverIdx,
+    startDrag: startCardDrag,
+  } = useDragSort({
+    onReorder: moveProductModule,
+    enabled: editMode,
+    dataKey: "product-module-index",
+  });
 
   useEffect(() => {
     async function load() {
       setLoading(true);
       const userId = localStorage.getItem("user_id");
 
-      // 1. 产品信息
       let prod: any = null;
       const { data: p1 } = await supabase
         .from("products")
@@ -51,7 +67,6 @@ export default function ProductPage() {
       if (p1) {
         prod = p1;
       } else {
-        // 兜底：从 user_holdings 关联查（保险）
         const { data: hd } = await supabase
           .from("user_holdings")
           .select("products(*)")
@@ -63,7 +78,6 @@ export default function ProductPage() {
 
       setProduct(prod);
 
-      // 2. 净值历史
       if (prod) {
         const { data: navs } = await supabase
           .from("nav_history")
@@ -73,11 +87,10 @@ export default function ProductPage() {
         setNavList(navs || []);
       }
 
-      // 3. 我的持仓
       if (userId) {
         const { data: hd } = await supabase
           .from("user_holdings")
-          .select("id, holding_amount, in_transit_amount, shares, hold_date, status")
+          .select("id, holding_amount, in_transit_amount, shares, hold_date, status, products(id, name, unit_nav)")
           .eq("user_id", userId)
           .eq("product_id", productId)
           .in("status", ["active", "closed"])
@@ -86,7 +99,6 @@ export default function ProductPage() {
           .maybeSingle();
         setMyHolding(hd || null);
 
-        // 4. 监控规则
         const { data: rules } = await supabase
           .from("watch_rules")
           .select("*")
@@ -94,7 +106,6 @@ export default function ProductPage() {
           .eq("product_id", productId);
         setWatchRules(rules || []);
 
-        // 5. 自选状态（如果表存在）
         try {
           const { data: wl } = await supabase
             .from("watchlist")
@@ -112,18 +123,6 @@ export default function ProductPage() {
     }
     load();
   }, [productId]);
-
-  // 滚动方向监听（Q1 C）
-  useEffect(() => {
-    const onScroll = () => {
-      const y = window.scrollY;
-      if (y > lastYRef.current + 8) setScrollDir("down");
-      else if (y < lastYRef.current - 8) setScrollDir("up");
-      lastYRef.current = y;
-    };
-    window.addEventListener("scroll", onScroll, { passive: true });
-    return () => window.removeEventListener("scroll", onScroll);
-  }, []);
 
   const filteredNav = useMemo(() => {
     if (navList.length === 0) return [];
@@ -159,9 +158,44 @@ export default function ProductPage() {
         });
         setInWatchlist(true);
       }
-    } catch {
-      // 表可能不存在，静默忽略
+    } catch {}
+  }
+
+  /* ★ 长按标题热区触发编辑（带按钮保护） */
+  function handleTitlePress(e: React.PointerEvent, idx: number) {
+    if (editMode) return;
+
+    // 点到按钮/链接/周期切换时忽略
+    const target = e.target as HTMLElement;
+    if (target.closest("button, a, [data-no-drag], .segment-group")) return;
+
+    if (pressTimer.current) clearTimeout(pressTimer.current);
+    const x0 = e.clientX, y0 = e.clientY;
+    pressTimer.current = setTimeout(() => {
+      setEditMode(true);
+      try { (navigator as any).vibrate?.(15); } catch {}
+      pressTimer.current = null;
+    }, 350);
+
+    function onMove(ev: PointerEvent) {
+      const dx = ev.clientX - x0;
+      const dy = ev.clientY - y0;
+      if (dx * dx + dy * dy > 64) {
+        if (pressTimer.current) {
+          clearTimeout(pressTimer.current);
+          pressTimer.current = null;
+        }
+        window.removeEventListener("pointermove", onMove);
+      }
     }
+    window.addEventListener("pointermove", onMove, { passive: true });
+    window.addEventListener("pointerup", () => {
+      if (pressTimer.current) {
+        clearTimeout(pressTimer.current);
+        pressTimer.current = null;
+      }
+      window.removeEventListener("pointermove", onMove);
+    }, { once: true });
   }
 
   if (loading) {
@@ -189,10 +223,7 @@ export default function ProductPage() {
           </div>
           <div className="text-[15px] text-slate-700 font-medium mb-1.5">没有找到该产品</div>
           <div className="text-[12px] text-slate-400 mb-6">可能已被删除，或 ID 无效</div>
-          <button
-            onClick={() => router.back()}
-            className="btn-primary px-6 py-2.5 text-sm"
-          >
+          <button onClick={() => router.back()} className="btn-primary px-6 py-2.5 text-sm">
             返回
           </button>
         </div>
@@ -203,7 +234,6 @@ export default function ProductPage() {
   const bankInfo = getBankInfo(product.bank);
   const latest = filteredNav[filteredNav.length - 1] || navList[navList.length - 1];
   const latestNav = latest ? Number(latest.unit_nav) : null;
-  const latestDate = latest?.nav_date || null;
 
   let rangeChange: number | null = null;
   if (filteredNav.length >= 2) {
@@ -219,143 +249,14 @@ export default function ProductPage() {
     ? Math.max(0, Math.floor((Date.now() - new Date(myHolding.hold_date).getTime()) / 86400000))
     : 0;
 
-  return (
-    <div className="min-h-screen pb-32">
-      <div className="container mx-auto px-5 pt-6 max-w-3xl">
-
-        {/* 顶部栏 */}
-        <div className="flex items-center gap-2 mb-5 animate-fade-in-up">
-          <button
-            onClick={() => router.back()}
-            className="w-9 h-9 rounded-full bg-white border border-slate-200
-                       hover:border-slate-300 hover:bg-slate-50
-                       flex items-center justify-center flex-shrink-0
-                       transition-all duration-300 active:scale-90"
-          >
-            <svg className="w-4 h-4 text-slate-600" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2.5}>
-              <path strokeLinecap="round" strokeLinejoin="round" d="M15 19l-7-7 7-7" />
-            </svg>
-          </button>
-          <div className="flex-1 min-w-0">
-            <div className="text-[18px] font-bold tracking-tight text-slate-900 truncate">
-              产品详情
-            </div>
-          </div>
-          <button
-            onClick={copyName}
-            className="w-9 h-9 rounded-full bg-white border border-slate-200
-                       hover:border-slate-300 hover:bg-slate-50
-                       flex items-center justify-center flex-shrink-0
-                       transition-all duration-300 active:scale-90"
-            aria-label="复制产品名"
-            title="复制产品名"
-          >
-            {copied ? (
-              <svg className="w-4 h-4 text-emerald-500" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2.5}>
-                <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
-              </svg>
-            ) : (
-              <svg className="w-4 h-4 text-slate-600" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
-                <path strokeLinecap="round" strokeLinejoin="round" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
-              </svg>
-            )}
-          </button>
-          {hasHolding && (
-            <button
-              onClick={() => router.push(`/holdings/${myHolding.id}?action=edit`)}
-              className="w-9 h-9 rounded-full bg-white border border-slate-200
-                         hover:border-slate-300 hover:bg-slate-50
-                         flex items-center justify-center flex-shrink-0
-                         transition-all duration-300 active:scale-90"
-              aria-label="编辑持仓"
-              title="编辑持仓"
-            >
-              <svg className="w-4 h-4 text-slate-600" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
-                <path strokeLinecap="round" strokeLinejoin="round" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
-              </svg>
-            </button>
-          )}
-        </div>
-
-        {/* 产品信息卡 */}
-        <div className="card p-5 mb-4 animate-fade-in-up delay-1">
-          <div className="flex items-start gap-3 mb-4">
-            <span
-              className="flex-shrink-0 rounded-lg flex items-center justify-center font-bold"
-              style={{
-                background: bankInfo.bg,
-                color: bankInfo.color,
-                width: 34,
-                height: 34,
-                fontSize: 14,
-              }}
-            >
-              {bankInfo.label}
-            </span>
-            <div className="flex-1 min-w-0">
-              <h1 className="text-[15px] font-bold text-slate-900 leading-snug">
-                {product.name}
-              </h1>
-              <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 mt-1.5">
-                <span className="text-[11px] text-slate-500 font-medium">{product.bank}</span>
-                {product.code && (
-                  <span className="text-[10px] text-slate-400 font-mono">{product.code}</span>
-                )}
-                {hasHolding && (
-                  <span className="px-1.5 py-0.5 rounded text-[9px] font-semibold bg-rose-50 text-rose-600">
-                    持有中
-                  </span>
-                )}
-                {!hasHolding && myHolding?.status === "closed" && (
-                  <span className="px-1.5 py-0.5 rounded text-[9px] font-semibold bg-slate-100 text-slate-500">
-                    已清仓
-                  </span>
-                )}
-              </div>
-            </div>
-          </div>
-
-          {latestNav != null && (
-            <div className="grid grid-cols-2 gap-4 py-4 border-t divider">
-              <div>
-                <div className="text-[10px] text-slate-400 mb-1">最新净值</div>
-                <div className="text-[22px] font-bold font-mono text-slate-900 tabular leading-none">
-                  {latestNav.toFixed(4)}
-                </div>
-                {latestDate && (
-                  <div className="text-[10px] text-slate-400 mt-1.5 tabular">
-                    更新至 {latestDate}
-                  </div>
-                )}
-              </div>
-              <div>
-                <div className="text-[10px] text-slate-400 mb-1">
-                  {RANGES.find(r => r.key === range)?.label}涨跌
-                </div>
-                <div className={`text-[22px] font-bold font-mono tabular leading-none ${
-                  rangeChange == null ? "text-slate-400"
-                  : rangeChange > 0 ? "text-rose-500"
-                  : rangeChange < 0 ? "text-emerald-500"
-                  : "text-slate-700"
-                }`}>
-                  {rangeChange == null ? "—"
-                    : `${rangeChange >= 0 ? "+" : ""}${rangeChange.toFixed(2)}%`}
-                </div>
-                <div className="text-[10px] text-slate-400 mt-1.5">
-                  基于净值
-                </div>
-              </div>
-            </div>
-          )}
-        </div>
-
-        {/* 我的持仓卡 */}
-        {hasHolding && (
-          <div className="card-summary p-5 mb-4 animate-fade-in-up delay-2">
-            <div className="text-[11px] text-slate-500 tracking-wider mb-3">
-              我的持仓
-            </div>
-            <div className="grid grid-cols-3 gap-3 mb-4">
+  function renderModule(key: ProductModuleKey) {
+    switch (key) {
+      case "holdings":
+        if (!hasHolding) return null;
+        return (
+          <div className="card-summary p-5">
+            <div className="text-[11px] text-slate-500 tracking-wider mb-3">我的持仓</div>
+            <div className="grid grid-cols-3 gap-3">
               <div>
                 <div className="text-[10px] text-slate-400 mb-1">持仓金额</div>
                 <div className="text-[15px] font-bold font-mono text-slate-900 tabular">
@@ -375,79 +276,91 @@ export default function ProductPage() {
                 </div>
               </div>
             </div>
-            <div className="flex gap-2 pt-3 border-t divider">
-              <button
-                onClick={() => setQuickBuyOpen(true)}
-                className="btn-primary flex-1 py-2.5 text-[12px] font-semibold"
-              >
-                + 加仓
-              </button>
-              <button
-                onClick={() => router.push(`/holdings/${myHolding.id}?action=sell`)}
-                className="flex-1 py-2.5 text-[12px] font-semibold rounded-full
-                           bg-white text-amber-600 border border-amber-200
-                           hover:bg-amber-50 hover:border-amber-300
-                           active:scale-[0.98] transition-all duration-200"
-              >
-                赎回
-              </button>
-            </div>
           </div>
-        )}
+        );
 
-        {/* 净值走势 */}
-        <div className="card p-5 mb-4 animate-fade-in-up delay-3">
-          <div className="flex items-center justify-between mb-3">
-            <div className="text-[15px] font-bold text-slate-900">净值走势</div>
-            <div className="text-[11px] text-slate-400 tabular">
-              {filteredNav.length} 天
-            </div>
-          </div>
-
-          <div className="segment-group flex mb-4">
-            {RANGES.map(r => (
-              <button
-                key={r.key}
-                onClick={() => setRange(r.key)}
-                className={`flex-1 py-1.5 text-[11px] segment-item ${
-                  range === r.key ? "segment-item-active" : "hover:text-slate-700"
-                }`}
-              >
-                {r.label}
-              </button>
-            ))}
-          </div>
-
-          {filteredNav.length === 0 ? (
-            <div className="py-16 text-center text-slate-300 text-xs">
-              暂无净值历史数据
-            </div>
-          ) : (
-            <NavChart data={filteredNav} />
-          )}
-        </div>
-
-        {/* 指标面板 */}
-        {navList.length > 0 && (
-          <div className="card p-5 mb-4 animate-fade-in-up delay-3">
-            <div className="text-[15px] font-bold text-slate-900 mb-3">
-              关键指标
-            </div>
+      case "metrics":
+        if (navList.length === 0) return null;
+        return (
+          <div className="card p-5">
             <MetricsPanel navList={navList} />
           </div>
-        )}
+        );
 
-        {/* 监控规则 */}
-        {watchRules.length > 0 && (
-          <div className="card p-5 mb-4 animate-fade-in-up delay-3">
+      case "trend":
+        return (
+          <div className="card p-5">
             <div className="flex items-center justify-between mb-3">
-              <div className="text-[15px] font-bold text-slate-900">
-                🔔 监控规则
+              <div className="text-[15px] font-bold text-slate-900">净值走势</div>
+              <div className="text-[11px] text-slate-400 tabular">{filteredNav.length} 天</div>
+            </div>
+            {/* ★ 周期切换加 z-index */}
+            <div className="segment-group flex mb-4 relative z-[3]">
+              {RANGES.map(r => (
+                <button
+                  key={r.key}
+                  type="button"
+                  onPointerDown={(e) => e.stopPropagation()}
+                  onClick={(e) => { e.stopPropagation(); setRange(r.key); }}
+                  className={`flex-1 py-1.5 text-[11px] segment-item ${
+                    range === r.key ? "segment-item-active" : "hover:text-slate-700"
+                  }`}
+                >
+                  {r.label}
+                </button>
+              ))}
+            </div>
+            {filteredNav.length === 0 ? (
+              <div className="py-16 text-center text-slate-300 text-xs">暂无净值历史数据</div>
+            ) : (
+              <NavChart data={filteredNav} interactive />
+            )}
+            {filteredNav.length >= 2 && (
+              <div className="mt-4 pt-3 border-t divider flex items-center justify-between text-[11px]">
+                <div className="text-slate-400">
+                  起点 <span className="font-mono text-slate-600 tabular">{Number(filteredNav[0].unit_nav).toFixed(4)}</span>
+                </div>
+                <div className={`font-mono font-semibold tabular ${
+                  rangeChange == null ? "text-slate-400"
+                  : rangeChange > 0 ? "text-rose-500"
+                  : rangeChange < 0 ? "text-emerald-500"
+                  : "text-slate-500"
+                }`}>
+                  {rangeChange == null ? "—" : `${rangeChange >= 0 ? "+" : ""}${rangeChange.toFixed(2)}%`}
+                </div>
+                <div className="text-slate-400">
+                  终点 <span className="font-mono text-slate-600 tabular">{Number(filteredNav[filteredNav.length - 1].unit_nav).toFixed(4)}</span>
+                </div>
               </div>
-              <a href="/holdings?view=monitor"
-                 className="text-[12px] text-purple-600 font-medium">
-                管理
-              </a>
+            )}
+          </div>
+        );
+
+      case "navlist":
+        if (navList.length === 0) return null;
+        return (
+          <div className="card overflow-hidden">
+            <div className="px-5 py-4 border-b divider flex items-center justify-between">
+              <div className="text-[15px] font-bold text-slate-900">净值明细</div>
+              <div className="text-[11px] text-slate-400 tabular">共 {navList.length} 条</div>
+            </div>
+            <div className="px-5 py-2 bg-slate-50/60 border-b divider flex items-center gap-3">
+              <span className="text-[10px] font-semibold text-slate-500 tracking-wider w-[92px]">日期</span>
+              <span className="text-[10px] font-semibold text-slate-500 tracking-wider flex-1 text-right">单位净值</span>
+              <span className="text-[10px] font-semibold text-slate-500 tracking-wider text-right w-[60px]">累计</span>
+              <span className="text-[10px] font-semibold text-slate-500 tracking-wider text-right w-[68px]">日涨跌</span>
+            </div>
+            <NavHistoryList rows={navList} visibleCount={8} itemHeight={48} />
+          </div>
+        );
+
+      case "rules":
+        if (watchRules.length === 0) return null;
+        return (
+          <div className="card p-5">
+            <div className="flex items-center justify-between mb-3">
+              <div className="text-[15px] font-bold text-slate-900">🔔 监控规则</div>
+              <a href="/holdings?view=monitor" className="text-[12px] text-purple-600 font-medium">管理</a>
             </div>
             <div className="space-y-2">
               {watchRules.map((rule: any) => {
@@ -466,23 +379,219 @@ export default function ProductPage() {
               })}
             </div>
           </div>
-        )}
+        );
 
-        {/* 交易记录 */}
-        <div className="card p-5 mb-4 animate-fade-in-up delay-4">
-          <div className="flex items-center justify-between mb-3">
-            <div className="text-[15px] font-bold text-slate-900">交易记录</div>
+      case "transactions":
+        return (
+          <div className="card p-5">
+            <div className="flex items-center justify-between mb-3">
+              <div className="text-[15px] font-bold text-slate-900">交易记录</div>
+            </div>
+            <TransactionList productId={productId} disabled={editMode} />
           </div>
-          <TransactionList productId={productId} />
+        );
+    }
+  }
+
+  return (
+    <div className="min-h-screen pb-28">
+      <div className="container mx-auto px-5 pt-6 max-w-3xl">
+
+        <div className="flex items-center gap-2 mb-5 animate-fade-in-up">
+          <button
+            onClick={() => router.back()}
+            className="w-9 h-9 rounded-full bg-white border border-slate-200
+                       hover:border-slate-300 hover:bg-slate-50
+                       flex items-center justify-center flex-shrink-0
+                       transition-all duration-300 active:scale-90"
+          >
+            <svg className="w-4 h-4 text-slate-600" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2.5}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M15 19l-7-7 7-7" />
+            </svg>
+          </button>
+          <div className="flex-1 min-w-0">
+            <div className="text-[18px] font-bold tracking-tight text-slate-900 truncate">
+              产品详情
+            </div>
+          </div>
+          {editMode ? (
+            <button
+              onClick={() => setEditMode(false)}
+              className="px-4 py-2 rounded-full
+                         bg-gradient-to-r from-violet-500 to-purple-600
+                         text-white text-[12px] font-semibold
+                         shadow-md shadow-purple-500/25
+                         active:scale-95 transition-all flex-shrink-0"
+            >
+              完成
+            </button>
+          ) : (
+            <>
+              <button
+                onClick={copyName}
+                className="w-9 h-9 rounded-full bg-white border border-slate-200
+                           hover:border-slate-300 hover:bg-slate-50
+                           flex items-center justify-center flex-shrink-0
+                           transition-all duration-300 active:scale-90"
+                aria-label="复制产品名"
+              >
+                {copied ? (
+                  <svg className="w-4 h-4 text-emerald-500" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2.5}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                  </svg>
+                ) : (
+                  <svg className="w-4 h-4 text-slate-600" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                  </svg>
+                )}
+              </button>
+              {hasHolding && (
+                <button
+                  onClick={() => router.push(`/holdings/${myHolding.id}?action=edit`)}
+                  className="w-9 h-9 rounded-full bg-white border border-slate-200
+                             hover:border-slate-300 hover:bg-slate-50
+                             flex items-center justify-center flex-shrink-0
+                             transition-all duration-300 active:scale-90"
+                  aria-label="编辑持仓"
+                >
+                  <svg className="w-4 h-4 text-slate-600" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                  </svg>
+                </button>
+              )}
+            </>
+          )}
         </div>
 
-        <div className="h-8" />
+        <div className="card p-5 mb-4 animate-fade-in-up delay-1">
+          <div className="flex items-start gap-3">
+            <span
+              className="flex-shrink-0 rounded-lg flex items-center justify-center font-bold"
+              style={{
+                background: bankInfo.bg,
+                color: bankInfo.color,
+                width: 34,
+                height: 34,
+                fontSize: 14,
+              }}
+            >
+              {bankInfo.label}
+            </span>
+            <div className="flex-1 min-w-0">
+              <h1 className="text-[15px] font-bold text-slate-900 leading-snug">{product.name}</h1>
+              <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 mt-1.5">
+                <span className="text-[11px] text-slate-500 font-medium">{product.bank}</span>
+                {product.code && <span className="text-[10px] text-slate-400 font-mono">{product.code}</span>}
+                {hasHolding && (
+                  <span className="px-1.5 py-0.5 rounded text-[9px] font-semibold bg-rose-50 text-rose-600">持有中</span>
+                )}
+                {!hasHolding && myHolding?.status === "closed" && (
+                  <span className="px-1.5 py-0.5 rounded text-[9px] font-semibold bg-slate-100 text-slate-500">已清仓</span>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {editMode && (
+          <div className="card p-3 mb-4 bg-purple-50 border border-purple-100 animate-fade-in">
+            <div className="text-[12px] text-purple-700 leading-relaxed px-1">
+              <span className="font-semibold">编辑模式</span> · 拖动卡片排序，或点 ↑↓ 按钮；完成后点右上角"完成"
+            </div>
+          </div>
+        )}
+
+        {productLayoutHydrated && productOrder.map((key, idx) => {
+          const content = renderModule(key);
+          if (!content) return null;
+
+          const isDragging = cardDraggingIdx === idx;
+          const isOver = cardOverIdx === idx && cardDraggingIdx !== null && cardDraggingIdx !== idx;
+          const canUp = idx > 0;
+          const canDown = idx < productOrder.length - 1;
+
+          return (
+            <div
+              key={key}
+              data-product-module-index={idx}
+              className={`relative mb-4 transition-all duration-200
+                          ${isDragging ? "opacity-40 scale-[0.98]" : ""}
+                          ${isOver ? "ring-2 ring-purple-400 ring-offset-2 rounded-[20px]" : ""}
+                          ${editMode ? "animate-wiggle" : ""}`}
+            >
+              <div className={editMode ? "pointer-events-none" : ""}>
+                {content}
+              </div>
+
+              {/* 非编辑模式：标题热区（只覆盖左上 140x52） */}
+              {!editMode && (
+                <div
+                  onPointerDown={(e) => handleTitlePress(e, idx)}
+                  className="absolute top-0 left-0 z-[2]"
+                  style={{
+                    width: 140,
+                    height: 52,
+                    touchAction: "auto",
+                  }}
+                />
+              )}
+
+              {/* 编辑模式：整个卡片可拖动 */}
+              {editMode && (
+                <div
+                  onPointerDown={(e) => startCardDrag(e, idx)}
+                  className="absolute inset-0 z-[1]"
+                  style={{ touchAction: "none" }}
+                />
+              )}
+
+              {editMode && (
+                <div className="absolute -top-2 right-2 flex gap-1 z-20">
+                  <button
+                    onPointerDown={(e) => e.stopPropagation()}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      if (canUp) moveProductModule(idx, idx - 1);
+                    }}
+                    disabled={!canUp}
+                    className={`w-7 h-7 rounded-full flex items-center justify-center
+                                transition-all active:scale-90 shadow-sm
+                                ${canUp
+                                  ? "bg-white border border-slate-200 hover:bg-slate-50"
+                                  : "bg-slate-100 opacity-40"}`}
+                  >
+                    <svg className="w-3.5 h-3.5 text-slate-700" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2.5}>
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M5 15l7-7 7 7" />
+                    </svg>
+                  </button>
+                  <button
+                    onPointerDown={(e) => e.stopPropagation()}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      if (canDown) moveProductModule(idx, idx + 1);
+                    }}
+                    disabled={!canDown}
+                    className={`w-7 h-7 rounded-full flex items-center justify-center
+                                transition-all active:scale-90 shadow-sm
+                                ${canDown
+                                  ? "bg-white border border-slate-200 hover:bg-slate-50"
+                                  : "bg-slate-100 opacity-40"}`}
+                  >
+                    <svg className="w-3.5 h-3.5 text-slate-700" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2.5}>
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
+                    </svg>
+                  </button>
+                </div>
+              )}
+            </div>
+          );
+        })}
+
+        <div className="h-4" />
       </div>
 
-      {/* 底部固定栏（Q1 C：滚动收起） */}
       <div
-        className={`fixed bottom-0 left-0 right-0 z-40 transition-transform duration-300
-                    ${scrollDir === "down" ? "translate-y-full" : "translate-y-0"}`}
+        className="fixed bottom-0 left-0 right-0 z-40"
         style={{
           background: "rgba(255, 255, 255, 0.92)",
           backdropFilter: "blur(20px) saturate(180%)",
@@ -519,7 +628,7 @@ export default function ProductPage() {
                 加仓
               </button>
               <button
-                onClick={() => router.push(`/holdings/${myHolding.id}?action=sell`)}
+                onClick={() => setQuickSellOpen(true)}
                 className="flex-1 py-3 text-[14px] font-semibold rounded-full
                            bg-white text-amber-600 border border-amber-200
                            hover:bg-amber-50 active:scale-[0.98]
@@ -552,6 +661,16 @@ export default function ProductPage() {
         onClose={() => setQuickBuyOpen(false)}
         onSuccess={() => {
           setQuickBuyOpen(false);
+          window.location.reload();
+        }}
+      />
+
+      <QuickSellModal
+        open={quickSellOpen}
+        holding={hasHolding ? myHolding : null}
+        onClose={() => setQuickSellOpen(false)}
+        onSuccess={() => {
+          setQuickSellOpen(false);
           window.location.reload();
         }}
       />

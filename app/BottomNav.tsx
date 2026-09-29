@@ -36,7 +36,8 @@ export default function BottomNav() {
     if (
     pathname?.startsWith("/product/") ||
     pathname?.startsWith("/login") ||
-    pathname?.startsWith("/add")
+    pathname?.startsWith("/add") ||
+    (pathname?.startsWith("/holdings/") && pathname.length > "/holdings/".length)
   ) return null;
 
   return (

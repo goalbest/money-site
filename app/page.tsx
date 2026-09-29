@@ -11,6 +11,11 @@ import { useHomeLayout } from "../lib/homeStore";
 import HomeTiles from "./components/home/HomeTiles";
 import ModuleRenderer from "./components/home/ModuleRenderer";
 import HomeDrawer from "./components/home/HomeDrawer";
+import { useAssetSnapshots } from "../lib/useAssetSnapshots";
+import { useGoals } from "../lib/useGoals";
+import GoalModal from "./components/home/GoalModal";
+import DCAModal from "./components/home/DCAModal";
+import { useDCAPlans } from "../lib/useDCAPlans";
 
 
 export default function Home() {
@@ -23,6 +28,54 @@ export default function Home() {
   /* ============ 数据层 ============ */
   const { metrics, loading: metricsLoading } = useHomeMetrics();
   const { layout, hydrated, moveWithinZone, moveToZone, reset } = useHomeLayout();
+
+  /* ============ 资产快照（每日自动存档） ============ */
+  const snap = useAssetSnapshots({
+    amount: metrics.totalAssets,
+    holding: metrics.totalHolding,
+    inTransit: metrics.totalInTransit,
+    ready: !metricsLoading && metrics.count > 0,
+  });
+
+  /* ============ 目标进度 ============ */
+  const goalsBase = useGoals(metrics.totalAssets);
+  const [goalModalOpen, setGoalModalOpen] = useState(false);
+  const [editingGoal, setEditingGoal] = useState<any | null>(null);
+
+  // 包装一层，方便 ModuleRenderer 直接调 openModal
+  const goals = {
+    ...goalsBase,
+    openModal: (g?: any) => {
+      setEditingGoal(g || null);
+      setGoalModalOpen(true);
+    },
+  };
+
+    /* ============ 定投计划 ============ */
+  const dcaBase = useDCAPlans();
+  const [dcaModalOpen, setDcaModalOpen] = useState(false);
+  const [editingDca, setEditingDca] = useState<any | null>(null);
+
+  // 打开页面时推进过期的计划
+  useEffect(() => {
+    if (dcaBase.hydrated) dcaBase.rollForward();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [dcaBase.hydrated]);
+
+  // 可用于定投的产品列表
+  const dcaProducts = metrics.topHoldings.map((h: any) => ({
+    id: h.products?.id,
+    name: h.products?.name || "",
+    bank: h.products?.bank || "",
+  })).filter((p: any) => p.id);
+
+  const dca = {
+    ...dcaBase,
+    openModal: (p?: any) => {
+      setEditingDca(p || null);
+      setDcaModalOpen(true);
+    },
+  };
 
     /* ============ 抽屉 / 编辑模式 ============ */
   const [drawerOpen, setDrawerOpen] = useState(false);
@@ -454,9 +507,10 @@ export default function Home() {
 
                 {/* ============ 磁贴区 ============ */}
         {!searchMode && (
-          <HomeTiles
+                    <HomeTiles
             ids={layout.tile}
             metrics={metrics}
+            snap={snap}
             editMode={editMode}
             onEnterEditMode={() => setEditMode(true)}
             onReorder={(from, to) => moveWithinZone("tile", from, to)}
@@ -489,6 +543,9 @@ export default function Home() {
                     <ModuleRenderer
                       id={id}
                       metrics={metrics}
+                      snap={snap}
+                      goals={goals}
+                      dca={dca}
                       rankData={rankData}
                       onLinkClick={handleLinkClick}
                       onTitleLongPress={editMode ? undefined : () => {
@@ -567,6 +624,49 @@ export default function Home() {
         onMoveWithinZone={moveWithinZone}
         onMoveToZone={moveToZone}
         onReset={reset}
+      />
+
+      {/* ============ 目标设置弹窗 ============ */}
+      <GoalModal
+        open={goalModalOpen}
+        editing={editingGoal}
+        currentAmount={metrics.totalAssets}
+        onClose={() => {
+          setGoalModalOpen(false);
+          setEditingGoal(null);
+        }}
+        onSave={(data) => {
+          if (editingGoal) {
+            goalsBase.update(editingGoal.id, {
+              name: data.name,
+              targetAmount: data.targetAmount,
+              targetDate: data.targetDate,
+            });
+          } else {
+            goalsBase.add(data);
+          }
+          setGoalModalOpen(false);
+          setEditingGoal(null);
+        }}
+      />
+            {/* ============ 定投弹窗 ============ */}
+      <DCAModal
+        open={dcaModalOpen}
+        editing={editingDca}
+        products={dcaProducts}
+        onClose={() => {
+          setDcaModalOpen(false);
+          setEditingDca(null);
+        }}
+        onSave={(data) => {
+          if (editingDca) {
+            dcaBase.update(editingDca.id, data);
+          } else {
+            dcaBase.add(data);
+          }
+          setDcaModalOpen(false);
+          setEditingDca(null);
+        }}
       />
     </div>
   );

@@ -1,154 +1,193 @@
 "use client";
 
-import { useState, useMemo } from "react";
-import {
-  LineChart,
-  Line,
-  XAxis,
-  YAxis,
-  Tooltip,
-  ResponsiveContainer,
-  CartesianGrid,
-} from "recharts";
+import { useMemo, useRef, useState } from "react";
 
-type Range = "1m" | "3m" | "6m" | "1y" | "all";
+type Props = {
+  data: { nav_date: string; unit_nav: number | string; accum_nav?: any }[];
+  /** 开启点击/触摸查看某点数值 */
+  interactive?: boolean;
+  height?: number;
+};
 
-const RANGES: { key: Range; label: string; days: number | null }[] = [
-  { key: "1m", label: "近1月", days: 30 },
-  { key: "3m", label: "近3月", days: 90 },
-  { key: "6m", label: "近6月", days: 180 },
-  { key: "1y", label: "近1年", days: 365 },
-  { key: "all", label: "成立以来", days: null },
-];
+export default function NavChart({ data, interactive = false, height = 200 }: Props) {
+  const containerRef = useRef<HTMLDivElement>(null);
+  const [activeIdx, setActiveIdx] = useState<number | null>(null);
 
-export default function NavChart({ data }: { data: any[] }) {
-  const [range, setRange] = useState<Range>("1m");
+  const w = 600;
+  const h = height;
+  const padX = 8;
+  const padY = 20;
 
-  const filtered = useMemo(() => {
-    if (!data || data.length === 0) return [];
+  const points = useMemo(
+    () =>
+      data.map((d, i) => ({
+        i,
+        date: String(d.nav_date),
+        nav: Number(d.unit_nav),
+      })),
+    [data]
+  );
 
-    const sorted = [...data].sort((a, b) =>
-      String(a.nav_date).localeCompare(String(b.nav_date))
-    );
+  const { linePath, areaPath, coords, min, max, positive } = useMemo(() => {
+    if (points.length < 2) {
+      return { linePath: "", areaPath: "", coords: [], min: 0, max: 0, positive: true };
+    }
+    const navs = points.map(p => p.nav);
+    const min = Math.min(...navs);
+    const max = Math.max(...navs);
+    const range = max - min || 1;
+    const stepX = (w - padX * 2) / (points.length - 1);
+    const coords = points.map((p, i) => ({
+      x: padX + i * stepX,
+      y: h - padY - ((p.nav - min) / range) * (h - padY * 2),
+    }));
+    const linePath = coords
+      .map((c, i) => `${i === 0 ? "M" : "L"} ${c.x.toFixed(2)} ${c.y.toFixed(2)}`)
+      .join(" ");
+    const areaPath = `${linePath} L ${coords[coords.length - 1].x.toFixed(2)} ${h} L ${coords[0].x.toFixed(2)} ${h} Z`;
+    const positive = navs[navs.length - 1] >= navs[0];
+    return { linePath, areaPath, coords, min, max, positive };
+  }, [points, h]);
 
-    const config = RANGES.find(r => r.key === range);
-    if (!config || config.days === null) return sorted;
-
-    const lastDate = new Date(sorted[sorted.length - 1].nav_date);
-    const startDate = new Date(lastDate);
-    startDate.setDate(startDate.getDate() - config.days);
-
-    return sorted.filter(n => new Date(n.nav_date) >= startDate);
-  }, [data, range]);
-
-  // 计算过滤后的区间涨跌
-  const stats = useMemo(() => {
-    if (filtered.length < 2) return null;
-    const first = Number(filtered[0].unit_nav);
-    const last = Number(filtered[filtered.length - 1].unit_nav);
-    const change = first > 0 ? ((last - first) / first) * 100 : 0;
-    return {
-      first: first.toFixed(4),
-      last: last.toFixed(4),
-      change,
-    };
-  }, [filtered]);
-
-  if (!data || data.length === 0) {
+  if (points.length < 2) {
     return (
-      <p className="text-gray-400 text-sm py-10 text-center">暂无净值历史数据</p>
+      <div className="py-16 text-center text-slate-300 text-xs">
+        数据不足
+      </div>
     );
   }
 
-  return (
-    <div>
-      {/* 时间范围切换 */}
-      <div className="flex gap-2 mb-4 overflow-x-auto">
-        {RANGES.map(r => (
-          <button
-            key={r.key}
-            onClick={() => setRange(r.key)}
-            className={`px-3 py-1.5 text-xs rounded-lg whitespace-nowrap transition ${
-              range === r.key
-                ? "bg-blue-600 text-white shadow-sm"
-                : "bg-gray-100 text-gray-600 hover:bg-gray-200"
-            }`}
-          >
-            {r.label}
-          </button>
-        ))}
-      </div>
+  const stroke = positive ? "#f43f5e" : "#10b981";
 
-      {/* 区间统计 */}
-      {stats && (
-        <div className="flex gap-4 mb-4 text-xs">
-          <div>
-            <span className="text-gray-400">起始 </span>
-            <span className="font-mono text-gray-700">{stats.first}</span>
-          </div>
-          <div>
-            <span className="text-gray-400">期末 </span>
-            <span className="font-mono text-gray-700">{stats.last}</span>
-          </div>
-          <div>
-            <span className="text-gray-400">区间涨跌 </span>
-            <span
-              className={`font-mono font-medium ${
-                stats.change > 0
-                  ? "text-red-500"
-                  : stats.change < 0
-                  ? "text-green-600"
-                  : "text-gray-500"
-              }`}
-            >
-              {stats.change > 0 ? "+" : ""}
-              {stats.change.toFixed(3)}%
-            </span>
-          </div>
-          <div>
-            <span className="text-gray-400">共 </span>
-            <span className="font-mono text-gray-700">{filtered.length}</span>
-            <span className="text-gray-400"> 天</span>
+  function locate(clientX: number) {
+    const el = containerRef.current;
+    if (!el) return;
+    const rect = el.getBoundingClientRect();
+    const relX = ((clientX - rect.left) / rect.width) * w;
+    let nearest = 0;
+    let minDist = Infinity;
+    coords.forEach((c, i) => {
+      const d = Math.abs(c.x - relX);
+      if (d < minDist) {
+        minDist = d;
+        nearest = i;
+      }
+    });
+    setActiveIdx(nearest);
+  }
+
+  function onPointerDown(e: React.PointerEvent) {
+    if (!interactive) return;
+    locate(e.clientX);
+  }
+  function onPointerMove(e: React.PointerEvent) {
+    if (!interactive) return;
+    if (e.pressure > 0 || e.pointerType === "mouse") locate(e.clientX);
+  }
+  function onPointerLeave() {
+    if (!interactive) return;
+    setActiveIdx(null);
+  }
+
+  const active = activeIdx != null ? points[activeIdx] : null;
+  const activeCoord = activeIdx != null ? coords[activeIdx] : null;
+
+  return (
+    <div
+      ref={containerRef}
+      className="relative select-none"
+      onPointerDown={onPointerDown}
+      onPointerMove={onPointerMove}
+      onPointerLeave={onPointerLeave}
+      style={{ touchAction: interactive ? "pan-y" : "auto" }}
+    >
+      <svg
+        viewBox={`0 0 ${w} ${h}`}
+        preserveAspectRatio="none"
+        className="w-full"
+        style={{ height: h }}
+      >
+        <defs>
+          <linearGradient id={`navGrad-${positive ? "up" : "down"}`} x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stopColor={stroke} stopOpacity="0.18" />
+            <stop offset="100%" stopColor={stroke} stopOpacity="0" />
+          </linearGradient>
+        </defs>
+
+        {/* 网格线 */}
+        {[0.25, 0.5, 0.75].map((t) => (
+          <line
+            key={t}
+            x1={padX}
+            x2={w - padX}
+            y1={padY + (h - padY * 2) * t}
+            y2={padY + (h - padY * 2) * t}
+            stroke="#f1f3f7"
+            strokeWidth="1"
+          />
+        ))}
+
+        <path d={areaPath} fill={`url(#navGrad-${positive ? "up" : "down"})`} />
+        <path
+          d={linePath}
+          fill="none"
+          stroke={stroke}
+          strokeWidth="1.8"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          vectorEffect="non-scaling-stroke"
+        />
+
+        {/* 激活点的垂直指示线 */}
+        {activeCoord && (
+          <>
+            <line
+              x1={activeCoord.x}
+              x2={activeCoord.x}
+              y1={padY}
+              y2={h - padY}
+              stroke={stroke}
+              strokeWidth="1"
+              strokeDasharray="3 3"
+              opacity="0.5"
+              vectorEffect="non-scaling-stroke"
+            />
+            <circle
+              cx={activeCoord.x}
+              cy={activeCoord.y}
+              r="4"
+              fill={stroke}
+              stroke="#ffffff"
+              strokeWidth="2"
+            />
+          </>
+        )}
+
+        {/* 末点圆点（未激活时显示） */}
+        {!activeCoord && (
+          <circle
+            cx={coords[coords.length - 1].x}
+            cy={coords[coords.length - 1].y}
+            r="3"
+            fill={stroke}
+            stroke="#ffffff"
+            strokeWidth="1.5"
+          />
+        )}
+      </svg>
+
+      {/* 悬浮数值气泡 */}
+      {active && (
+        <div className="absolute top-0 left-0 right-0 flex justify-center pointer-events-none">
+          <div className="px-3 py-1.5 rounded-full bg-slate-900/90 backdrop-blur
+                          text-white text-[11px] tabular flex items-center gap-2
+                          shadow-lg animate-fade-in"
+               style={{ animationDuration: "0.15s" }}>
+            <span className="text-white/70">{active.date}</span>
+            <span className="font-mono font-bold">{active.nav.toFixed(4)}</span>
           </div>
         </div>
       )}
-
-      {/* 折线图 */}
-      <ResponsiveContainer width="100%" height={360}>
-        <LineChart data={filtered} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
-          <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
-          <XAxis
-            dataKey="nav_date"
-            tick={{ fontSize: 11, fill: "#999" }}
-            tickFormatter={(v) => String(v).slice(5)}
-            minTickGap={30}
-          />
-          <YAxis
-            domain={["auto", "auto"]}
-            tick={{ fontSize: 11, fill: "#999" }}
-            tickFormatter={(v) => Number(v).toFixed(3)}
-            width={55}
-          />
-          <Tooltip
-            contentStyle={{
-              backgroundColor: "white",
-              border: "1px solid #eee",
-              borderRadius: "8px",
-              fontSize: "12px",
-            }}
-            formatter={(value: any) => [Number(value).toFixed(4), "单位净值"]}
-            labelFormatter={(label) => `日期 ${label}`}
-          />
-          <Line
-            type="monotone"
-            dataKey="unit_nav"
-            stroke="#3b82f6"
-            strokeWidth={2}
-            dot={false}
-            activeDot={{ r: 4 }}
-          />
-        </LineChart>
-      </ResponsiveContainer>
     </div>
   );
 }

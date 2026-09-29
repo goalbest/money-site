@@ -488,6 +488,18 @@ export default function AddPage() {
       <div className="container mx-auto px-5 pt-8 max-w-3xl">
 
         <div className="flex items-center gap-3 mb-5">
+          <button
+            onClick={() => router.back()}
+            className="w-9 h-9 rounded-full bg-white border border-slate-200
+                       hover:border-slate-300 hover:bg-slate-50
+                       flex items-center justify-center flex-shrink-0
+                       transition-all duration-300 active:scale-90"
+            aria-label="返回"
+          >
+            <svg className="w-4 h-4 text-slate-600" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2.5}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M15 19l-7-7 7-7" />
+            </svg>
+          </button>
           <div className="flex-1">
             <div className="text-[22px] font-bold tracking-tight text-slate-900">
               添加产品
