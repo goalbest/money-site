@@ -13,7 +13,11 @@ export async function resolveShortLink(url: string): Promise<string> {
   for (let i = 0; i < 5; i++) {
     const r = await fetch(current, {
       redirect: 'manual',
-      headers: { 'User-Agent': USER_AGENT },
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15',
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+        'Accept-Language': 'zh-CN,zh;q=0.9',
+      },
     });
     if (r.status >= 300 && r.status < 400) {
       const loc = r.headers.get('location');

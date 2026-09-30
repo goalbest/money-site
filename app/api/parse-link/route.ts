@@ -19,10 +19,44 @@ export async function POST(request: Request) {
     let params: any;
 
     if (hostname.includes('psbc.com')) {
-      // 邮储银行
-      product = await parsePsbcLink(url);
-      sourceType = 'psbc';
-      params = { product_code: product.code };
+      // 邮储银行 / 中邮理财（可能带短链）
+      let finalUrl = url;
+      if (hostname.includes('u.psbc.com')) {
+        const { resolveShortLink } = await import('@/lib/psbc-parse');
+        finalUrl = await resolveShortLink(url);
+        console.log('短链解析后:', finalUrl);
+      }
+      const u = new URL(finalUrl);
+      const hashQuery = u.hash.split('?')[1] || '';
+      const hashParams = new URLSearchParams(hashQuery);
+      const productCode =
+        hashParams.get('productId') ||
+        u.searchParams.get('productId') ||
+        u.searchParams.get('code');
+
+      if (!productCode) {
+        return NextResponse.json({ error: '无法从链接提取 productId' }, { status: 400 });
+      }
+
+      const { fetchPsbcProduct } = await import('@/lib/psbc-parse');
+      const psbcProd = await fetchPsbcProduct(productCode);
+      if (!psbcProd) {
+        return NextResponse.json({ error: `邮储接口未找到产品: ${productCode}` }, { status: 404 });
+      }
+
+      // 中邮理财 vs 邮储银行（按 code 前缀判断）
+      const isZywm = /^2601/.test(productCode);
+      product = {
+        code: psbcProd.code,
+        name: psbcProd.name,
+        unitNav: psbcProd.unitNav,
+        navDate: psbcProd.navDate,
+        sevenYield: psbcProd.sevenYield,
+        wfEarn: psbcProd.wfEarn,
+        riskLevel: psbcProd.riskLevel,
+      };
+      sourceType = isZywm ? 'zywm' : 'psbc';
+      params = { product_code: psbcProd.code };
     } else if (hostname.includes('cmbchina.com')) {
       // 招商银行：不立即抓，只提取参数（净值交给 Playwright workflow）
       const u = new URL(url);
