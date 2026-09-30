@@ -171,7 +171,6 @@ function computeTopToday(holdings: Holding[]) {
   const arr: (Holding & { todayProfit: number; rate: number })[] = [];
   for (const h of holdings) {
     const profit = (Number(h.holding_amount || 0) * Number(h.products?.daily_return || 0)) / 10000;
-    if (profit === 0) continue;
     arr.push({ ...h, todayProfit: profit, rate: Number(h.products?.daily_return || 0) });
   }
   arr.sort((a, b) => b.todayProfit - a.todayProfit);

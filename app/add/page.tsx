@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { supabase } from "../../lib/supabase";
 import { getBankInfo } from "../../lib/banks";
 import BankSelect from "../components/BankSelect";
+import ParseLinkInput from "../components/ParseLinkInput";
 
 function guessBank(name: string, code: string): string {
   const n = name || "";
@@ -509,6 +510,9 @@ export default function AddPage() {
             </div>
           </div>
         </div>
+
+        {/* ★ 粘贴链接快速添加 */}
+        <ParseLinkInput />
 
         <div className="segment-group flex mb-5 animate-fade-in-up">
           <button

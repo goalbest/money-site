@@ -9,7 +9,7 @@ import CollapsibleCard from "./CollapsibleCard";
 import ScrollableList from "./ScrollableList";
 import type { GoalsData } from "../../../lib/useGoals";
 import type { DCAData } from "../../../lib/useDCAPlans";
-import { FREQUENCY_LABELS, WEEKDAY_LABELS } from "../../../lib/useDCAPlans";
+import { WEEKDAY_LABELS } from "../../../lib/useDCAPlans";
 
 /* ============================================================
    格式化工具
@@ -313,11 +313,11 @@ function TopTodayContent({ m }: { m: HomeMetrics }) {
               <div className="text-[10px] text-slate-400 mt-0.5 truncate">{p.bank}</div>
             </div>
             <div className="text-right flex-shrink-0">
-              <div className="font-mono font-bold text-[14px] text-rose-500 tabular">
-                +{h.todayProfit.toFixed(2)}
+              <div className={`font-mono font-bold text-[14px] tabular ${profitColor(h.todayProfit)}`}>
+                {h.todayProfit >= 0 ? "+" : ""}{h.todayProfit.toFixed(2)}
               </div>
-              <div className="text-[10px] text-slate-400 font-mono mt-0.5 tabular">
-                +{h.rate.toFixed(2)}%
+              <div className={`text-[10px] text-slate-400 font-mono mt-0.5 tabular ${profitColor(h.rate)}`}>
+                {h.rate >= 0 ? "+" : ""}{h.rate.toFixed(2)}%
               </div>
             </div>
           </Link>
@@ -553,7 +553,6 @@ function PlaceholderContent({
 function GoalContent({ m, goals }: { m: HomeMetrics; goals?: GoalsData }) {
   if (!goals) return null;
 
-  /* 空状态 */
   if (goals.goals.length === 0) {
     return (
       <div className="px-5 py-8 text-center">
@@ -582,6 +581,139 @@ function GoalContent({ m, goals }: { m: HomeMetrics; goals?: GoalsData }) {
       </div>
     );
   }
+
+  return (
+    <div>
+      {goals.goals.map((g) => {
+        const p = goals.calcProgress(g);
+        const isReached = p.reached;
+        const percent = p.percent;
+        const barColor = isReached
+          ? "linear-gradient(90deg,#34d399,#059669)"
+          : "linear-gradient(90deg,#6366f1,#a855f7,#ec4899)";
+
+        return (
+          <div key={g.id} className="px-5 py-4 border-t divider first:border-t-0">
+            <div className="flex items-start justify-between gap-3 mb-2.5">
+              <div className="flex items-center gap-2 min-w-0">
+                <span className="text-[14px] leading-none">
+                  {isReached ? "🏆" : "🎯"}
+                </span>
+                <span className="text-[13px] font-semibold text-slate-900 truncate">
+                  {g.name}
+                </span>
+                {isReached && (
+                  <span className="px-1.5 py-0.5 rounded text-[9px] font-semibold
+                                   bg-emerald-50 text-emerald-600 flex-shrink-0">
+                    已完成
+                  </span>
+                )}
+              </div>
+              <button
+                onClick={() => goals.openModal(g)}
+                className="w-6 h-6 rounded-full hover:bg-slate-100
+                           flex items-center justify-center flex-shrink-0
+                           transition-colors"
+                aria-label="编辑"
+              >
+                <svg className="w-3 h-3 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                </svg>
+              </button>
+            </div>
+
+            <div className="mb-2.5">
+              <div className="h-2 bg-slate-100 rounded-full overflow-hidden">
+                <div
+                  className="h-full rounded-full transition-all duration-700"
+                  style={{ width: `${percent}%`, background: barColor }}
+                />
+              </div>
+              <div className="flex items-center justify-between mt-1.5 text-[10px] text-slate-400 tabular">
+                <span className="font-mono font-semibold text-slate-600">
+                  {percent.toFixed(1)}%
+                </span>
+                <span className="font-mono">
+                  {m.totalAssets.toLocaleString("zh-CN", { maximumFractionDigits: 0 })}
+                  {" / "}
+                  {g.targetAmount.toLocaleString("zh-CN", { maximumFractionDigits: 0 })}
+                </span>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-3 text-[10px] text-slate-400 flex-wrap">
+              {!isReached && p.remaining > 0 && (
+                <span>
+                  还差{" "}
+                  <span className="font-mono font-semibold text-slate-700">
+                    ¥{p.remaining.toLocaleString("zh-CN", { maximumFractionDigits: 0 })}
+                  </span>
+                </span>
+              )}
+              {p.daysLeft != null && !isReached && (
+                <>
+                  <span className="text-slate-300">·</span>
+                  <span>
+                    剩 <span className="font-mono font-semibold text-slate-700">{p.daysLeft}</span> 天
+                  </span>
+                </>
+              )}
+              {p.dailyNeeded != null && p.dailyNeeded > 0 && (
+                <>
+                  <span className="text-slate-300">·</span>
+                  <span>
+                    日均需{" "}
+                    <span className="font-mono font-semibold text-purple-600">
+                      ¥{p.dailyNeeded.toLocaleString("zh-CN", { maximumFractionDigits: 0 })}
+                    </span>
+                  </span>
+                </>
+              )}
+            </div>
+          </div>
+        );
+      })}
+
+      <div className="px-5 py-3 border-t divider flex gap-2">
+        <button
+          onClick={() => goals.openModal()}
+          className="flex-1 py-2.5 rounded-full
+                     bg-purple-50 text-purple-600 text-[12px] font-semibold
+                     hover:bg-purple-100 active:scale-[0.98]
+                     transition-all"
+        >
+          + 添加目标
+        </button>
+        {goals.goals.length > 0 && (
+          <button
+            onClick={() => {
+              if (goals.goals.length === 1) {
+                if (confirm(`删除目标「${goals.goals[0].name}」？`)) {
+                  goals.remove(goals.goals[0].id);
+                }
+              } else {
+                const names = goals.goals.map((g, i) => `${i + 1}. ${g.name}`).join("\n");
+                const input = prompt(`输入要删除的编号：\n\n${names}`);
+                const idx = Number(input) - 1;
+                if (idx >= 0 && idx < goals.goals.length) {
+                  if (confirm(`删除「${goals.goals[idx].name}」？`)) {
+                    goals.remove(goals.goals[idx].id);
+                  }
+                }
+              }
+            }}
+            className="px-4 py-2.5 rounded-full
+                       bg-slate-50 text-slate-500 text-[12px] font-medium
+                       hover:bg-slate-100 active:scale-[0.98]
+                       transition-all"
+          >
+            删除
+          </button>
+        )}
+      </div>
+    </div>
+  );
+}
 
 /* ============================================================
    定投计划
@@ -621,7 +753,6 @@ function DCAContent({ dca }: { dca?: DCAData }) {
 
   return (
     <div>
-      {/* 概览 */}
       <div className="px-5 py-3 bg-gradient-to-r from-violet-50 to-purple-50/50 border-b divider">
         <div className="flex items-center justify-between text-[11px]">
           <span className="text-slate-500">每月总投入</span>
@@ -631,7 +762,6 @@ function DCAContent({ dca }: { dca?: DCAData }) {
         </div>
       </div>
 
-      {/* 定投列表 */}
       {dca.plans.map((plan) => {
         const days = dca.daysUntil(plan.nextDate);
         const isSoon = days <= 3 && plan.enabled;
@@ -653,7 +783,6 @@ function DCAContent({ dca }: { dca?: DCAData }) {
             className={`px-5 py-4 border-t divider first:border-t-0
                         ${!plan.enabled ? "opacity-50" : ""}`}
           >
-            {/* 第一行 */}
             <div className="flex items-start gap-2.5 mb-2">
               <span
                 className="bank-avatar flex-shrink-0 mt-0.5"
@@ -679,7 +808,6 @@ function DCAContent({ dca }: { dca?: DCAData }) {
               </div>
             </div>
 
-            {/* 第二行：下次执行 + 操作 */}
             <div className="flex items-center justify-between gap-2">
               <div className="flex items-center gap-1.5 text-[10px]">
                 {plan.enabled ? (
@@ -755,7 +883,6 @@ function DCAContent({ dca }: { dca?: DCAData }) {
         );
       })}
 
-      {/* 底部按钮 */}
       <div className="px-5 py-3 border-t divider">
         <button
           onClick={() => dca.openModal()}
@@ -766,145 +893,6 @@ function DCAContent({ dca }: { dca?: DCAData }) {
         >
           + 添加定投
         </button>
-      </div>
-    </div>
-  );
-}
-
-  /* 目标列表 */
-  return (
-    <div>
-      {goals.goals.map((g) => {
-        const p = goals.calcProgress(g);
-        const isReached = p.reached;
-        const percent = p.percent;
-        const barColor = isReached
-          ? "linear-gradient(90deg,#34d399,#059669)"
-          : "linear-gradient(90deg,#6366f1,#a855f7,#ec4899)";
-
-        return (
-          <div key={g.id} className="px-5 py-4 border-t divider first:border-t-0">
-            {/* 标题行 */}
-            <div className="flex items-start justify-between gap-3 mb-2.5">
-              <div className="flex items-center gap-2 min-w-0">
-                <span className="text-[14px] leading-none">
-                  {isReached ? "🏆" : "🎯"}
-                </span>
-                <span className="text-[13px] font-semibold text-slate-900 truncate">
-                  {g.name}
-                </span>
-                {isReached && (
-                  <span className="px-1.5 py-0.5 rounded text-[9px] font-semibold
-                                   bg-emerald-50 text-emerald-600 flex-shrink-0">
-                    已完成
-                  </span>
-                )}
-              </div>
-              <button
-                onClick={() => goals.openModal(g)}
-                className="w-6 h-6 rounded-full hover:bg-slate-100
-                           flex items-center justify-center flex-shrink-0
-                           transition-colors"
-                aria-label="编辑"
-              >
-                <svg className="w-3 h-3 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
-                </svg>
-              </button>
-            </div>
-
-            {/* 进度条 */}
-            <div className="mb-2.5">
-              <div className="h-2 bg-slate-100 rounded-full overflow-hidden">
-                <div
-                  className="h-full rounded-full transition-all duration-700"
-                  style={{ width: `${percent}%`, background: barColor }}
-                />
-              </div>
-              <div className="flex items-center justify-between mt-1.5 text-[10px] text-slate-400 tabular">
-                <span className="font-mono font-semibold text-slate-600">
-                  {percent.toFixed(1)}%
-                </span>
-                <span className="font-mono">
-                  {m.totalAssets.toLocaleString("zh-CN", { maximumFractionDigits: 0 })}
-                  {" / "}
-                  {g.targetAmount.toLocaleString("zh-CN", { maximumFractionDigits: 0 })}
-                </span>
-              </div>
-            </div>
-
-            {/* 统计信息 */}
-            <div className="flex items-center gap-3 text-[10px] text-slate-400 flex-wrap">
-              {!isReached && p.remaining > 0 && (
-                <span>
-                  还差{" "}
-                  <span className="font-mono font-semibold text-slate-700">
-                    ¥{p.remaining.toLocaleString("zh-CN", { maximumFractionDigits: 0 })}
-                  </span>
-                </span>
-              )}
-              {p.daysLeft != null && !isReached && (
-                <span className="text-slate-300">·</span>
-              )}
-              {p.daysLeft != null && !isReached && (
-                <span>
-                  剩 <span className="font-mono font-semibold text-slate-700">{p.daysLeft}</span> 天
-                </span>
-              )}
-              {p.dailyNeeded != null && p.dailyNeeded > 0 && (
-                <>
-                  <span className="text-slate-300">·</span>
-                  <span>
-                    日均需{" "}
-                    <span className="font-mono font-semibold text-purple-600">
-                      ¥{p.dailyNeeded.toLocaleString("zh-CN", { maximumFractionDigits: 0 })}
-                    </span>
-                  </span>
-                </>
-              )}
-            </div>
-          </div>
-        );
-      })}
-
-      {/* 底部：添加 / 删除 */}
-      <div className="px-5 py-3 border-t divider flex gap-2">
-        <button
-          onClick={() => goals.openModal()}
-          className="flex-1 py-2.5 rounded-full
-                     bg-purple-50 text-purple-600 text-[12px] font-semibold
-                     hover:bg-purple-100 active:scale-[0.98]
-                     transition-all"
-        >
-          + 添加目标
-        </button>
-        {goals.goals.length > 0 && (
-          <button
-            onClick={() => {
-              if (goals.goals.length === 1) {
-                if (confirm(`删除目标「${goals.goals[0].name}」？`)) {
-                  goals.remove(goals.goals[0].id);
-                }
-              } else {
-                // 多个目标：弹选择
-                const names = goals.goals.map((g, i) => `${i + 1}. ${g.name}`).join("\n");
-                const input = prompt(`输入要删除的编号：\n\n${names}`);
-                const idx = Number(input) - 1;
-                if (idx >= 0 && idx < goals.goals.length) {
-                  if (confirm(`删除「${goals.goals[idx].name}」？`)) {
-                    goals.remove(goals.goals[idx].id);
-                  }
-                }
-              }
-            }}
-            className="px-4 py-2.5 rounded-full
-                       bg-slate-50 text-slate-500 text-[12px] font-medium
-                       hover:bg-slate-100 active:scale-[0.98]
-                       transition-all"
-          >
-            删除
-          </button>
-        )}
       </div>
     </div>
   );
@@ -955,11 +943,11 @@ export default function ModuleRenderer({
 
   switch (id) {
     case "holdings":
-      return wrapper("我的持仓", m.count > 0 ? `${m.count} 个` : undefined,
+      return wrapper("我的持仓", m.count > 0 ? `${m.count}` : undefined,
         <HoldingsContent m={m} />, <MoreLink href="/holdings" text="全部" />);
 
     case "topToday":
-      return wrapper("今日收益榜", m.topToday.length > 0 ? `${m.topToday.length} 个` : undefined,
+      return wrapper("今日收益榜", m.topToday.length > 0 ? `${m.topToday.length}` : undefined,
         <TopTodayContent m={m} />, <MoreLink href="/holdings" text="全部" />);
 
     case "profitRank":
@@ -1014,7 +1002,7 @@ export default function ModuleRenderer({
         <AlertList items={m.stopLosses} emptyText="没有亏损超 3% 的产品" />);
 
     case "assetDistribution":
-      return wrapper("资产分布", m.assetDistribution.length ? `${m.assetDistribution.length} 家` : undefined,
+      return wrapper("资产分布", m.assetDistribution.length ? `${m.assetDistribution.length}` : undefined,
         <DistributionContent m={m} />, <MoreLink href="/holdings" text="详情" />);
 
     case "concentration":
@@ -1126,17 +1114,17 @@ export default function ModuleRenderer({
         <AssetTrendContent m={m} snap={snap} />
       );
 
-        case "goal":
+    case "goal":
       return wrapper(
         "目标进度",
-        goals && goals.goals.length > 0 ? `${goals.goals.length} 个` : undefined,
+        goals && goals.goals.length > 0 ? `${goals.goals.length}` : undefined,
         <GoalContent m={m} goals={goals} />
       );
 
     case "dca":
       return wrapper(
         "定投计划",
-        dca && dca.plans.length > 0 ? `${dca.plans.length} 个` : undefined,
+        dca && dca.plans.length > 0 ? `${dca.plans.length}` : undefined,
         <DCAContent dca={dca} />
       );
 
