@@ -7,12 +7,6 @@ import { chromium } from 'playwright';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
-const CMB_PRODUCTS = [
-  { dbId: 959, saaCode: 'D07', ripInn: 'JY040232' },
-  { dbId: 954, saaCode: 'D07', ripInn: 'JY040230' },
-  { dbId: 960, saaCode: 'D07', ripInn: '120029A' },
-];
-
 (function loadEnv() {
   for (const p of [resolve(__dirname, '..', '.env.local'), resolve(process.cwd(), '.env.local')]) {
     if (existsSync(p)) {
@@ -38,6 +32,28 @@ const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
 console.log('═══════════════════════════════');
 console.log('招银/交银净值更新（Playwright）');
 console.log('═══════════════════════════════\n');
+
+// ── 从 product_sources 读招行产品 ──
+const { data: sources, error: srcErr } = await supabase
+  .from('product_sources')
+  .select('id, product_id, params')
+  .eq('source_type', 'cmb')
+  .eq('enabled', true);
+
+if (srcErr) {
+  console.error('❌ 读 product_sources 失败:', srcErr.message);
+  process.exit(1);
+}
+
+const CMB_PRODUCTS = (sources || []).map(s => ({
+  dbId: s.product_id,
+  saaCode: s.params.saaCode,
+  ripInn: s.params.ripInn,
+}));
+
+console.log(`📌 读到 ${CMB_PRODUCTS.length} 个招行产品:`);
+CMB_PRODUCTS.forEach(p => console.log(`   - ${p.ripInn} (${p.saaCode})`));
+console.log('');
 
 const browser = await chromium.launch({ headless: true });
 const context = await browser.newContext({
@@ -126,6 +142,11 @@ for (const p of CMB_PRODUCTS) {
     }
 
     console.log(`   ✅ 写入 ${rows.length} 条\n`);
+        // 记录抓取时间
+    await supabase.from('product_sources')
+      .update({ last_fetch_at: new Date().toISOString(), last_error: null })
+      .eq('product_id', p.dbId)
+      .eq('source_type', 'cmb');
     await page.waitForTimeout(500);
   } catch (e) {
     console.log(`   ❌ 失败: ${e.message}\n`);
