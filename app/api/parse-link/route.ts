@@ -45,7 +45,7 @@ export async function POST(request: Request) {
       }
 
       // 中邮理财 vs 邮储银行（按 code 前缀判断）
-      const isZywm = /^2601/.test(productCode);
+      const isZywm = /^(26|25|24|23)\d{2}/.test(productCode);
       product = {
         code: psbcProd.code,
         name: psbcProd.name,
