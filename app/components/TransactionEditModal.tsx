@@ -1,7 +1,8 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { supabase } from "../../lib/supabase";
+import { recalcHoldingFromTransactions, fetchNavByDate } from "../../lib/holdings";
 
 type Tx = {
   id: number;
@@ -41,7 +42,29 @@ export default function TransactionEditModal({
   const [note, setNote] = useState(tx.note || "");
   const [saving, setSaving] = useState(false);
   const [msg, setMsg] = useState("");
-  const [syncHolding, setSyncHolding] = useState(true);
+  const [navLoading, setNavLoading] = useState(false);
+
+  /* ★ 改日期 → 自动查该日净值（仅日期真的变了才触发，初次打开不覆盖原值） */
+  useEffect(() => {
+    if (!tradeDate || !tx.product_id) return;
+    if (tradeDate === tx.trade_date) return;
+
+    let cancelled = false;
+    (async () => {
+      setNavLoading(true);
+      const n = await fetchNavByDate(tx.product_id, tradeDate);
+      if (!cancelled && n != null) {
+        setPrice(n.toFixed(4));
+        const a = Number(amount);
+        if (a > 0) setShares((a / n).toFixed(4));
+      }
+      if (!cancelled) setNavLoading(false);
+    })();
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tradeDate, tx.product_id, tx.trade_date]);
 
   function handlePriceChange(v: string) {
     setPrice(v);
@@ -87,8 +110,10 @@ export default function TransactionEditModal({
 
       if (txErr) throw txErr;
 
-      if (syncHolding) {
-        await recalcHolding(tx.product_id);
+      /* ★ 无条件重算持仓，不给用户选择的余地 */
+      const userId = localStorage.getItem("user_id");
+      if (userId) {
+        await recalcHoldingFromTransactions(userId, tx.product_id);
       }
 
       localStorage.removeItem("cache_home_cache_v3");
@@ -99,88 +124,6 @@ export default function TransactionEditModal({
     } catch (e: any) {
       setMsg(e.message || "保存失败");
       setSaving(false);
-    }
-  }
-
-  async function recalcHolding(productId: number) {
-    const userId = localStorage.getItem("user_id");
-    if (!userId) return;
-
-    const { data: allTx } = await supabase
-      .from("transactions")
-      .select("id, type, amount, shares, price, trade_date")
-      .eq("user_id", userId)
-      .eq("product_id", productId)
-      .order("trade_date", { ascending: true })
-      .order("id", { ascending: true });
-
-    if (!allTx || allTx.length === 0) return;
-
-    let shares = 0;
-    let cost = 0;
-    let firstBuyDate: string | null = null;
-    let closedAmount = 0;
-
-    for (const t of allTx) {
-      const sh = Number(t.shares || 0);
-      const amt = Number(t.amount || 0);
-      if (t.type === "buy") {
-        if (!firstBuyDate) firstBuyDate = t.trade_date;
-        shares += sh;
-        cost += amt;
-      } else if (t.type === "sell") {
-        if (shares > 0) {
-          const sellRatio = Math.min(1, sh / shares);
-          cost -= cost * sellRatio;
-          shares -= sh;
-        }
-      } else if (t.type === "close") {
-        closedAmount = amt;
-        shares = 0;
-        cost = 0;
-      }
-    }
-
-    const { data: prod } = await supabase
-      .from("products")
-      .select("unit_nav")
-      .eq("id", productId)
-      .maybeSingle();
-    const latestNav = Number(prod?.unit_nav || 0);
-
-    const holdingAmount = latestNav > 0 ? shares * latestNav : cost;
-    const isClosed = shares <= 0.01;
-
-    const { data: existing } = await supabase
-      .from("user_holdings")
-      .select("id")
-      .eq("user_id", userId)
-      .eq("product_id", productId)
-      .maybeSingle();
-
-    if (existing) {
-      await supabase
-        .from("user_holdings")
-        .update({
-          shares: isClosed ? 0 : shares,
-          holding_amount: isClosed ? 0 : holdingAmount,
-          purchase_amount: cost,
-          hold_date: firstBuyDate,
-          status: isClosed ? "closed" : "active",
-          closed_amount: isClosed ? closedAmount : null,
-          closed_at: isClosed ? new Date().toISOString() : null,
-        })
-        .eq("id", existing.id);
-    } else if (!isClosed) {
-      await supabase.from("user_holdings").insert({
-        user_id: userId,
-        product_id: productId,
-        shares,
-        holding_amount: holdingAmount,
-        purchase_amount: cost,
-        hold_date: firstBuyDate,
-        status: "active",
-      });
     }
   }
 
@@ -217,7 +160,7 @@ export default function TransactionEditModal({
               <div>
                 <label className="block text-[11px] text-slate-500 mb-2">类型</label>
                 <div className="segment-group flex">
-                  {(["buy", "sell", "close"] as const).map(t => (
+                  {(["buy", "sell", "close"] as const).map((t) => (
                     <button
                       key={t}
                       onClick={() => setType(t)}
@@ -243,7 +186,14 @@ export default function TransactionEditModal({
               </div>
 
               <div>
-                <label className="block text-[11px] text-slate-500 mb-2">净值</label>
+                <label className="block text-[11px] text-slate-500 mb-2">
+                  净值
+                  {navLoading && (
+                    <span className="ml-1.5 text-purple-500 font-normal">
+                      正在查该日期净值...
+                    </span>
+                  )}
+                </label>
                 <input
                   type="number"
                   inputMode="decimal"
@@ -292,23 +242,23 @@ export default function TransactionEditModal({
                 />
               </div>
 
-              <label className="flex items-start gap-2.5 cursor-pointer
-                                px-3.5 py-3 rounded-xl bg-purple-50/60 border border-purple-100">
-                <input
-                  type="checkbox"
-                  checked={syncHolding}
-                  onChange={(e) => setSyncHolding(e.target.checked)}
-                  className="mt-0.5 accent-purple-600"
-                />
+              {/* ★ 改成纯提示，不可点 */}
+              <div className="flex items-start gap-2.5 px-3.5 py-3 rounded-xl
+                              bg-purple-50/60 border border-purple-100">
+                <svg className="w-3.5 h-3.5 text-purple-600 mt-0.5 flex-shrink-0"
+                     fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2.2}>
+                  <path strokeLinecap="round" strokeLinejoin="round"
+                        d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
                 <div className="flex-1">
                   <div className="text-[12px] text-purple-700 font-medium">
-                    同时更新持仓数据
+                    保存后自动重算持仓
                   </div>
                   <div className="text-[10px] text-purple-500 mt-0.5 leading-relaxed">
-                    修改后自动重算该产品的持仓份额、金额、成本
+                    按该产品的全部交易记录重新计算份额、金额、成本
                   </div>
                 </div>
-              </label>
+              </div>
 
               {msg && (
                 <div className="text-[13px] text-rose-500 bg-rose-50 rounded-xl px-4 py-3">

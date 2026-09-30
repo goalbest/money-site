@@ -328,72 +328,87 @@ export default function MetricsPanel({ navList }: { navList: any[] }) {
         )}
       </div>
 
-      {/* 5 格指标 */}
-      <div className={`flex gap-1.5 relative z-[3] ${editMode ? "pt-6" : ""}`}>
-        {order.map((key, idx) => {
-          const isDragging = draggingIdx === idx;
-          const isOver = overIdx === idx && draggingIdx !== idx && draggingIdx !== null;
-          const canLeft = idx > 0;
-          const canRight = idx < order.length - 1;
-          return (
-            <div
-              key={key}
-              data-metrics-index={idx}
-              onPointerDown={(e) => onPointerDownCell(e, idx)}
-              style={{ touchAction: editMode ? "none" : "auto" }}
-              className={`relative flex-1 min-w-0 p-2 rounded-xl select-none
-                          transition-all duration-200
-                          ${cellBg(key)}
-                          ${isDragging ? "opacity-40 scale-95" : ""}
-                          ${isOver ? "ring-2 ring-purple-400 ring-offset-1 scale-[1.05]" : ""}
-                          ${editMode ? "animate-wiggle" : ""}`}
-            >
-              {renderCell(key)}
+      {/* ★ 3+2 布局：第一行 3 格，第二行 2 格 */}
+      {(() => {
+        const topRow = order.slice(0, 3);
+        const bottomRow = order.slice(3);
 
-              {editMode && (
-                <div className="absolute -top-6 left-0 right-0 flex justify-between">
-                  <button
-                    type="button"
-                    onPointerDown={(e) => e.stopPropagation()}
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      if (canLeft) move(idx, idx - 1);
-                    }}
-                    disabled={!canLeft}
-                    className={`w-5 h-5 rounded-full flex items-center justify-center
-                                shadow-sm transition-all active:scale-90
-                                ${canLeft
-                                  ? "bg-white border border-slate-200"
-                                  : "bg-slate-100 opacity-40"}`}
-                  >
-                    <svg className="w-2.5 h-2.5 text-slate-700" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={3}>
-                      <path strokeLinecap="round" strokeLinejoin="round" d="M15 19l-7-7 7-7" />
-                    </svg>
-                  </button>
-                  <button
-                    type="button"
-                    onPointerDown={(e) => e.stopPropagation()}
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      if (canRight) move(idx, idx + 1);
-                    }}
-                    disabled={!canRight}
-                    className={`w-5 h-5 rounded-full flex items-center justify-center
-                                shadow-sm transition-all active:scale-90
-                                ${canRight
-                                  ? "bg-white border border-slate-200"
-                                  : "bg-slate-100 opacity-40"}`}
-                  >
-                    <svg className="w-2.5 h-2.5 text-slate-700" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={3}>
-                      <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
-                    </svg>
-                  </button>
+        const renderGrid = (keys: MetricKey[], startIdx: number) => (
+          <div className="flex gap-1.5">
+            {keys.map((key, localIdx) => {
+              const idx = startIdx + localIdx;
+              const isDragging = draggingIdx === idx;
+              const isOver = overIdx === idx && draggingIdx !== idx && draggingIdx !== null;
+              const canLeft = idx > 0;
+              const canRight = idx < order.length - 1;
+              return (
+                <div
+                  key={key}
+                  data-metrics-index={idx}
+                  onPointerDown={(e) => onPointerDownCell(e, idx)}
+                  style={{ touchAction: editMode ? "none" : "auto" }}
+                  className={`relative flex-1 min-w-0 p-2.5 rounded-xl select-none
+                              transition-all duration-200
+                              ${cellBg(key)}
+                              ${isDragging ? "opacity-40 scale-95" : ""}
+                              ${isOver ? "ring-2 ring-purple-400 ring-offset-1 scale-[1.05]" : ""}
+                              ${editMode ? "animate-wiggle" : ""}`}
+                >
+                  {renderCell(key)}
+
+                  {editMode && (
+                    <div className="absolute -top-6 left-0 right-0 flex justify-between">
+                      <button
+                        type="button"
+                        onPointerDown={(e) => e.stopPropagation()}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          if (canLeft) move(idx, idx - 1);
+                        }}
+                        disabled={!canLeft}
+                        className={`w-5 h-5 rounded-full flex items-center justify-center
+                                    shadow-sm transition-all active:scale-90
+                                    ${canLeft
+                                      ? "bg-white border border-slate-200"
+                                      : "bg-slate-100 opacity-40"}`}
+                      >
+                        <svg className="w-2.5 h-2.5 text-slate-700" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={3}>
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M15 19l-7-7 7-7" />
+                        </svg>
+                      </button>
+                      <button
+                        type="button"
+                        onPointerDown={(e) => e.stopPropagation()}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          if (canRight) move(idx, idx + 1);
+                        }}
+                        disabled={!canRight}
+                        className={`w-5 h-5 rounded-full flex items-center justify-center
+                                    shadow-sm transition-all active:scale-90
+                                    ${canRight
+                                      ? "bg-white border border-slate-200"
+                                      : "bg-slate-100 opacity-40"}`}
+                      >
+                        <svg className="w-2.5 h-2.5 text-slate-700" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={3}>
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
+                        </svg>
+                      </button>
+                    </div>
+                  )}
                 </div>
-              )}
-            </div>
-          );
-        })}
-      </div>
+              );
+            })}
+          </div>
+        );
+
+        return (
+          <div className={`relative z-[3] space-y-1.5 ${editMode ? "pt-6" : ""}`}>
+            {renderGrid(topRow, 0)}
+            {renderGrid(bottomRow, 3)}
+          </div>
+        );
+      })()}
 
       {/* 挂0 展开按钮 */}
       {!editMode && zeroDays > 0 && (

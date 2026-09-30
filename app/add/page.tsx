@@ -4,6 +4,7 @@ import { useState, useEffect, useRef, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { supabase } from "../../lib/supabase";
 import { getBankInfo } from "../../lib/banks";
+import { recalcHoldingFromTransactions } from "../../lib/holdings";
 import BankSelect from "../components/BankSelect";
 import ParseLinkInput from "../components/ParseLinkInput";
 
@@ -37,7 +38,6 @@ function guessBank(name: string, code: string): string {
   return "其他";
 }
 
-// ★ 快捷金额改成"直接设置"而非"累加"，label 也去掉 "+"
 const QUICK_AMOUNTS = [
   { label: "1千", value: 1000 },
   { label: "5千", value: 5000 },
@@ -94,7 +94,10 @@ export default function AddPage() {
 
   useEffect(() => {
     const id = localStorage.getItem("user_id");
-    if (!id) { router.push("/login"); return; }
+    if (!id) {
+      router.push("/login");
+      return;
+    }
     setUserId(id);
     (async () => {
       const { data } = await supabase
@@ -119,11 +122,12 @@ export default function AddPage() {
     return () => window.removeEventListener("scroll", onScroll);
   }, []);
 
-  // 搜索防抖（★ 加了 unit_nav, nav_date, daily_return, annualized_1m）
   useEffect(() => {
     if (searchTimer.current) clearTimeout(searchTimer.current);
     if (!searchTerm.trim()) {
-      setResults([]); setShowResults(false); return;
+      setResults([]);
+      setShowResults(false);
+      return;
     }
     setSearching(true);
     searchTimer.current = setTimeout(async () => {
@@ -136,7 +140,9 @@ export default function AddPage() {
       setSearching(false);
       setShowResults(true);
     }, 300);
-    return () => { if (searchTimer.current) clearTimeout(searchTimer.current); };
+    return () => {
+      if (searchTimer.current) clearTimeout(searchTimer.current);
+    };
   }, [searchTerm]);
 
   useEffect(() => {
@@ -150,9 +156,15 @@ export default function AddPage() {
   }, []);
 
   useEffect(() => {
-    if (!userId || !productName.trim()) { setExistingHolding(null); return; }
+    if (!userId || !productName.trim()) {
+      setExistingHolding(null);
+      return;
+    }
     const pid = selected?.id;
-    if (!pid) { setExistingHolding(null); return; }
+    if (!pid) {
+      setExistingHolding(null);
+      return;
+    }
     (async () => {
       const { data } = await supabase
         .from("user_holdings")
@@ -164,23 +176,31 @@ export default function AddPage() {
     })();
   }, [userId, selected, productName]);
 
-  const handleNavChange = useCallback((v: string) => {
-    setNav(v);
-    const n = Number(v);
-    if (n > 0 && amount && Number(amount) > 0) setShares((Number(amount) / n).toFixed(4));
-  }, [amount]);
-  const handleAmountChange = useCallback((v: string) => {
-    setAmount(v);
-    const n = Number(nav);
-    if (n > 0 && Number(v) > 0) setShares((Number(v) / n).toFixed(4));
-  }, [nav]);
-  const handleSharesChange = useCallback((v: string) => {
-    setShares(v);
-    const n = Number(nav);
-    if (n > 0 && Number(v) > 0) setAmount((Number(v) * n).toFixed(2));
-  }, [nav]);
+  const handleNavChange = useCallback(
+    (v: string) => {
+      setNav(v);
+      const n = Number(v);
+      if (n > 0 && amount && Number(amount) > 0) setShares((Number(amount) / n).toFixed(4));
+    },
+    [amount]
+  );
+  const handleAmountChange = useCallback(
+    (v: string) => {
+      setAmount(v);
+      const n = Number(nav);
+      if (n > 0 && Number(v) > 0) setShares((Number(v) / n).toFixed(4));
+    },
+    [nav]
+  );
+  const handleSharesChange = useCallback(
+    (v: string) => {
+      setShares(v);
+      const n = Number(nav);
+      if (n > 0 && Number(v) > 0) setAmount((Number(v) * n).toFixed(2));
+    },
+    [nav]
+  );
 
-  // ★ Bug 修复：直接设置金额，不再累加
   function addQuickAmount(v: number) {
     const str = String(v);
     setAmount(str);
@@ -233,7 +253,7 @@ export default function AddPage() {
   }
 
   function handlePaste(e: React.ClipboardEvent) {
-    const item = Array.from(e.clipboardData.items).find(i => i.type.startsWith("image/"));
+    const item = Array.from(e.clipboardData.items).find((i) => i.type.startsWith("image/"));
     if (item) {
       const f = item.getAsFile();
       if (f) handleImageFile(f);
@@ -249,7 +269,11 @@ export default function AddPage() {
       formData.append("image", imageFile);
       const resp = await fetch("/api/ocr-save", { method: "POST", body: formData });
       const data = await resp.json();
-      if (!data.success) { setMsg(data.error || "识别失败"); setOcrLoading(false); return; }
+      if (!data.success) {
+        setMsg(data.error || "识别失败");
+        setOcrLoading(false);
+        return;
+      }
 
       const info = data.data;
       const num = (v: any) => {
@@ -270,35 +294,64 @@ export default function AddPage() {
         if (!obj || typeof obj !== "object") return;
         for (const [k, v] of Object.entries(obj)) {
           if (v && typeof v === "object" && !Array.isArray(v)) flatten(v, prefix + k + ".");
-          else if (!Array.isArray(v)) { flat[k] = v; if (prefix) flat[prefix + k] = v; }
+          else if (!Array.isArray(v)) {
+            flat[k] = v;
+            if (prefix) flat[prefix + k] = v;
+          }
         }
       };
       flatten(info);
 
       const pick = (...keywords: string[]) => {
-        for (const kw of keywords) if (flat[kw] !== undefined && flat[kw] !== null && flat[kw] !== "") return flat[kw];
+        for (const kw of keywords)
+          if (flat[kw] !== undefined && flat[kw] !== null && flat[kw] !== "") return flat[kw];
         for (const kw of keywords) {
           for (const [k, v] of Object.entries(flat)) {
-            if (k.toLowerCase().includes(kw.toLowerCase()) && v !== null && v !== "" && typeof v !== "object") return v;
+            if (
+              k.toLowerCase().includes(kw.toLowerCase()) &&
+              v !== null &&
+              v !== "" &&
+              typeof v !== "object"
+            )
+              return v;
           }
         }
         return null;
       };
 
       const pName = pick("productName", "产品名称", "product_name", "name");
-      if (pName) setProductName(String(pName).replace(/[（(][A-Z0-9]{6,}[)）]\s*$/, "").trim());
+      if (pName)
+        setProductName(
+          String(pName)
+            .replace(/[（(][A-Z0-9]{6,}[)）]\s*$/, "")
+            .trim()
+        );
 
       const pCode = pick("productCode", "产品代码", "product_code", "code", "产品编号");
       if (pCode) setProductCode(String(pCode));
 
-      const pDate = pick("purchaseDate", "购买日期", "申请日期", "applicationDate", "tradeDate", "买入日期", "资金扣款日");
-      if (pDate) { const fd = fixDate(pDate); if (fd) setBuyDate(fd); }
+      const pDate = pick(
+        "purchaseDate",
+        "购买日期",
+        "申请日期",
+        "applicationDate",
+        "tradeDate",
+        "买入日期",
+        "资金扣款日"
+      );
+      if (pDate) {
+        const fd = fixDate(pDate);
+        if (fd) setBuyDate(fd);
+      }
 
       const nv = pick("unitNav", "单位净值", "确认净值", "净值", "nav", "netValue");
       let navNum: number | null = null;
       if (nv) {
         const n = num(nv);
-        if (n && n >= 0.5 && n <= 2.0) { navNum = n; setNav(n.toFixed(4)); }
+        if (n && n >= 0.5 && n <= 2.0) {
+          navNum = n;
+          setNav(n.toFixed(4));
+        }
       }
       const nvd = pick("navDate", "净值日期", "netValueDate");
       if (nvd) setNavDate(fixDate(nvd));
@@ -308,14 +361,20 @@ export default function AddPage() {
       if (sh) {
         const n = num(sh);
         const isYearLike = n !== null && Number.isInteger(n) && n >= 1900 && n <= 2100;
-        if (n && !isYearLike) { shNum = n; setShares(n.toFixed(4)); }
+        if (n && !isYearLike) {
+          shNum = n;
+          setShares(n.toFixed(4));
+        }
       }
 
       const am = pick("purchaseAmount", "购买金额", "持仓金额", "确认金额", "amount", "holdingAmount");
       let amNum: number | null = null;
       if (am) {
         const n = num(am);
-        if (n && n > 0) { amNum = n; setAmount(n.toFixed(2)); }
+        if (n && n > 0) {
+          amNum = n;
+          setAmount(n.toFixed(2));
+        }
       }
 
       if (navNum && amNum && !shNum) setShares((amNum / navNum).toFixed(4));
@@ -362,14 +421,16 @@ export default function AddPage() {
       if (selected) productId = selected.id;
       else if (productCode.trim()) {
         const { data: existing } = await supabase
-          .from("products").select("id").eq("code", productCode.trim()).maybeSingle();
+          .from("products")
+          .select("id")
+          .eq("code", productCode.trim())
+          .maybeSingle();
         if (existing) productId = existing.id;
       }
 
       if (!productId) {
         const finalBank = bank.trim() || guessBank(productName, productCode);
 
-        // ★ 自动补全 bank_code（邮储/中邮产品）
         let finalBankCode = productCode.trim() || null;
         let finalName = productName.trim();
         let extraFields: any = {};
@@ -386,7 +447,6 @@ export default function AddPage() {
           });
           const fillData = await fillR.json();
           if (fillData.ok && fillData.bank_code) {
-            // ★ 产品已在库 → 直接复用 id，不再新建
             if (fillData.existing_id) {
               productId = fillData.existing_id;
               console.log("产品已存在，复用 id:", productId);
@@ -406,49 +466,28 @@ export default function AddPage() {
           console.warn("bank_code 补全失败:", e);
         }
 
-        const { data: newProduct, error: insErr } = await supabase
-          .from("products")
-          .insert({
-            name: finalName,
-            code: productCode.trim() || null,
-            bank: finalBank,
-            bank_code: finalBankCode,
-            ...extraFields,
-          })
-          .select("id").single();
-        if (insErr || !newProduct) {
-          setMsg("创建产品失败：" + (insErr?.message || ""));
-          setSubmitting(false);
-          return;
+        if (!productId) {
+          const { data: newProduct, error: insErr } = await supabase
+            .from("products")
+            .insert({
+              name: finalName,
+              code: productCode.trim() || null,
+              bank: finalBank,
+              bank_code: finalBankCode,
+              ...extraFields,
+            })
+            .select("id")
+            .single();
+          if (insErr || !newProduct) {
+            setMsg("创建产品失败：" + (insErr?.message || ""));
+            setSubmitting(false);
+            return;
+          }
+          productId = newProduct.id;
         }
-        productId = newProduct.id;
       }
 
-      const { data: existing } = await supabase
-        .from("user_holdings")
-        .select("id, holding_amount, shares")
-        .eq("user_id", userId).eq("product_id", productId).maybeSingle();
-
-      if (existing) {
-        await supabase
-          .from("user_holdings")
-          .update({
-            holding_amount: Number(existing.holding_amount || 0) + buyAmt,
-            shares: Number(existing.shares || 0) + shareNum,
-            status: "active",
-          })
-          .eq("id", existing.id);
-      } else {
-        await supabase.from("user_holdings").insert({
-          user_id: userId,
-          product_id: productId,
-          holding_amount: buyAmt,
-          shares: shareNum,
-          purchase_amount: buyAmt,
-          hold_date: buyDate,
-          status: "active",
-        });
-      }
+      /* ★ 先写交易记录，再按交易重算持仓 */
 
       await supabase.from("transactions").insert({
         user_id: userId,
@@ -458,8 +497,10 @@ export default function AddPage() {
         shares: shareNum,
         price: nav ? Number(nav) : null,
         trade_date: buyDate,
-        note: note || (existing ? "追加购买" : "首次购买"),
+        note: note || (existingHolding ? "追加购买" : "首次购买"),
       });
+
+      await recalcHoldingFromTransactions(userId, productId!);
 
       localStorage.removeItem("cache_home_cache_v3");
       localStorage.removeItem("cache_transactions");
@@ -526,7 +567,6 @@ export default function AddPage() {
   return (
     <div className="min-h-screen pb-32">
       <div className="container mx-auto px-5 pt-8 max-w-3xl">
-
         <div className="flex items-center gap-3 mb-5">
           <button
             onClick={() => router.back()}
@@ -541,12 +581,8 @@ export default function AddPage() {
             </svg>
           </button>
           <div className="flex-1">
-            <div className="text-[22px] font-bold tracking-tight text-slate-900">
-              添加产品
-            </div>
-            <div className="text-[12px] text-slate-400 mt-0.5">
-              搜索已有、上传截图、或手动录入
-            </div>
+            <div className="text-[22px] font-bold tracking-tight text-slate-900">添加产品</div>
+            <div className="text-[12px] text-slate-400 mt-0.5">搜索已有、上传截图、或手动录入</div>
           </div>
         </div>
 
@@ -732,11 +768,9 @@ export default function AddPage() {
           </div>
         )}
 
-        {/* ★ 搜不到产品时：粘贴分享链接 */}
+        {/* 搜不到产品时：粘贴分享链接 */}
         {mode === "search" && (
           <div className="mb-4 animate-fade-in-up delay-2">
-
-            {/* 提示语 */}
             <div className="flex items-start gap-2.5 mb-2.5 px-1">
               <div className="w-7 h-7 rounded-lg bg-purple-50
                               flex items-center justify-center flex-shrink-0 mt-0.5">
@@ -747,19 +781,15 @@ export default function AddPage() {
                 </svg>
               </div>
               <div className="flex-1 min-w-0">
-                <div className="text-[13px] font-semibold text-slate-900">
-                  搜不到产品？
-                </div>
+                <div className="text-[13px] font-semibold text-slate-900">搜不到产品？</div>
                 <div className="text-[11px] text-slate-500 mt-0.5 leading-relaxed">
                   把银行 App 里产品的<b className="text-slate-700">分享链接</b>复制过来，一键添加
                 </div>
               </div>
             </div>
 
-            {/* 链接解析组件 */}
             <ParseLinkInput />
 
-            {/* 怎么复制链接（折叠） */}
             <details className="mt-2.5 rounded-2xl bg-white border border-slate-100 overflow-hidden">
               <summary className="px-4 py-3 text-[12px] font-medium text-slate-700
                                   cursor-pointer flex items-center gap-1.5 select-none
@@ -778,53 +808,25 @@ export default function AddPage() {
 
               <div className="px-4 pb-4 pt-1 text-[11px] text-slate-500 leading-relaxed space-y-3
                               border-t border-slate-100">
-
-                {/* 步骤 1 */}
                 <div>
-                  <div className="font-semibold text-slate-700 mb-1">
-                    ① 打开产品页
-                  </div>
-                  <div>
-                    在手机银行 App 里进到该产品详情页，点右上角
-                    <b className="text-slate-700">「分享」</b>。
-                  </div>
+                  <div className="font-semibold text-slate-700 mb-1">① 打开产品页</div>
+                  <div>在手机银行 App 里进到该产品详情页，点右上角<b className="text-slate-700">「分享」</b>。</div>
                 </div>
-
-                {/* 步骤 2 - 情况 A */}
                 <div>
-                  <div className="font-semibold text-slate-700 mb-1">
-                    ② 有「复制链接」按钮
-                  </div>
-                  <div>
-                    直接点 <b className="text-slate-700">「复制链接」</b>，
-                    回到本页粘贴到输入框。
-                  </div>
+                  <div className="font-semibold text-slate-700 mb-1">② 有「复制链接」按钮</div>
+                  <div>直接点 <b className="text-slate-700">「复制链接」</b>，回到本页粘贴到输入框。</div>
                 </div>
-
-                {/* 步骤 3 - 情况 B */}
                 <div>
-                  <div className="font-semibold text-slate-700 mb-1">
-                    ③ 只有「分享到微信」
-                  </div>
-                  <div>
-                    先分享到微信（可以发给自己或文件传输助手），
-                    在微信里打开这条链接 →
-                    点右上角 <b className="text-slate-700">「...」</b> →
-                    点 <b className="text-slate-700">「复制链接」</b> →
-                    回到本页粘贴。
-                  </div>
+                  <div className="font-semibold text-slate-700 mb-1">③ 只有「分享到微信」</div>
+                  <div>先分享到微信（可以发给自己或文件传输助手），在微信里打开这条链接 → 点右上角 <b className="text-slate-700">「...」</b> → 点 <b className="text-slate-700">「复制链接」</b> → 回到本页粘贴。</div>
                 </div>
-
-                {/* 备注 */}
                 <div className="pt-2.5 border-t border-slate-100 text-[10px] text-slate-400 leading-relaxed">
-                  <b className="text-slate-500">举例：</b>
-                  招银 App 的产品页只有"分享到微信"，需要先分享到微信，再在微信里点右上角复制链接。
+                  <b className="text-slate-500">举例：</b>招银 App 的产品页只有"分享到微信"，需要先分享到微信，再在微信里点右上角复制链接。
                 </div>
               </div>
             </details>
           </div>
         )}
-
 
         {/* 截图模式 */}
         {mode === "image" && (
@@ -945,7 +947,6 @@ export default function AddPage() {
               )}
             </div>
 
-            {/* ★ 净值信息条（仅从搜索选中时显示） */}
             {selected && (selected.unit_nav != null || selected.daily_return != null) && (
               <div className="mb-4 -mt-1 px-3.5 py-3 rounded-xl bg-slate-50/70 border border-slate-100">
                 <div className="grid grid-cols-3 gap-2">
@@ -1121,9 +1122,7 @@ export default function AddPage() {
                 <label className="block text-[11px] text-slate-500 mb-2">
                   份额
                   {nav && amount && (
-                    <span className="ml-1.5 text-purple-500 font-normal">
-                      （已自动计算）
-                    </span>
+                    <span className="ml-1.5 text-purple-500 font-normal">（已自动计算）</span>
                   )}
                 </label>
                 <input
@@ -1246,12 +1245,8 @@ export default function AddPage() {
                 </svg>
               </div>
               <div className="text-center mb-6">
-                <div className="text-[17px] font-bold text-slate-900 mb-1">
-                  添加成功
-                </div>
-                <div className="text-[12px] text-slate-400">
-                  {productName}
-                </div>
+                <div className="text-[17px] font-bold text-slate-900 mb-1">添加成功</div>
+                <div className="text-[12px] text-slate-400">{productName}</div>
               </div>
               <div className="space-y-2">
                 <button

@@ -131,6 +131,9 @@ export default function Home() {
   const [searchMode, setSearchMode] = useState("");
   const [searchResults, setSearchResults] = useState<any[]>([]);
   const [searchLoading, setSearchLoading] = useState(false);
+  const [suggestions, setSuggestions] = useState<any[]>([]);
+  const [showSuggest, setShowSuggest] = useState(false);
+  const searchBoxRef = useRef<HTMLDivElement>(null);
 
   /* ============ 数字滚动 ============ */
   const animatedAssets = useCountUp(metrics.totalAssets, 1000, { startDelay: 150 });
@@ -168,6 +171,36 @@ export default function Home() {
   useEffect(() => {
     fetchRankData();
     // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+    /* ★ 搜索实时下拉 */
+  useEffect(() => {
+    const term = searchTerm.trim();
+    if (!term || searchMode) {
+      setSuggestions([]);
+      setShowSuggest(false);
+      return;
+    }
+    const t = setTimeout(async () => {
+      const { data } = await supabase
+        .from("products")
+        .select("id, name, bank, code, annualized_1m")
+        .or(`name.ilike.%${term}%,bank.ilike.%${term}%,code.ilike.%${term}%`)
+        .limit(8);
+      setSuggestions(data || []);
+      setShowSuggest(true);
+    }, 250);
+    return () => clearTimeout(t);
+  }, [searchTerm, searchMode]);
+
+  /* 点外部关闭 */
+  useEffect(() => {
+    function handleClick(e: MouseEvent) {
+      if (searchBoxRef.current && !searchBoxRef.current.contains(e.target as Node)) {
+        setShowSuggest(false);
+      }
+    }
+    document.addEventListener("mousedown", handleClick);
+    return () => document.removeEventListener("mousedown", handleClick);
   }, []);
 
   async function fetchRankData() {
@@ -469,9 +502,9 @@ export default function Home() {
         </div>
 
         {/* ============ 搜索 + 发现 ============ */}
-        <div className="flex gap-2 mb-4 animate-fade-in-up">
-          <div className="relative flex-1 min-w-0">
-            <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
+<div className="flex gap-2 mb-4 animate-fade-in-up relative z-[100]">
+          <div ref={searchBoxRef} className="relative flex-1 min-w-0">
+            <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none z-10">
               <svg className="w-4 h-4 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
                 <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
               </svg>
@@ -481,13 +514,14 @@ export default function Home() {
               placeholder="搜索产品、银行、代码"
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
+              onFocus={() => searchTerm.trim() && setShowSuggest(true)}
               onKeyDown={(e) => e.key === "Enter" && handleSearch()}
-              className="input-field w-full pl-11 pr-20 py-3.5 text-sm"
+              className="input-field w-full pl-11 pr-20 py-3.5 text-sm relative z-[1]"
             />
             {searchTerm && (
               <button
                 onClick={clearSearch}
-                className="absolute inset-y-0 right-16 pr-2 flex items-center"
+                className="absolute inset-y-0 right-16 pr-2 flex items-center z-10"
               >
                 <svg className="w-4 h-4 text-slate-400 hover:text-slate-600" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
                   <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
@@ -496,7 +530,7 @@ export default function Home() {
             )}
             <button
               onClick={handleSearch}
-              className="absolute inset-y-1.5 right-1.5 px-3.5 rounded-xl
+              className="absolute inset-y-1.5 right-1.5 px-3.5 rounded-xl z-10
                          bg-gradient-to-r from-violet-500 to-purple-600
                          text-white text-[12px] font-semibold
                          shadow-md shadow-purple-500/25
@@ -505,9 +539,51 @@ export default function Home() {
             >
               搜索
             </button>
+
+            {/* ★ 实时下拉建议 */}
+            {showSuggest && suggestions.length > 0 && !searchMode && (
+<div className="absolute top-full left-0 right-0 mt-2 z-[110]
+                bg-white rounded-2xl shadow-xl border border-slate-100
+                overflow-hidden max-h-80 overflow-y-auto">
+                {suggestions.map((p) => {
+                  const info = getBankInfo(p.bank);
+                  return (
+                    <Link
+                      key={p.id}
+                      href={`/product/${p.id}`}
+                      onClick={() => setShowSuggest(false)}
+                      className="flex items-center gap-2.5 px-4 py-2.5
+                                 hover:bg-slate-50 active:bg-slate-100
+                                 border-b divider last:border-b-0
+                                 transition-colors"
+                    >
+                      <span
+                        className="bank-avatar flex-shrink-0"
+                        style={{ background: info.bg, color: info.color }}
+                      >
+                        {info.label}
+                      </span>
+                      <div className="flex-1 min-w-0">
+                        <div className="text-[13px] text-slate-900 font-medium truncate">
+                          {p.name}
+                        </div>
+                        <div className="text-[10px] text-slate-400 mt-0.5 truncate">
+                          {p.bank}{p.code ? ` · ${p.code}` : ""}
+                        </div>
+                      </div>
+                      {p.annualized_1m != null && Number(p.annualized_1m) > 0 && (
+                        <span className="text-[11px] font-mono font-semibold text-rose-500 tabular flex-shrink-0">
+                          +{Number(p.annualized_1m).toFixed(2)}%
+                        </span>
+                      )}
+                    </Link>
+                  );
+                })}
+              </div>
+            )}
           </div>
 
-          {/* ★ 发现入口 */}
+          {/* 发现入口 */}
           <Link
             href="/discover"
             className="flex-shrink-0 px-3.5 rounded-2xl

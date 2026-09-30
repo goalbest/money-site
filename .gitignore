@@ -52,3 +52,11 @@ next-env.d.ts
 
 out.txt
 psbc_out.txt
+
+out.txt
+psbc_out.txt
+crawler/test_*.mjs
+
+crawler/psbc_cache.json
+
+Get-Content .gitignore | Select-String "psbc_cache"

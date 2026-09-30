@@ -30,8 +30,9 @@ function loadEnv() {
 }
 loadEnv();
 
-const SUPABASE_URL = process.env.https://xbwzrnmacznaxtumkrwy.supabase.co;
-const SUPABASE_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL
+  || 'https://xbwzrnmacznaxtumkrwy.supabase.co';
+const SUPABASE_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY; 
 if (!SUPABASE_URL || !SUPABASE_KEY) {
   console.error('❌ SUPABASE_URL / SUPABASE_KEY 未读取到，请检查 .env.local');
   console.error('   URL =', SUPABASE_URL);

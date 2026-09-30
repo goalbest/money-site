@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { supabase } from "../../../lib/supabase";
+import { recalcHoldingFromTransactions, fetchNavByDate } from "../../../lib/holdings";
 
 type Props = {
   open: boolean;
@@ -13,24 +14,43 @@ type Props = {
   onSuccess: () => void;
 };
 
+function todayStr() {
+  return new Date().toISOString().split("T")[0];
+}
+
 export default function QuickBuyModal({
   open, productId, productName, defaultNav, existingHolding, onClose, onSuccess,
 }: Props) {
-  const [date, setDate] = useState(new Date().toISOString().split("T")[0]);
+  const [date, setDate] = useState(todayStr());
   const [nav, setNav] = useState("");
   const [amount, setAmount] = useState("");
   const [note, setNote] = useState("");
   const [saving, setSaving] = useState(false);
   const [msg, setMsg] = useState("");
+  const [navLoading, setNavLoading] = useState(false);
 
+  /* 打开时初始化 */
   useEffect(() => {
     if (!open) return;
-    setDate(new Date().toISOString().split("T")[0]);
+    setDate(todayStr());
     setNav(defaultNav ? String(defaultNav) : "");
     setAmount("");
     setNote("");
     setMsg("");
   }, [open, defaultNav]);
+
+  /* ★ 日期变化 → 自动查当日净值 */
+  useEffect(() => {
+    if (!open || !date) return;
+    let cancelled = false;
+    (async () => {
+      setNavLoading(true);
+      const n = await fetchNavByDate(productId, date);
+      if (!cancelled && n != null) setNav(n.toFixed(4));
+      if (!cancelled) setNavLoading(false);
+    })();
+    return () => { cancelled = true; };
+  }, [open, date, productId]);
 
   if (!open) return null;
 
@@ -49,26 +69,7 @@ export default function QuickBuyModal({
     try {
       const addShares = amt / navNum;
 
-      if (existingHolding) {
-        await supabase
-          .from("user_holdings")
-          .update({
-            holding_amount: Number(existingHolding.holding_amount || 0) + amt,
-            shares: Number(existingHolding.shares || 0) + addShares,
-            status: "active",
-          })
-          .eq("id", existingHolding.id);
-      } else {
-        await supabase.from("user_holdings").insert({
-          user_id: Number(userId),
-          product_id: productId,
-          holding_amount: amt,
-          shares: addShares,
-          hold_date: date,
-          status: "active",
-        });
-      }
-
+      /* 1) 先写交易记录 */
       await supabase.from("transactions").insert({
         user_id: Number(userId),
         product_id: productId,
@@ -79,6 +80,9 @@ export default function QuickBuyModal({
         trade_date: date,
         note: note || (existingHolding ? "追加购买" : "购买"),
       });
+
+      /* 2) ★ 根据所有交易重算持仓（不用手动加减） */
+      await recalcHoldingFromTransactions(userId, productId);
 
       localStorage.removeItem("cache_home_cache_v3");
       localStorage.removeItem("cache_home_cache_v4");
@@ -132,8 +136,11 @@ export default function QuickBuyModal({
                   type="date"
                   value={date}
                   onChange={(e) => setDate(e.target.value)}
-                  className="input-field w-full px-4 py-3 text-sm"
+                  className="input-field w-full px-4 py-3 text-sm tabular"
                 />
+                <div className="text-[10px] text-slate-400 mt-1.5">
+                  {navLoading ? "正在查该日期净值..." : "修改日期后自动匹配当日净值"}
+                </div>
               </div>
 
               <div className="grid grid-cols-2 gap-3">

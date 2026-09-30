@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { supabase } from "../../lib/supabase";
+import { recalcHoldingFromTransactions, fetchNavByDate } from "../../lib/holdings";
 
 type Props = {
   open: boolean;
@@ -21,7 +22,9 @@ export default function QuickSellModal({ open, holding, onClose, onSuccess }: Pr
   const [note, setNote] = useState("");
   const [saving, setSaving] = useState(false);
   const [msg, setMsg] = useState("");
+  const [navLoading, setNavLoading] = useState(false);
 
+  /* 打开时初始化 */
   useEffect(() => {
     if (!open) return;
     setShares("");
@@ -30,6 +33,19 @@ export default function QuickSellModal({ open, holding, onClose, onSuccess }: Pr
     setNote("");
     setMsg("");
   }, [open, holding]);
+
+  /* ★ 日期变化 → 自动查当日净值 */
+  useEffect(() => {
+    if (!open || !date || !holding?.products?.id) return;
+    let cancelled = false;
+    (async () => {
+      setNavLoading(true);
+      const n = await fetchNavByDate(holding.products.id, date);
+      if (!cancelled && n != null) setNav(n.toFixed(4));
+      if (!cancelled) setNavLoading(false);
+    })();
+    return () => { cancelled = true; };
+  }, [open, date, holding?.products?.id]);
 
   if (!open || !holding) return null;
 
@@ -52,30 +68,9 @@ export default function QuickSellModal({ open, holding, onClose, onSuccess }: Pr
       if (!userId) throw new Error("请先登录");
 
       const remainShares = currentShares - sh;
-      const remainAmount = currentAmount - currentAmount * (sh / currentShares);
       const isClosed = remainShares < 0.01;
 
-      if (isClosed) {
-        await supabase
-          .from("user_holdings")
-          .update({
-            status: "closed",
-            closed_at: new Date().toISOString(),
-            closed_amount: sellAmt,
-            shares: 0,
-            holding_amount: 0,
-          })
-          .eq("id", holding.id);
-      } else {
-        await supabase
-          .from("user_holdings")
-          .update({
-            shares: remainShares,
-            holding_amount: remainAmount,
-          })
-          .eq("id", holding.id);
-      }
-
+      /* 1) 写交易记录 */
       await supabase.from("transactions").insert({
         user_id: userId,
         product_id: holding.products.id,
@@ -86,6 +81,9 @@ export default function QuickSellModal({ open, holding, onClose, onSuccess }: Pr
         trade_date: date,
         note: note || (isClosed ? "清仓" : "部分赎回"),
       });
+
+      /* 2) ★ 根据所有交易重算持仓 */
+      await recalcHoldingFromTransactions(userId, holding.products.id);
 
       localStorage.removeItem("cache_home_cache_v3");
       localStorage.removeItem("cache_transactions");
@@ -134,6 +132,9 @@ export default function QuickSellModal({ open, holding, onClose, onSuccess }: Pr
                 <label className="block text-[11px] text-slate-500 mb-2">赎回日期</label>
                 <input type="date" value={date} onChange={(e) => setDate(e.target.value)}
                        className="input-field w-full px-4 py-3 text-[13px] tabular" />
+                <div className="text-[10px] text-slate-400 mt-1.5">
+                  {navLoading ? "正在查该日期净值..." : "修改日期后自动匹配当日净值"}
+                </div>
               </div>
 
               <div>
