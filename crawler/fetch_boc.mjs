@@ -91,17 +91,25 @@ for (const p of BOC_PRODUCTS) {
       if (m) { nav = parseFloat(m[1]); break; }
     }
 
-    // 拿净值日期
+    // 拿净值日期（页面上如果有"净值日期"，用它；没有就用今天）
     let navDate = today;
-    const dateM = content.match(/(\d{4})[.\-年](\d{1,2})[.\-月](\d{1,2})/);
-    if (dateM) {
-      navDate = `${dateM[1]}-${dateM[2].padStart(2, '0')}-${dateM[3].padStart(2, '0')}`;
+    const ndM = content.match(/净值日期[^\d]{0,5}(\d{4})[.\-年/](\d{1,2})[.\-月/](\d{1,2})/);
+    if (ndM) {
+      navDate = `${ndM[1]}-${ndM[2].padStart(2, '0')}-${ndM[3].padStart(2, '0')}`;
     }
 
-    // 拿产品名（在标题附近）
+    // 拿产品名：用 productCode 反查，找含 (PYWJCY134) 的片段
     let name = null;
-    const titleM = content.match(/([\u4e00-\u9fa5·\-A-Za-z0-9]{6,40}(?:理财|持有|日开|封闭|净值型)[^\n]{0,30})/);
-    if (titleM) name = titleM[1].trim();
+    const codeEsc = p.productCode.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const codeRe = new RegExp(`([^|\\n]{4,60})\\(${codeEsc}\\)`);
+    const nameM = content.match(codeRe);
+    if (nameM) {
+      name = nameM[1]
+        .trim()
+        // 去掉前缀括号内容，比如"（稳健固收）"
+        .replace(/^[（(][^）)]*[）)]\s*/, '')
+        .trim();
+    }
 
     if (nav && isFinite(nav) && nav > 0 && nav < 100) {
       console.log(`   ✅ 净值: ${nav} @ ${navDate}`);
