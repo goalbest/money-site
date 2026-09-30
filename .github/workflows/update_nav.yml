@@ -2,13 +2,7 @@ name: Daily NAV Update
 
 "on":
   schedule:
-    - cron: '0 0 * * *'
-    - cron: '0 2 * * *'
-    - cron: '0 4 * * *'
-    - cron: '0 7 * * *'
-    - cron: '0 10 * * *'
-    - cron: '0 13 * * *'
-    - cron: '0 14 * * *'
+    - cron: '0 22,2,6,10,14 * * *'
   workflow_dispatch:
 
 jobs:
@@ -40,7 +34,6 @@ jobs:
         env:
           NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
-          MAX_PAGES: '400'
         run: node crawler/fetch_psbc_api.mjs
 
       - name: Run NAV update script
