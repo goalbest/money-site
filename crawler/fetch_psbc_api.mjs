@@ -7,9 +7,8 @@ import { fileURLToPath } from 'url';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
-const USE_CACHE = process.env.USE_CACHE === '1';
-const MAX_PAGES = parseInt(process.env.MAX_PAGES || '400', 10);
 
+// ── env ──
 (function loadEnv() {
   for (const p of [resolve(__dirname, '..', '.env.local'), resolve(process.cwd(), '.env.local')]) {
     if (existsSync(p)) {
@@ -32,6 +31,7 @@ if (!SUPABASE_URL || !SUPABASE_KEY) { console.error('❌ env 缺失'); process.e
 const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 
+// ── HTTPS agent（老协议兼容）──
 const AGENT = new https.Agent({
   rejectUnauthorized: false, minVersion: 'TLSv1', ciphers: 'DEFAULT@SECLEVEL=1',
   secureOptions: 0x4 | crypto.constants.SSL_OP_NO_SSLv2 | crypto.constants.SSL_OP_NO_SSLv3,
@@ -58,19 +58,7 @@ function get(url) {
   });
 }
 
-async function fetchPage(pageNum) {
-  const ts = Date.now();
-  const params = new URLSearchParams({
-    callback: 'cb', currency: '', deadline: '', netproduct: '', risklevel: '',
-    entruststartamt: '', buystatus: '', product_status: '',
-    zhongyouflag: '', bankflag: '', investor_nature: '', order: '',
-    finkeyword: '', pageNum: String(pageNum), _: String(ts),
-  });
-  const text = await get(`${API}?${params}`);
-  const m = text.match(/^[^(]+\(([\s\S]*)\)\s*;?\s*$/);
-  if (!m) throw new Error('JSONP 解析失败');
-  return JSON.parse(m[1]);
-}
+// 按关键词搜索（用产品代码搜）
 async function searchByKeyword(keyword) {
   const ts = Date.now();
   const params = new URLSearchParams({
@@ -85,128 +73,69 @@ async function searchByKeyword(keyword) {
   return JSON.parse(m[1]);
 }
 
-
-function parseYield(item) {
-  const nav = parseFloat(item.LATEST_NET);
-  if (isFinite(nav) && nav > 0) return { type: 'nav', value: nav };
-  const sy = parseFloat(item.SEVEN_ANNUAL_YIELD);
-  if (isFinite(sy) && sy > 0) return { type: 'seven_yield', value: sy };
-  const wf = parseFloat(item.WF_EARN);
-  if (isFinite(wf) && wf > 0) return { type: 'wf_earn', value: wf };
-  return { type: 'none', value: null };
-}
-
 // ══════════════ 主流程 ══════════════
 console.log('═══════════════════════════════');
-console.log('邮储产品日常更新（只更新已有）');
+console.log('邮储/中邮产品日常更新（按需抓）');
 console.log('═══════════════════════════════\n');
 
 const t0 = Date.now();
 
-// ── 读已有的 bank_code → id 映射（先读，减少抓取量）──
+// ── 读数据库里所有邮储/中邮产品 ──
 console.log('→ 读 products 表...');
 const { data: prods, error } = await supabase
-  .from('products').select('id, bank_code')
-  .eq('bank', '邮储银行')
+  .from('products')
+  .select('id, name, bank, bank_code')
+  .in('bank', ['邮储银行', '中邮理财'])
   .not('bank_code', 'is', null);
-if (error) { console.error('❌', error.message); process.exit(1); }
-const idByCode = new Map();
-prods.forEach(p => idByCode.set(p.bank_code, p.id));
-console.log(`← 已有 bank_code: ${idByCode.size} 条\n`);
 
-// ── 读 product_sources，决定按需 or 全量 ──
-const { data: sources } = await supabase
-  .from('product_sources')
-  .select('id, product_id, params')
-  .eq('source_type', 'psbc')
-  .eq('enabled', true);
+if (error) { console.error('❌ 读取失败:', error.message); process.exit(1); }
 
-const useTargeted = sources && sources.length > 0 && sources.length <= 50;
-console.log(`📌 product_sources: ${sources?.length || 0} 条 → ${useTargeted ? '按需' : '全量'}模式\n`);
+console.log(`← 读到 ${prods.length} 个产品\n`);
+if (prods.length === 0) { console.log('无产品，退出'); process.exit(0); }
 
-let all = [];
-
-if (useTargeted) {
-  // ── 按需模式：逐个搜索 ──
-  for (const s of sources) {
-    const code = s.params?.product_code;
-    if (!code) continue;
-    try {
-      const data = await searchByKeyword(code);
-      const hit = (data.resultList || []).find(x => x.SECODE === code);
-      if (hit) {
-        all.push(hit);
-        console.log(`  ✅ ${code}`);
-      } else {
-        console.log(`  ⚠️ ${code} 未找到`);
-      }
-      await sleep(400);
-    } catch (e) {
-      console.log(`  ❌ ${code}: ${e.message}`);
-    }
-  }
-  console.log(`\n抓取完成: ${all.length} 条（按需模式）\n`);
-} else {
-  // ── 全量模式 ──
-  const first = await fetchPage(1);
-  const endPage = Math.min(first.pageCount, MAX_PAGES);
-  console.log(`📊 totalCount: ${first.totalCount}, 共 ${first.pageCount} 页，本轮抓 ${endPage} 页\n`);
-  all.push(...(first.resultList || []));
-  for (let p = 2; p <= endPage; p++) {
-    try {
-      const data = await fetchPage(p);
-      all.push(...(data.resultList || []));
-      if (p % 50 === 0 || p === endPage) console.log(`  页 ${p}/${endPage} → 累计 ${all.length}`);
-      await sleep(180);
-    } catch (e) {
-      console.log(`  ⚠️ 页 ${p} 失败`);
-    }
-  }
-  console.log(`\n抓取完成: ${all.length} 条（${((Date.now()-t0)/1000).toFixed(0)}s）\n`);
-}
-
-// ── 筛选需要更新的 ──
 const today = new Date().toISOString().slice(0, 10);
-const tasks = [];
-for (const item of all) {
-  const pid = idByCode.get(item.SECODE);
-  if (!pid) continue;
-  const y = parseYield(item);
-  if (y.type === 'none') continue;
-  tasks.push({ pid, y, item });
-}
-console.log(`需更新: ${tasks.length} 条\n`);
+let updated = 0, failed = 0, notFound = 0;
 
-// ── 5 并发更新 ──
-let updated = 0, failed = 0;
-const CONCURRENCY = 5;
+for (let i = 0; i < prods.length; i++) {
+  const p = prods[i];
+  try {
+    const data = await searchByKeyword(p.bank_code);
+    const hit = (data.resultList || []).find(x => x.SECODE === p.bank_code);
 
-for (let i = 0; i < tasks.length; i += CONCURRENCY) {
-  const batch = tasks.slice(i, i + CONCURRENCY);
-  await Promise.all(batch.map(async ({ pid, y, item }) => {
-    try {
-      if (y.type === 'nav') {
-        await supabase.from('products').update({ unit_nav: y.value, nav_date: today }).eq('id', pid);
-        await supabase.from('nav_history').upsert(
-          { product_id: pid, nav_date: today, unit_nav: y.value },
-          { onConflict: 'product_id,nav_date' }
-        );
-      } else {
-        const updates = { nav_date: today };
-        const sy = parseFloat(item.SEVEN_ANNUAL_YIELD);
-        const wf = parseFloat(item.WF_EARN);
-        if (isFinite(sy) && sy > 0) updates.annual_7d_yield = sy;
-        if (isFinite(wf) && wf > 0) updates.daily_income = wf;
-        await supabase.from('products').update(updates).eq('id', pid);
-      }
-      updated++;
-    } catch (e) {
-      failed++;
+    if (!hit) {
+      console.log(`  ⚠️ [${i+1}/${prods.length}] ${p.name} 未找到`);
+      notFound++;
+      await sleep(400);
+      continue;
     }
-  }));
-  if ((i + CONCURRENCY) % 200 < CONCURRENCY) {
-    console.log(`  进度 ${Math.min(i+CONCURRENCY, tasks.length)}/${tasks.length} → 成功 ${updated}，失败 ${failed}`);
+
+    const nav = parseFloat(hit.LATEST_NET);
+    const seven = parseFloat(hit.SEVEN_ANNUAL_YIELD);
+    const wf = parseFloat(hit.WF_EARN);
+
+    const updates = { nav_date: today };
+    if (isFinite(nav) && nav > 0) updates.unit_nav = nav;
+    if (isFinite(seven) && seven > 0) updates.annual_7d_yield = seven;
+    if (isFinite(wf) && wf > 0) updates.daily_income = wf;
+
+    await supabase.from('products').update(updates).eq('id', p.id);
+
+    if (isFinite(nav) && nav > 0) {
+      await supabase.from('nav_history').upsert(
+        { product_id: p.id, nav_date: today, unit_nav: nav },
+        { onConflict: 'product_id,nav_date' }
+      );
+      console.log(`  ✅ [${i+1}/${prods.length}] ${p.name} → ${nav}`);
+    } else {
+      console.log(`  ✅ [${i+1}/${prods.length}] ${p.name} → 7日年化 ${seven}`);
+    }
+    updated++;
+    await sleep(500);
+  } catch (e) {
+    console.log(`  ❌ [${i+1}/${prods.length}] ${p.name}: ${e.message}`);
+    failed++;
+    await sleep(1000);
   }
 }
 
-console.log(`\n🎉 更新 ${updated}，失败 ${failed}（总耗时 ${((Date.now()-t0)/1000).toFixed(0)}s）`);
+console.log(`\n🎉 更新 ${updated}，未找到 ${notFound}，失败 ${failed}（总耗时 ${((Date.now()-t0)/1000).toFixed(1)}s）`);
