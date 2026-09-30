@@ -386,15 +386,21 @@ export default function AddPage() {
           });
           const fillData = await fillR.json();
           if (fillData.ok && fillData.bank_code) {
-            finalBankCode = fillData.bank_code;
-            if (fillData.name) finalName = fillData.name;
-            extraFields = {
-              unit_nav: fillData.unit_nav,
-              annual_7d_yield: fillData.annual_7d_yield,
-              daily_income: fillData.daily_income,
-              risk_level: fillData.risk_level,
-              nav_date: fillData.nav_date,
-            };
+            // ★ 产品已在库 → 直接复用 id，不再新建
+            if (fillData.existing_id) {
+              productId = fillData.existing_id;
+              console.log("产品已存在，复用 id:", productId);
+            } else {
+              finalBankCode = fillData.bank_code;
+              if (fillData.name) finalName = fillData.name;
+              extraFields = {
+                unit_nav: fillData.unit_nav,
+                annual_7d_yield: fillData.annual_7d_yield,
+                daily_income: fillData.daily_income,
+                risk_level: fillData.risk_level,
+                nav_date: fillData.nav_date,
+              };
+            }
           }
         } catch (e) {
           console.warn("bank_code 补全失败:", e);

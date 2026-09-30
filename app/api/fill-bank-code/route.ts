@@ -57,9 +57,18 @@ export async function POST(request: Request) {
     const seven = parseFloat(hit.SEVEN_ANNUAL_YIELD);
     const wf = parseFloat(hit.WF_EARN);
 
+    // 顺便查 products 里有没有这个 bank_code
+    const { supabase } = await import('@/lib/supabase');
+    const { data: existing } = await supabase
+      .from('products')
+      .select('id')
+      .eq('bank_code', hit.SECODE)
+      .maybeSingle();
+
     return NextResponse.json({
       ok: true,
       bank_code: hit.SECODE,
+      existing_id: existing?.id || null,
       name: hit.FPNAME,
       unit_nav: isFinite(nav) && nav > 0 ? nav : null,
       annual_7d_yield: isFinite(seven) && seven > 0 ? seven : null,
