@@ -63,13 +63,25 @@ const context = await browser.newContext({
 });
 const page = await context.newPage();
 
-// 先访问详情页拿 cookie
+// 建会话：访问轻量首页拿 cookie（不访问慢的详情页）
 console.log('→ 建立会话...');
-await page.goto(
-  'https://mobile.cmbchina.com/IEntrustFinance/subsidiaryproduct/financedetail.html?XRIPINN=JY040232&XSAACOD=D07',
-  { waitUntil: 'domcontentloaded', timeout: 30000 }
-);
-await page.waitForTimeout(3000);
+async function ensureSession(retries = 3) {
+  for (let i = 0; i < retries; i++) {
+    try {
+      await page.goto('https://mobile.cmbchina.com/IEntrustFinance/', {
+        waitUntil: 'domcontentloaded',
+        timeout: 45000,
+      });
+      await page.waitForTimeout(2000);
+      return true;
+    } catch (e) {
+      console.log(`   会话失败（${i + 1}/${retries}）: ${e.message}`);
+      if (i === retries - 1) throw e;
+      await page.waitForTimeout(3000);
+    }
+  }
+}
+await ensureSession();
 console.log('   ✅ 会话已建立\n');
 
 let totalUpserted = 0;
