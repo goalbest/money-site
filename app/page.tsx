@@ -1,7 +1,7 @@
 "use client";
 
 import { useDragSort } from "./components/home/useDragSort";
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useMemo } from "react";
 import { supabase } from "../lib/supabase";
 import Link from "next/link";
 import { useCountUp } from "../lib/useCountUp";
@@ -137,6 +137,22 @@ export default function Home() {
   const animatedHolding = useCountUp(metrics.totalHolding, 1000, { startDelay: 150 });
   const animatedInTransit = useCountUp(metrics.totalInTransit, 1000, { startDelay: 150 });
   const animatedProfit = useCountUp(metrics.todayProfit, 1000, { startDelay: 150 });
+    /* 最新净值日期（所有持仓里最晚的） */
+  const latestNavDate = useMemo(() => {
+    const dates = metrics.topHoldings
+      .map((h: any) => h.products?.nav_date)
+      .filter(Boolean)
+      .sort();
+    return dates.length > 0 ? String(dates[dates.length - 1]).slice(5) : null;
+  }, [metrics.topHoldings]);
+
+  /* 数据是否新鲜（今天是否有净值） */
+  const isFreshToday = (() => {
+    if (!latestNavDate) return false;
+    const d = new Date();
+    const todayMD = `${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+    return latestNavDate === todayMD;
+  })();
 
   /* ============ 初始化 ============ */
   useEffect(() => {
@@ -424,12 +440,25 @@ export default function Home() {
             </div>
             <div className="grid grid-cols-3 gap-2">
               {[
-                { label: "持仓", value: fmtMoney(animatedHolding) },
-                { label: "在途", value: fmtMoney(animatedInTransit) },
-                { label: "今日", value: fmtProfit(animatedProfit), highlight: true },
+                { label: "持仓", value: fmtMoney(animatedHolding), sub: null },
+                { label: "在途", value: fmtMoney(animatedInTransit), sub: null },
+                {
+                  label: "收益",
+                  value: fmtProfit(animatedProfit),
+                  highlight: true,
+                  sub: latestNavDate,
+                  stale: !isFreshToday,
+                },
               ].map((item) => (
                 <div key={item.label} className="chip px-3 py-2.5">
-                  <div className="text-[10px] text-white/65 mb-1">{item.label}</div>
+                  <div className="text-[10px] text-white/65 mb-1 flex items-center gap-1">
+                    {item.label}
+                    {item.sub && (
+                      <span className={`text-[9px] ${item.stale ? "text-amber-200" : "text-white/45"}`}>
+                        {item.sub}
+                      </span>
+                    )}
+                  </div>
                   <div className={`font-semibold text-[13px] tabular ${item.highlight ? "text-white" : "text-white/95"}`}>
                     {item.value}
                   </div>
@@ -439,42 +468,61 @@ export default function Home() {
           </div>
         </div>
 
-        {/* ============ 搜索框 ============ */}
-        <div className="relative mb-4 animate-fade-in-up">
-          <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
-            <svg className="w-4 h-4 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
-              <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-            </svg>
-          </div>
-          <input
-            type="text"
-            placeholder="搜索产品、银行、代码"
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-            onKeyDown={(e) => e.key === "Enter" && handleSearch()}
-            className="input-field w-full pl-11 pr-24 py-3.5 text-sm"
-          />
-          {searchTerm && (
-            <button
-              onClick={clearSearch}
-              className="absolute inset-y-0 right-16 pr-2 flex items-center"
-            >
-              <svg className="w-4 h-4 text-slate-400 hover:text-slate-600" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
-                <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+        {/* ============ 搜索 + 发现 ============ */}
+        <div className="flex gap-2 mb-4 animate-fade-in-up">
+          <div className="relative flex-1 min-w-0">
+            <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
+              <svg className="w-4 h-4 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
               </svg>
+            </div>
+            <input
+              type="text"
+              placeholder="搜索产品、银行、代码"
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && handleSearch()}
+              className="input-field w-full pl-11 pr-20 py-3.5 text-sm"
+            />
+            {searchTerm && (
+              <button
+                onClick={clearSearch}
+                className="absolute inset-y-0 right-16 pr-2 flex items-center"
+              >
+                <svg className="w-4 h-4 text-slate-400 hover:text-slate-600" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            )}
+            <button
+              onClick={handleSearch}
+              className="absolute inset-y-1.5 right-1.5 px-3.5 rounded-xl
+                         bg-gradient-to-r from-violet-500 to-purple-600
+                         text-white text-[12px] font-semibold
+                         shadow-md shadow-purple-500/25
+                         hover:shadow-lg active:scale-95
+                         transition-all duration-200"
+            >
+              搜索
             </button>
-          )}
-          <button
-            onClick={handleSearch}
-            className="absolute inset-y-1.5 right-1.5 px-4 rounded-xl
-                       bg-gradient-to-r from-violet-500 to-purple-600
-                       text-white text-[12px] font-semibold
-                       shadow-md shadow-purple-500/25
-                       hover:shadow-lg active:scale-95
-                       transition-all duration-200"
+          </div>
+
+          {/* ★ 发现入口 */}
+          <Link
+            href="/discover"
+            className="flex-shrink-0 px-3.5 rounded-2xl
+                       bg-white border border-slate-200
+                       text-slate-700 text-[12px] font-medium
+                       flex items-center justify-center gap-1
+                       hover:border-purple-300 hover:bg-purple-50
+                       active:scale-95 transition-all duration-200"
           >
-            搜索
-          </button>
+            <svg className="w-3.5 h-3.5 text-purple-500" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2.2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M12 3v18M3 12h18" />
+              <circle cx="12" cy="12" r="4" opacity="0.35" />
+            </svg>
+            发现
+          </Link>
         </div>
 
         {/* ============ 搜索结果 ============ */}

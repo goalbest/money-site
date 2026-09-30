@@ -647,7 +647,7 @@ export default function MonitorPanel() {
                                       ${!rule.enabled ? "opacity-50" : ""}`}
                         >
                           <Link
-                            href={`/holdings/${holding!.id}`}
+                            href={`/product/${rule.product_id}`}
                             className="flex items-start gap-2.5 flex-1 min-w-0"
                           >
                             {info && (

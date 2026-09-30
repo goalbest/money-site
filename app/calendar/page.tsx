@@ -181,35 +181,7 @@ export default function CalendarPage() {
       }
     });
 
-    // ---- 2. 今天回退：只给"净值还没落库"的产品补 daily_return ----
-    if (today >= mStart && today <= mEnd) {
-      const missingToday: number[] = [];
-      holdings.forEach((h: any) => {
-        const list = navByProduct[h.product_id] || [];
-        const lastDate = list.length > 0 ? list[list.length - 1].date : null;
-        if (lastDate !== today) {
-          if (h.hold_date && h.hold_date > today) return;
-          missingToday.push(h.product_id);
-        }
-      });
 
-      missingToday.forEach((pid) => {
-        const holdAmount = amountMap[pid] || 0;
-        if (holdAmount <= 0) return;
-        const h = holdings.find((x: any) => x.product_id === pid);
-        const dailyReturn = Number(h?.products?.daily_return) || 0;
-        const profit = (holdAmount * dailyReturn) / 10000;
-
-        if (!productDayMap[today]) productDayMap[today] = {};
-        productDayMap[today][pid] = profit;
-        productMonthlyMap[pid] = (productMonthlyMap[pid] || 0) + profit;
-        if (profit <= 0) {
-          productZeroDaysMap[pid] = (productZeroDaysMap[pid] || 0) + 1;
-        }
-        if (!dayMap[today]) dayMap[today] = 0;
-        dayMap[today] += profit;
-      });
-    }
 
     const values = Object.values(dayMap);
     return {
@@ -851,7 +823,7 @@ export default function CalendarPage() {
                     该产品当日收益 {fmtProfit(selectedProductDayProfit)}
                   </div>
                   <Link
-                    href={`/holdings/${selectedProductHolding?.id}`}
+                    href={`/product/${selectedProduct}`}
                     className="block text-center py-3 text-[12px] text-purple-600 font-medium
                                hover:bg-purple-50 rounded-xl transition-colors"
                   >

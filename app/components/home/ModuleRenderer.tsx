@@ -247,7 +247,7 @@ function HoldingsContent({ m }: { m: HomeMetrics }) {
         return (
           <Link
             key={h.id}
-            href={`/holdings/${h.id}`}
+            href={`/product/${h.product_id}`}
             className="flex items-center gap-3 px-5 py-3
                        hover:bg-slate-50 border-t divider
                        transition-colors duration-200"
@@ -292,7 +292,7 @@ function TopTodayContent({ m }: { m: HomeMetrics }) {
         return (
           <Link
             key={h.id}
-            href={`/holdings/${h.id}`}
+            href={`/product/${h.product_id}`}
             className="flex items-center gap-3 px-5 py-3
                        hover:bg-slate-50 border-t divider
                        transition-colors duration-200"

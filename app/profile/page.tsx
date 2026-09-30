@@ -74,6 +74,7 @@ export default function ProfilePage() {
     { key: "watchlist", label: "我的自选", desc: "关注的产品", href: "/watchlist", icon: "⭐", color: "bg-amber-50" },
     { key: "analysis", label: "收益分析", desc: "收益趋势和图表", href: "/analysis", icon: "📊", color: "bg-emerald-50" },
     { key: "compare", label: "产品对比", desc: "对比多个产品", href: "/compare", icon: "⚖️", color: "bg-purple-50" },
+    { key: "export", label: "数据导出", desc: "导出持仓 / 交易备份", href: "/export", icon: "💾", color: "bg-indigo-50" },
     { key: "settings", label: "设置", desc: "账号和偏好", href: "/settings", icon: "⚙️", color: "bg-slate-50" },
   ];
 

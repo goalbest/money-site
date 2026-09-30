@@ -7,6 +7,7 @@ import { useCountUp } from "../../lib/useCountUp";
 import { getBankInfo } from "../../lib/banks";
 import HoldingDistribution from "../components/HoldingDistribution";
 import MonitorPanel from "../components/MonitorPanel";
+import WatchlistPanel from "../components/WatchlistPanel";
 
 function daysHeld(holdDate?: string | null, endDate?: string | null): number {
   if (!holdDate) return 0;
@@ -45,7 +46,7 @@ const STATUS_TABS: { key: StatusFilter; label: string }[] = [
   { key: "transit", label: "在途" },
 ];
 
-type View = "active" | "closed" | "monitor";
+type View = "active" | "watchlist" | "closed" | "monitor";
 
 function MiniChart({ points }: { points: number[] }) {
   if (points.length < 2) return <div className="w-[60px] h-5" />;
@@ -167,12 +168,11 @@ export default function HoldingsPage() {
     fetchData();
   }, []);
 
-  /* ============ 首帧同步：读 URL 参数 + 滚动归零 + mounted ============ */
+  /* ============ 首帧同步 ============ */
   useLayoutEffect(() => {
-    // ★ 读 URL 参数 ?view=monitor / ?view=closed，支持从 /monitor 重定向过来
     if (typeof window !== "undefined") {
       const v = new URLSearchParams(window.location.search).get("view");
-      if (v === "monitor" || v === "closed" || v === "active") {
+      if (v === "monitor" || v === "closed" || v === "active" || v === "watchlist") {
         setView(v as View);
       }
     }
@@ -181,14 +181,12 @@ export default function HoldingsPage() {
     setMounted(true);
   }, []);
 
-  /* ============ 滚动监听 ============ */
   useEffect(() => {
     const onScroll = () => setScrolled(window.scrollY > 180);
     window.addEventListener("scroll", onScroll, { passive: true });
     return () => window.removeEventListener("scroll", onScroll);
   }, []);
 
-  /* ============ 切换视图：同时更新 URL ============ */
   function switchView(v: View) {
     setView(v);
     if (typeof window !== "undefined") {
@@ -265,12 +263,30 @@ export default function HoldingsPage() {
 
   const animatedClosedProfit = useCountUp(closedStats.totalProfit, 1200);
 
+    /* ★ 最新净值日期（所有持仓里最晚的） */
+  const latestNavDate = useMemo(() => {
+    const dates = holdings
+      .map((h: any) => h.products?.nav_date)
+      .filter(Boolean)
+      .sort();
+    return dates.length > 0 ? String(dates[dates.length - 1]).slice(5) : null;
+  }, [holdings]);
+
+  /* 数据是否新鲜（今天是否有净值） */
+  const isFreshToday = (() => {
+    if (!latestNavDate) return false;
+    const d = new Date();
+    const todayMD = `${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+    return latestNavDate === todayMD;
+  })();
+
   /* ============ 今日最佳/最差 ============ */
   const { bestToday, worstToday } = useMemo(() => {
     if (holdings.length === 0) return { bestToday: null, worstToday: null };
     const ranked = holdings
       .map(h => ({
         id: h.id,
+        productId: h.products?.id,
         name: h.products?.name || "",
         bank: h.products?.bank || "",
         profit: (Number(h.holding_amount || 0) * Number(h.products?.daily_return || 0)) / 10000,
@@ -495,7 +511,7 @@ export default function HoldingsPage() {
 
       <div className="container mx-auto px-5 pt-8 max-w-3xl">
 
-        {/* ============ 顶部标题 ============ */}
+        {/* 顶部标题 */}
         <div className="flex items-center gap-3 mb-5">
           <div className="flex-1">
             <div className="text-[22px] font-bold tracking-tight text-slate-900">
@@ -527,27 +543,35 @@ export default function HoldingsPage() {
           )}
         </div>
 
-        {/* ============ 三个 Tab（★ 全部用 button，不再跳路由） ============ */}
+        {/* ============ 四个 Tab ============ */}
         <div className="segment-group flex mb-5 animate-fade-in-up delay-1">
           <button
             onClick={() => switchView("active")}
-            className={`flex-1 py-2.5 text-[13px] segment-item ${
+            className={`flex-1 py-2.5 text-[12px] segment-item ${
               view === "active" ? "segment-item-active" : "hover:text-slate-700"
             }`}
           >
-            持仓 {holdings.length > 0 ? `(${holdings.length})` : ""}
+            持仓 {holdings.length > 0 ? `${holdings.length}` : ""}
+          </button>
+          <button
+            onClick={() => switchView("watchlist")}
+            className={`flex-1 py-2.5 text-[12px] segment-item ${
+              view === "watchlist" ? "segment-item-active" : "hover:text-slate-700"
+            }`}
+          >
+            自选
           </button>
           <button
             onClick={() => switchView("closed")}
-            className={`flex-1 py-2.5 text-[13px] segment-item ${
+            className={`flex-1 py-2.5 text-[12px] segment-item ${
               view === "closed" ? "segment-item-active" : "hover:text-slate-700"
             }`}
           >
-            已清仓 {closedHoldings.length > 0 ? `(${closedHoldings.length})` : ""}
+            已清仓 {closedHoldings.length > 0 ? `${closedHoldings.length}` : ""}
           </button>
           <button
             onClick={() => switchView("monitor")}
-            className={`flex-1 py-2.5 text-[13px] segment-item ${
+            className={`flex-1 py-2.5 text-[12px] segment-item ${
               view === "monitor" ? "segment-item-active" : "hover:text-slate-700"
             }`}
           >
@@ -555,9 +579,7 @@ export default function HoldingsPage() {
           </button>
         </div>
 
-        {/* ============================================================ */}
-        {/* ============ VIEW: 持仓 ============ */}
-        {/* ============================================================ */}
+        {/* VIEW: 持仓 */}
         {view === "active" && (
           <>
             {loading ? (
@@ -566,7 +588,6 @@ export default function HoldingsPage() {
                 <div className="card p-5 mb-4 h-40 animate-pulse" />
               </>
             ) : holdings.length === 0 && closedHoldings.length === 0 ? (
-              /* 完全新用户：大图标空状态 */
               <div className="flex items-center justify-center px-1 mt-8">
                 <div className="max-w-sm w-full text-center animate-fade-in-up">
                   <div className="w-20 h-20 mx-auto mb-6 rounded-3xl
@@ -663,7 +684,14 @@ export default function HoldingsPage() {
 
                       <div className="grid grid-cols-2 gap-3 pt-4 border-t border-white/15">
                         <div className="chip px-3 py-2.5">
-                          <div className="text-[10px] text-white/65 mb-1">今日收益</div>
+                          <div className="text-[10px] text-white/65 mb-1 flex items-center gap-1">
+                            收益
+                            {latestNavDate && (
+                              <span className={`text-[9px] ${isFreshToday ? "text-white/45" : "text-amber-200"}`}>
+                                {latestNavDate}
+                              </span>
+                            )}
+                          </div>
                           <div className="font-mono font-bold text-[15px] text-white tabular">
                             {fmtProfit(animatedToday)}
                           </div>
@@ -689,7 +717,7 @@ export default function HoldingsPage() {
                 {!summaryCollapsed && (bestToday || worstToday) && (
                   <div className="grid grid-cols-2 gap-3 mb-5 animate-fade-in-up delay-2">
                     {bestToday && (
-                      <Link href={`/holdings/${bestToday.id}`} className="card p-3.5 card-hover group">
+                      <Link href={`/product/${bestToday.productId}`} className="card p-3.5 card-hover group">
                         <div className="flex items-center gap-1.5 mb-2">
                           <span className="text-[10px] bg-rose-50 text-rose-600 px-1.5 py-0.5 rounded-full font-medium">
                             今日最佳
@@ -714,7 +742,7 @@ export default function HoldingsPage() {
                       </Link>
                     )}
                     {worstToday ? (
-                      <Link href={`/holdings/${worstToday.id}`} className="card p-3.5 card-hover group">
+                      <Link href={`/product/${worstToday.productId}`} className="card p-3.5 card-hover group">
                         <div className="flex items-center gap-1.5 mb-2">
                           <span className="text-[10px] bg-emerald-50 text-emerald-600 px-1.5 py-0.5 rounded-full font-medium">
                             今日最差
@@ -903,7 +931,7 @@ export default function HoldingsPage() {
                               return (
                                 <Link
                                   key={h.id}
-                                  href={`/holdings/${h.id}`}
+                                  href={`/product/${p.id}`}
                                   onClick={(e) => handleItemClick(e, h)}
                                   onMouseDown={() => handlePressStart(h)}
                                   onMouseUp={handlePressEnd}
@@ -1025,9 +1053,7 @@ export default function HoldingsPage() {
           </>
         )}
 
-        {/* ============================================================ */}
-        {/* ============ VIEW: 已清仓 ============ */}
-        {/* ============================================================ */}
+        {/* VIEW: 已清仓 */}
         {view === "closed" && (
           <>
             {loading ? (
@@ -1112,7 +1138,7 @@ export default function HoldingsPage() {
                     return (
                       <Link
                         key={h.id}
-                        href={`/holdings/${h.id}`}
+                        href={`/product/${p.id}`}
                         className="card p-4 block group
                                    hover:bg-slate-50/50
                                    transition-colors duration-200
@@ -1228,9 +1254,11 @@ export default function HoldingsPage() {
           </>
         )}
 
-        {/* ============================================================ */}
-        {/* ============ VIEW: 监控（★ 同级 Tab，不跳路由） ============ */}
-        {/* ============================================================ */}
+        {/* VIEW: 自选 */}
+        {view === "watchlist" && <WatchlistPanel />}
+
+
+        {/* VIEW: 监控 */}
         {view === "monitor" && <MonitorPanel />}
 
         <div className="h-8" />
@@ -1261,7 +1289,7 @@ export default function HoldingsPage() {
 
                 <div className="grid grid-cols-4">
                   <Link
-                    href={`/holdings/${menuItem.id}?action=buy`}
+                    href={`/product/${menuItem.products?.id}?action=buy`}
                     className="flex flex-col items-center gap-2 py-5 hover:bg-slate-50 transition-colors"
                     onClick={() => setMenuItem(null)}
                   >
@@ -1275,7 +1303,7 @@ export default function HoldingsPage() {
                   </Link>
 
                   <Link
-                    href={`/holdings/${menuItem.id}?action=sell`}
+                    href={`/product/${menuItem.products?.id}?action=sell`}
                     className="flex flex-col items-center gap-2 py-5 hover:bg-slate-50 transition-colors border-x divider"
                     onClick={() => setMenuItem(null)}
                   >
@@ -1289,7 +1317,7 @@ export default function HoldingsPage() {
                   </Link>
 
                   <Link
-                    href={`/holdings/${menuItem.id}?action=edit`}
+                    href={`/product/${menuItem.products?.id}?action=edit`}
                     className="flex flex-col items-center gap-2 py-5 hover:bg-slate-50 transition-colors border-r divider"
                     onClick={() => setMenuItem(null)}
                   >

@@ -9,6 +9,7 @@ import MetricsPanel from "./MetricsPanel";
 import TransactionList from "./TransactionList";
 import QuickBuyModal from "./QuickBuyModal";
 import QuickSellModal from "../../components/QuickSellModal";
+import EditHoldingModal from "../../components/EditHoldingModal";
 import NavHistoryList from "../../components/NavHistoryList";
 import { useDragSort } from "../../components/home/useDragSort";
 import { useProductLayout, type ProductModuleKey } from "../../../lib/useProductLayout";
@@ -35,22 +36,42 @@ export default function ProductPage() {
   const [range, setRange] = useState<Range>("30d");
   const [quickBuyOpen, setQuickBuyOpen] = useState(false);
   const [quickSellOpen, setQuickSellOpen] = useState(false);
+  const [editHoldingOpen, setEditHoldingOpen] = useState(false);
   const [copied, setCopied] = useState(false);
   const [inWatchlist, setInWatchlist] = useState(false);
+
+  /* ============ 支持 ?action= 参数自动打开弹窗 ============ */
+  useEffect(() => {
+    if (loading) return;
+    if (typeof window === "undefined") return;
+    const searchParams = new URLSearchParams(window.location.search);
+    const action = searchParams.get("action");
+    if (!action) return;
+    if (action === "buy" && myHolding) setQuickBuyOpen(true);
+    else if (action === "sell" && myHolding) setQuickSellOpen(true);
+    else if (action === "edit" && myHolding) setEditHoldingOpen(true);
+  }, [loading, myHolding]);
 
   const { order: productOrder, hydrated: productLayoutHydrated, move: moveProductModule } = useProductLayout();
   const [editMode, setEditMode] = useState(false);
   const pressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+  /* ★ enabled 恒为 true，由外部决定何时调用 startDrag */
   const {
     draggingIndex: cardDraggingIdx,
     overIndex: cardOverIdx,
     startDrag: startCardDrag,
   } = useDragSort({
     onReorder: moveProductModule,
-    enabled: editMode,
+    enabled: true,
     dataKey: "product-module-index",
   });
+
+  /* 用 ref 保存最新的 startCardDrag */
+  const startDragRef = useRef(startCardDrag);
+  useEffect(() => {
+    startDragRef.current = startCardDrag;
+  }, [startCardDrag]);
 
   useEffect(() => {
     async function load() {
@@ -161,19 +182,37 @@ export default function ProductPage() {
     } catch {}
   }
 
-  /* ★ 长按标题热区触发编辑（带按钮保护） */
+  /* ★ 长按标题：一步到位 → 进入编辑模式 + 立即拖动 */
   function handleTitlePress(e: React.PointerEvent, idx: number) {
     if (editMode) return;
 
-    // 点到按钮/链接/周期切换时忽略
     const target = e.target as HTMLElement;
     if (target.closest("button, a, [data-no-drag], .segment-group")) return;
 
     if (pressTimer.current) clearTimeout(pressTimer.current);
-    const x0 = e.clientX, y0 = e.clientY;
+
+    /* ★ 立即捕获字段（React 19 合成事件在异步回调里会丢） */
+    const x0 = e.clientX;
+    const y0 = e.clientY;
+    const ptype = e.pointerType || "touch";
+    const btn = typeof e.button === "number" ? e.button : 0;
+
     pressTimer.current = setTimeout(() => {
       setEditMode(true);
       try { (navigator as any).vibrate?.(15); } catch {}
+
+      /* ★ 用 plain object 代替合成事件 */
+      startDragRef.current(
+        {
+          pointerType: ptype,
+          button: btn,
+          clientX: x0,
+          clientY: y0,
+          preventDefault: () => {},
+          stopPropagation: () => {},
+        } as any,
+        idx
+      );
       pressTimer.current = null;
     }, 350);
 
@@ -244,7 +283,13 @@ export default function ProductPage() {
 
   const hasHolding = myHolding && myHolding.status === "active";
   const holdAmount = Number(myHolding?.holding_amount || 0);
-  const holdShares = Number(myHolding?.shares || 0);
+  const holdShares = (() => {
+    const raw = Number(myHolding?.shares || 0);
+    if (raw > 0) return raw;
+    const nav = Number(product?.unit_nav || 0);
+    if (holdAmount > 0 && nav > 0) return holdAmount / nav;
+    return 0;
+  })();
   const holdDays = myHolding?.hold_date
     ? Math.max(0, Math.floor((Date.now() - new Date(myHolding.hold_date).getTime()) / 86400000))
     : 0;
@@ -252,32 +297,7 @@ export default function ProductPage() {
   function renderModule(key: ProductModuleKey) {
     switch (key) {
       case "holdings":
-        if (!hasHolding) return null;
-        return (
-          <div className="card-summary p-5">
-            <div className="text-[11px] text-slate-500 tracking-wider mb-3">我的持仓</div>
-            <div className="grid grid-cols-3 gap-3">
-              <div>
-                <div className="text-[10px] text-slate-400 mb-1">持仓金额</div>
-                <div className="text-[15px] font-bold font-mono text-slate-900 tabular">
-                  ¥{holdAmount.toLocaleString("zh-CN", { minimumFractionDigits: 2 })}
-                </div>
-              </div>
-              <div>
-                <div className="text-[10px] text-slate-400 mb-1">份额</div>
-                <div className="text-[15px] font-bold font-mono text-slate-900 tabular">
-                  {holdShares.toFixed(4)}
-                </div>
-              </div>
-              <div>
-                <div className="text-[10px] text-slate-400 mb-1">持有天数</div>
-                <div className="text-[15px] font-bold font-mono text-slate-900 tabular">
-                  {holdDays} 天
-                </div>
-              </div>
-            </div>
-          </div>
-        );
+        return null;
 
       case "metrics":
         if (navList.length === 0) return null;
@@ -294,7 +314,6 @@ export default function ProductPage() {
               <div className="text-[15px] font-bold text-slate-900">净值走势</div>
               <div className="text-[11px] text-slate-400 tabular">{filteredNav.length} 天</div>
             </div>
-            {/* ★ 周期切换加 z-index */}
             <div className="segment-group flex mb-4 relative z-[3]">
               {RANGES.map(r => (
                 <button
@@ -426,43 +445,28 @@ export default function ProductPage() {
               完成
             </button>
           ) : (
-            <>
-              <button
-                onClick={copyName}
-                className="w-9 h-9 rounded-full bg-white border border-slate-200
-                           hover:border-slate-300 hover:bg-slate-50
-                           flex items-center justify-center flex-shrink-0
-                           transition-all duration-300 active:scale-90"
-                aria-label="复制产品名"
-              >
-                {copied ? (
-                  <svg className="w-4 h-4 text-emerald-500" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2.5}>
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
-                  </svg>
-                ) : (
-                  <svg className="w-4 h-4 text-slate-600" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
-                  </svg>
-                )}
-              </button>
-              {hasHolding && (
-                <button
-                  onClick={() => router.push(`/holdings/${myHolding.id}?action=edit`)}
-                  className="w-9 h-9 rounded-full bg-white border border-slate-200
-                             hover:border-slate-300 hover:bg-slate-50
-                             flex items-center justify-center flex-shrink-0
-                             transition-all duration-300 active:scale-90"
-                  aria-label="编辑持仓"
-                >
-                  <svg className="w-4 h-4 text-slate-600" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
-                  </svg>
-                </button>
+            <button
+              onClick={copyName}
+              className="w-9 h-9 rounded-full bg-white border border-slate-200
+                         hover:border-slate-300 hover:bg-slate-50
+                         flex items-center justify-center flex-shrink-0
+                         transition-all duration-300 active:scale-90"
+              aria-label="复制产品名"
+            >
+              {copied ? (
+                <svg className="w-4 h-4 text-emerald-500" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2.5}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                </svg>
+              ) : (
+                <svg className="w-4 h-4 text-slate-600" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                </svg>
               )}
-            </>
+            </button>
           )}
         </div>
 
+        {/* 产品信息卡 */}
         <div className="card p-5 mb-4 animate-fade-in-up delay-1">
           <div className="flex items-start gap-3">
             <span
@@ -491,6 +495,45 @@ export default function ProductPage() {
               </div>
             </div>
           </div>
+
+          {hasHolding && (
+            <>
+              <div className="grid grid-cols-3 gap-3 mt-4 pt-4 border-t divider">
+                <div>
+                  <div className="text-[10px] text-slate-400 mb-1">持仓金额</div>
+                  <div className="text-[15px] font-bold font-mono text-slate-900 tabular">
+                    ¥{holdAmount.toLocaleString("zh-CN", { minimumFractionDigits: 2 })}
+                  </div>
+                </div>
+                <div>
+                  <div className="text-[10px] text-slate-400 mb-1">份额</div>
+                  <div className="text-[15px] font-bold font-mono text-slate-900 tabular">
+                    {holdShares.toFixed(4)}
+                  </div>
+                </div>
+                <div>
+                  <div className="text-[10px] text-slate-400 mb-1">持有天数</div>
+                  <div className="text-[15px] font-bold font-mono text-slate-900 tabular">
+                    {holdDays} 天
+                  </div>
+                </div>
+              </div>
+
+              <button
+                onClick={() => setEditHoldingOpen(true)}
+                className="w-full mt-3 py-2 rounded-full
+                           bg-slate-50 hover:bg-slate-100
+                           text-[11px] text-slate-500 font-medium
+                           active:scale-[0.98] transition-all
+                           flex items-center justify-center gap-1"
+              >
+                <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                </svg>
+                编辑持仓
+              </button>
+            </>
+          )}
         </div>
 
         {editMode && (
@@ -523,20 +566,17 @@ export default function ProductPage() {
                 {content}
               </div>
 
-              {/* 非编辑模式：标题热区（只覆盖左上 140x52） */}
               {!editMode && (
                 <div
                   onPointerDown={(e) => handleTitlePress(e, idx)}
-                  className="absolute top-0 left-0 z-[2]"
+                  className="absolute top-0 left-0 right-0 z-[2]"
                   style={{
-                    width: 140,
                     height: 52,
                     touchAction: "auto",
                   }}
                 />
               )}
 
-              {/* 编辑模式：整个卡片可拖动 */}
               {editMode && (
                 <div
                   onPointerDown={(e) => startCardDrag(e, idx)}
@@ -671,6 +711,16 @@ export default function ProductPage() {
         onClose={() => setQuickSellOpen(false)}
         onSuccess={() => {
           setQuickSellOpen(false);
+          window.location.reload();
+        }}
+      />
+
+      <EditHoldingModal
+        open={editHoldingOpen}
+        holding={myHolding}
+        onClose={() => setEditHoldingOpen(false)}
+        onSuccess={() => {
+          setEditHoldingOpen(false);
           window.location.reload();
         }}
       />
