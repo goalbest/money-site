@@ -1,8 +1,6 @@
 // app/api/parse-link/route.ts
 import { NextResponse } from 'next/server';
 import { supabase } from '@/lib/supabase';
-import { parsePsbcLink } from '@/lib/psbc-parse';
-import { parseCmbLink } from '@/lib/cmb-parse';
 
 export async function POST(request: Request) {
   try {
@@ -17,6 +15,7 @@ export async function POST(request: Request) {
     let product;
     let sourceType: string;
     let params: any;
+    let bank = '';
 
     if (hostname.includes('psbc.com')) {
       // 邮储银行 / 中邮理财（可能带短链）
@@ -56,7 +55,36 @@ export async function POST(request: Request) {
         riskLevel: psbcProd.riskLevel,
       };
       sourceType = isZywm ? 'zywm' : 'psbc';
+      bank = isZywm ? '中邮理财' : '邮储银行';
       params = { product_code: psbcProd.code };
+    } else if (hostname.includes('boc.cn')) {
+      // 中国银行：只解析参数，不立即抓取（净值交给 Playwright 脚本）
+      const u = new URL(url);
+      let productId = null;
+      const hashQuery = u.hash.split('?')[1];
+      if (hashQuery) {
+        productId = new URLSearchParams(hashQuery).get('productId');
+      }
+      if (!productId) {
+        productId = u.searchParams.get('productId');
+      }
+
+      if (!productId) {
+        return NextResponse.json({ error: '无法从中国银行链接中提取 productId' }, { status: 400 });
+      }
+
+      product = {
+        code: productId,
+        name: `中行产品 ${productId}`,
+        unitNav: null,
+        navDate: null,
+        sevenYield: null,
+        wfEarn: null,
+        riskLevel: null,
+      };
+      sourceType = 'boc';
+      bank = '中国银行';
+      params = { product_id: productId };
     } else if (hostname.includes('cmbchina.com')) {
       // 招商银行：不立即抓，只提取参数（净值交给 Playwright workflow）
       const u = new URL(url);
@@ -67,7 +95,7 @@ export async function POST(request: Request) {
       }
       product = {
         code: ripInn,
-        name: `招行产品 ${ripInn}`,   // 暂用代码占位，Playwright 抓取后会更新
+        name: `招行产品 ${ripInn}`,
         unitNav: null,
         navDate: null,
         sevenYield: null,
@@ -75,12 +103,13 @@ export async function POST(request: Request) {
         riskLevel: null,
       };
       sourceType = 'cmb';
+      bank = '招银理财';
       params = { saaCode, ripInn };
     } else {
       return NextResponse.json({ error: '暂不支持该银行链接' }, { status: 400 });
     }
 
-    console.log('解析成功:', product.code, product.name);
+    console.log('解析成功:', product.code, product.name, '银行:', bank);
 
     // ── 2. 写入 products（upsert，bank_code 唯一）──
     const { data: prod, error: prodErr } = await supabase
@@ -88,7 +117,7 @@ export async function POST(request: Request) {
       .upsert(
         {
           name: product.name,
-          bank: sourceType === 'psbc' ? '邮储银行' : '招银理财',
+          bank: bank,
           bank_code: product.code,
           unit_nav: product.unitNav,
           nav_date: product.navDate,
