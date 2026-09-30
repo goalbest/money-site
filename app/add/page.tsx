@@ -368,13 +368,46 @@ export default function AddPage() {
 
       if (!productId) {
         const finalBank = bank.trim() || guessBank(productName, productCode);
+
+        // ★ 自动补全 bank_code（邮储/中邮产品）
+        let finalBankCode = productCode.trim() || null;
+        let finalName = productName.trim();
+        let extraFields: any = {};
+
+        try {
+          const fillR = await fetch("/api/fill-bank-code", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              name: finalName,
+              code: finalBankCode,
+              bank: finalBank,
+            }),
+          });
+          const fillData = await fillR.json();
+          if (fillData.ok && fillData.bank_code) {
+            finalBankCode = fillData.bank_code;
+            if (fillData.name) finalName = fillData.name;
+            extraFields = {
+              unit_nav: fillData.unit_nav,
+              annual_7d_yield: fillData.annual_7d_yield,
+              daily_income: fillData.daily_income,
+              risk_level: fillData.risk_level,
+              nav_date: fillData.nav_date,
+            };
+          }
+        } catch (e) {
+          console.warn("bank_code 补全失败:", e);
+        }
+
         const { data: newProduct, error: insErr } = await supabase
           .from("products")
           .insert({
-            name: productName.trim(),
+            name: finalName,
             code: productCode.trim() || null,
             bank: finalBank,
-            bank_code: productCode.trim() || null,
+            bank_code: finalBankCode,
+            ...extraFields,
           })
           .select("id").single();
         if (insErr || !newProduct) {
@@ -510,9 +543,6 @@ export default function AddPage() {
             </div>
           </div>
         </div>
-
-        {/* ★ 粘贴链接快速添加 */}
-        <ParseLinkInput />
 
         <div className="segment-group flex mb-5 animate-fade-in-up">
           <button
@@ -695,6 +725,100 @@ export default function AddPage() {
             )}
           </div>
         )}
+
+        {/* ★ 搜不到产品时：粘贴分享链接 */}
+        {mode === "search" && (
+          <div className="mb-4 animate-fade-in-up delay-2">
+
+            {/* 提示语 */}
+            <div className="flex items-start gap-2.5 mb-2.5 px-1">
+              <div className="w-7 h-7 rounded-lg bg-purple-50
+                              flex items-center justify-center flex-shrink-0 mt-0.5">
+                <svg className="w-3.5 h-3.5 text-purple-600" fill="none"
+                     stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2.2}>
+                  <path strokeLinecap="round" strokeLinejoin="round"
+                        d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" />
+                </svg>
+              </div>
+              <div className="flex-1 min-w-0">
+                <div className="text-[13px] font-semibold text-slate-900">
+                  搜不到产品？
+                </div>
+                <div className="text-[11px] text-slate-500 mt-0.5 leading-relaxed">
+                  把银行 App 里产品的<b className="text-slate-700">分享链接</b>复制过来，一键添加
+                </div>
+              </div>
+            </div>
+
+            {/* 链接解析组件 */}
+            <ParseLinkInput />
+
+            {/* 怎么复制链接（折叠） */}
+            <details className="mt-2.5 rounded-2xl bg-white border border-slate-100 overflow-hidden">
+              <summary className="px-4 py-3 text-[12px] font-medium text-slate-700
+                                  cursor-pointer flex items-center gap-1.5 select-none
+                                  list-none hover:bg-slate-50/60 transition-colors">
+                <svg className="w-3.5 h-3.5 text-purple-500 flex-shrink-0"
+                     fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round"
+                        d="M8.228 9c.549-1.165 2.03-2 3.772-2 2.21 0 4 1.343 4 3 0 1.4-1.278 2.575-3.006 2.907-.542.104-.994.54-.994 1.093m0 3h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+                怎么复制分享链接？
+                <svg className="w-3 h-3 text-slate-400 ml-auto flex-shrink-0"
+                     fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2.5}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
+                </svg>
+              </summary>
+
+              <div className="px-4 pb-4 pt-1 text-[11px] text-slate-500 leading-relaxed space-y-3
+                              border-t border-slate-100">
+
+                {/* 步骤 1 */}
+                <div>
+                  <div className="font-semibold text-slate-700 mb-1">
+                    ① 打开产品页
+                  </div>
+                  <div>
+                    在手机银行 App 里进到该产品详情页，点右上角
+                    <b className="text-slate-700">「分享」</b>。
+                  </div>
+                </div>
+
+                {/* 步骤 2 - 情况 A */}
+                <div>
+                  <div className="font-semibold text-slate-700 mb-1">
+                    ② 有「复制链接」按钮
+                  </div>
+                  <div>
+                    直接点 <b className="text-slate-700">「复制链接」</b>，
+                    回到本页粘贴到输入框。
+                  </div>
+                </div>
+
+                {/* 步骤 3 - 情况 B */}
+                <div>
+                  <div className="font-semibold text-slate-700 mb-1">
+                    ③ 只有「分享到微信」
+                  </div>
+                  <div>
+                    先分享到微信（可以发给自己或文件传输助手），
+                    在微信里打开这条链接 →
+                    点右上角 <b className="text-slate-700">「...」</b> →
+                    点 <b className="text-slate-700">「复制链接」</b> →
+                    回到本页粘贴。
+                  </div>
+                </div>
+
+                {/* 备注 */}
+                <div className="pt-2.5 border-t border-slate-100 text-[10px] text-slate-400 leading-relaxed">
+                  <b className="text-slate-500">举例：</b>
+                  招银 App 的产品页只有"分享到微信"，需要先分享到微信，再在微信里点右上角复制链接。
+                </div>
+              </div>
+            </details>
+          </div>
+        )}
+
 
         {/* 截图模式 */}
         {mode === "image" && (
