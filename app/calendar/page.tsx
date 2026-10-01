@@ -32,6 +32,13 @@ function fmtMonthCN(month: string) {
   const [y, m] = month.split("-");
   return `${y} 年 ${Number(m)} 月`;
 }
+function fmtCompact(n: number): string {
+  const abs = Math.abs(n);
+  const sign = n < 0 ? "-" : "";
+  if (abs >= 10000) return `${sign}${(abs / 10000).toFixed(2)}万`;
+  if (abs >= 1000) return `${sign}${(abs / 1000).toFixed(1)}k`;
+  return `${sign}${abs.toFixed(0)}`;
+}
 
 type ViewMode = "calendar" | "byProduct";
 
@@ -50,7 +57,9 @@ export default function CalendarPage() {
   const [viewMode, setViewMode] = useState<ViewMode>("calendar");
   const [selectedProduct, setSelectedProduct] = useState<number | null>(null);
 
-  // ★ 优化：holdings 只加载一次 + nav 按月缓存
+  const [monthBuyTotal, setMonthBuyTotal] = useState<number | null>(null);
+  const [monthSellTotal, setMonthSellTotal] = useState<number | null>(null);
+
   const [holdingsLoaded, setHoldingsLoaded] = useState(false);
   const [navCache, setNavCache] = useState<Record<string, any[]>>({});
   const [navLoading, setNavLoading] = useState(false);
@@ -58,7 +67,6 @@ export default function CalendarPage() {
 
   const isCurrentMonth = month === currentMonth;
 
-  /* ============ 1. holdings 只加载一次 ============ */
   useEffect(() => {
     const userId = localStorage.getItem("user_id");
     if (!userId) {
@@ -79,7 +87,6 @@ export default function CalendarPage() {
     })();
   }, []);
 
-  /* ============ 2. nav_history 按月加载（带缓存） ============ */
   useEffect(() => {
     if (!holdingsLoaded) return;
     if (holdings.length === 0) {
@@ -87,7 +94,6 @@ export default function CalendarPage() {
       return;
     }
 
-    // 缓存命中 → 秒回
     if (navCache[month]) {
       setNavRows(navCache[month]);
       setLoading(false);
@@ -95,7 +101,6 @@ export default function CalendarPage() {
       return;
     }
 
-    // 首屏：骨架；切月：清空 + spinner
     if (!hasLoadedOnceRef.current) setLoading(true);
     setNavRows([]);
     setNavLoading(true);
@@ -119,6 +124,34 @@ export default function CalendarPage() {
       hasLoadedOnceRef.current = true;
     })();
   }, [month, holdingsLoaded, holdings.length]);
+
+  useEffect(() => {
+    const userId = localStorage.getItem("user_id");
+    if (!userId) {
+      setMonthBuyTotal(0);
+      setMonthSellTotal(0);
+      return;
+    }
+    setMonthBuyTotal(null);
+    setMonthSellTotal(null);
+    (async () => {
+      const start = `${month}-01`;
+      const end = monthEnd(month);
+      const { data } = await supabase
+        .from("transactions")
+        .select("type, amount, trade_date")
+        .eq("user_id", userId)
+        .gte("trade_date", start)
+        .lte("trade_date", end);
+      let buy = 0, sell = 0;
+      for (const t of (data || []) as any[]) {
+        if (t.type === "buy") buy += Number(t.amount || 0);
+        else if (t.type === "sell" || t.type === "close") sell += Number(t.amount || 0);
+      }
+      setMonthBuyTotal(buy);
+      setMonthSellTotal(sell);
+    })();
+  }, [month]);
 
   const {
     dayMap,
@@ -150,7 +183,6 @@ export default function CalendarPage() {
     const mStart = `${month}-01`;
     const mEnd = monthEnd(month);
 
-    // ---- 1. 历史天：nav_history 相邻日净值差 ----
     Object.entries(navByProduct).forEach(([pidStr, list]) => {
       const pid = Number(pidStr);
       const shares = sharesMap[pid] || 0;
@@ -180,8 +212,6 @@ export default function CalendarPage() {
         }
       }
     });
-
-
 
     const values = Object.values(dayMap);
     return {
@@ -312,6 +342,28 @@ export default function CalendarPage() {
     return sum;
   }, [viewMode, selectedProduct, selectedProductMonthly, bankFilter, productMonthlyMap, totalProfit, holdings]);
 
+  const endHolding = useMemo(
+    () => holdings.reduce((s: number, h: any) => s + Number(h.holding_amount || 0), 0),
+    [holdings]
+  );
+
+  const beginHolding = useMemo(() => {
+    if (monthBuyTotal == null || monthSellTotal == null) return null;
+    return endHolding - monthBuyTotal + monthSellTotal;
+  }, [endHolding, monthBuyTotal, monthSellTotal]);
+
+  const monthAnnual = useMemo(() => {
+    if (beginHolding == null) return null;
+    const totalDays = daysInMonth(month);
+    const isCur = month === currentMonth;
+    const daysPassed = isCur ? Math.min(now.getDate(), totalDays) : totalDays;
+    if (daysPassed <= 0) return null;
+    const avg = (beginHolding + endHolding) / 2;
+    if (avg <= 0) return null;
+    const rate = displayTotalProfit / avg;
+    return rate * (365 / daysPassed) * 100;
+  }, [beginHolding, endHolding, month, currentMonth, displayTotalProfit]);
+
   const animatedTotal = useCountUp(displayTotalProfit, 1200);
 
   const displayTradedDays = useMemo(() => {
@@ -435,6 +487,15 @@ export default function CalendarPage() {
 
   const isProductDetailMode = viewMode === "byProduct" && selectedProductMeta;
 
+  /* 有效持仓区间展示：月初=月末只显示一个数 */
+  const holdingRangeText = (() => {
+    if (beginHolding == null) return "—";
+    const lo = Math.min(beginHolding, endHolding);
+    const hi = Math.max(beginHolding, endHolding);
+    if (Math.abs(hi - lo) < 1) return `¥${fmtCompact(hi)}`;
+    return `¥${fmtCompact(lo)} ~ ¥${fmtCompact(hi)}`;
+  })();
+
   return (
     <div className="min-h-screen pb-24">
       <div className="container mx-auto px-5 pt-8 max-w-3xl">
@@ -487,28 +548,64 @@ export default function CalendarPage() {
                   })}`}
             </div>
 
-            <div className={`grid ${isProductDetailMode ? "grid-cols-3" : "grid-cols-2"} gap-2`}>
-              <div className="chip px-3 py-2.5">
-                <div className="text-[10px] text-white/65 mb-1">交易日</div>
-                <div className="font-semibold text-[13px] text-white tabular">{displayTradedDays} 天</div>
-              </div>
-              {isProductDetailMode && (
+            {isProductDetailMode && (
+              <div className="grid grid-cols-3 gap-2">
+                <div className="chip px-3 py-2.5">
+                  <div className="text-[10px] text-white/65 mb-1">交易日</div>
+                  <div className="font-semibold text-[13px] text-white tabular">{displayTradedDays} 天</div>
+                </div>
                 <div className="chip px-3 py-2.5">
                   <div className="text-[10px] text-white/65 mb-1">挂 0</div>
                   <div className="font-semibold text-[13px] text-white tabular">
                     {productZeroDaysMap[selectedProduct!] || 0} 天
                   </div>
                 </div>
-              )}
-              <div className="chip px-3 py-2.5">
-                <div className="text-[10px] text-white/65 mb-1">日均收益</div>
-                <div className="font-semibold text-[13px] text-white tabular">
-                  {displayTradedDays > 0
-                    ? `${displayTotalProfit >= 0 ? "+" : ""}${(displayTotalProfit / displayTradedDays).toFixed(2)}`
-                    : "—"}
+                <div className="chip px-3 py-2.5">
+                  <div className="text-[10px] text-white/65 mb-1">日均收益</div>
+                  <div className="font-semibold text-[13px] text-white tabular">
+                    {displayTradedDays > 0
+                      ? `${displayTotalProfit >= 0 ? "+" : ""}${(displayTotalProfit / displayTradedDays).toFixed(2)}`
+                      : "—"}
+                  </div>
                 </div>
               </div>
-            </div>
+            )}
+
+            {!isProductDetailMode && (
+              <div className="grid grid-cols-2 gap-2">
+                <div className="chip px-3 py-2.5">
+                  <div className="text-[10px] text-white/65 mb-1">交易日</div>
+                  <div className="font-semibold text-[13px] text-white tabular">
+                    {displayTradedDays} 天
+                  </div>
+                </div>
+
+                <div className="chip px-3 py-2.5">
+                  <div className="text-[10px] text-white/65 mb-1">日均收益</div>
+                  <div className="font-semibold text-[13px] text-white tabular">
+                    {displayTradedDays > 0
+                      ? `${displayTotalProfit >= 0 ? "+" : ""}${(displayTotalProfit / displayTradedDays).toFixed(2)}`
+                      : "—"}
+                  </div>
+                </div>
+
+                <div className="chip px-3 py-2.5">
+                  <div className="text-[10px] text-white/65 mb-1">当月年化</div>
+                  <div className="font-semibold text-[13px] text-white tabular">
+                    {monthAnnual != null
+                      ? `${monthAnnual >= 0 ? "+" : ""}${monthAnnual.toFixed(2)}%`
+                      : "—"}
+                  </div>
+                </div>
+
+                <div className="chip px-3 py-2.5">
+                  <div className="text-[10px] text-white/65 mb-1">有效持仓</div>
+                  <div className="font-semibold text-[12px] text-white tabular">
+                    {holdingRangeText}
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
         </div>
 
@@ -648,7 +745,7 @@ export default function CalendarPage() {
           </div>
         </div>
 
-       {/* ============ 日历 / 产品 切换 ============ */}
+        {/* 日历 / 产品 切换 */}
         <div className="mb-4 animate-fade-in-up delay-3">
           <div className="segment-group flex">
             <button
@@ -657,34 +754,34 @@ export default function CalendarPage() {
                 setSelectedProduct(null);
                 setSelectedDate(null);
               }}
-                className={`flex-1 py-2.5 text-[13px] segment-item
-                            flex items-center justify-center gap-1.5
-                            ${viewMode === "calendar" ? "segment-item-active" : "hover:text-slate-700"}`}
-              >
-                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
-                  <rect x="3" y="5" width="18" height="16" rx="2.5" />
-                  <path d="M3 10h18M8 3v4M16 3v4" strokeLinecap="round" />
-                </svg>
-                日历
-              </button>
-              <button
-                onClick={() => {
-                  setViewMode("byProduct");
-                  setSelectedDate(null);
-                }}
-                className={`flex-1 py-2.5 text-[13px] segment-item
-                            flex items-center justify-center gap-1.5
-                            ${viewMode === "byProduct" ? "segment-item-active" : "hover:text-slate-700"}`}
-              >
-                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
-                  <path d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" strokeLinecap="round" strokeLinejoin="round" />
-                </svg>
-                产品
-               </button>
-            </div>
+              className={`flex-1 py-2.5 text-[13px] segment-item
+                          flex items-center justify-center gap-1.5
+                          ${viewMode === "calendar" ? "segment-item-active" : "hover:text-slate-700"}`}
+            >
+              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
+                <rect x="3" y="5" width="18" height="16" rx="2.5" />
+                <path d="M3 10h18M8 3v4M16 3v4" strokeLinecap="round" />
+              </svg>
+              日历
+            </button>
+            <button
+              onClick={() => {
+                setViewMode("byProduct");
+                setSelectedDate(null);
+              }}
+              className={`flex-1 py-2.5 text-[13px] segment-item
+                          flex items-center justify-center gap-1.5
+                          ${viewMode === "byProduct" ? "segment-item-active" : "hover:text-slate-700"}`}
+            >
+              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
+                <path d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" strokeLinecap="round" strokeLinejoin="round" />
+              </svg>
+              产品
+            </button>
           </div>
+        </div>
 
-        {/* ============ 下方列表 ============ */}
+        {/* 下方列表 */}
         <div className="animate-fade-in-up delay-3">
           {viewMode === "byProduct" && !selectedProduct ? (
             <div className="card overflow-hidden">
@@ -775,7 +872,6 @@ export default function CalendarPage() {
               )}
             </div>
           ) : selectedDate ? (
-            /* ============ 某天明细 ============ */
             <div className="card overflow-hidden">
               <div className="px-5 py-4 bg-slate-50/60 border-b divider flex items-center gap-3">
                 <button
@@ -874,10 +970,8 @@ export default function CalendarPage() {
               )}
             </div>
           ) : (
-            /* ============ 本月每日明细（★ 产品详情时头部和日历明细一致） ============ */
             <div className="card overflow-hidden">
               {isProductDetailMode ? (
-                /* 产品详情：圆形返回 + 银行方块 + 产品名 + 累计收益 */
                 <div className="px-5 py-4 bg-slate-50/60 border-b divider flex items-center gap-3">
                   <button
                     onClick={() => {
@@ -917,7 +1011,6 @@ export default function CalendarPage() {
                   </div>
                 </div>
               ) : (
-                /* 普通视图：标题 + 说明 */
                 <div className="px-5 py-4 border-b divider flex items-center justify-between">
                   <div className="min-w-0 flex-1">
                     <div className="text-[14px] font-semibold text-slate-900">

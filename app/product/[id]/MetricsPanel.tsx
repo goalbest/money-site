@@ -15,6 +15,9 @@ const PERIODS: { key: Period; label: string; days: number; endOffset: number }[]
   { key: "1y", label: "近1年", days: 365, endOffset: 0 },
 ];
 
+const TOP_ROW = 3;
+const TOTAL_CELLS = 5;
+
 function calcChange(navs: number[], days: number, endOffset: number): number | null {
   const endIdx = navs.length - 1 - endOffset;
   if (endIdx < 1) return null;
@@ -98,11 +101,9 @@ function useHorizontalDrag(onReorder: (from: number, to: number) => void) {
   const dragRef = useRef<{ from: number; over: number } | null>(null);
   const pressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  function onPointerDownCell(e: React.PointerEvent, idx: number) {
-    if (editMode) {
-      startDrag(e, idx);
-      return;
-    }
+  /* 非编辑模式：长按格子进入编辑 */
+  function onPointerDownCell(e: React.PointerEvent, _idx: number) {
+    if (editMode) return;
     if (pressTimer.current) clearTimeout(pressTimer.current);
     const x0 = e.clientX, y0 = e.clientY;
     pressTimer.current = setTimeout(() => {
@@ -118,14 +119,20 @@ function useHorizontalDrag(onReorder: (from: number, to: number) => void) {
         window.removeEventListener("pointermove", onMove);
       }
     }
-    window.addEventListener("pointermove", onMove, { passive: true });
-    window.addEventListener("pointerup", () => {
+    function onUp() {
       if (pressTimer.current) { clearTimeout(pressTimer.current); pressTimer.current = null; }
       window.removeEventListener("pointermove", onMove);
-    }, { once: true });
+      window.removeEventListener("pointerup", onUp);
+    }
+    window.addEventListener("pointermove", onMove, { passive: true });
+    window.addEventListener("pointerup", onUp, { once: true });
   }
 
+  /* 拖拽手柄：只有手柄上按下才启动拖动 */
   function startDrag(e: React.PointerEvent, idx: number) {
+    if (!editMode) return;
+    e.preventDefault();
+    e.stopPropagation();
     dragRef.current = { from: idx, over: idx };
     setDraggingIdx(idx);
     setOverIdx(idx);
@@ -161,7 +168,7 @@ function useHorizontalDrag(onReorder: (from: number, to: number) => void) {
     setEditMode(false);
   }
 
-  return { editMode, draggingIdx, overIdx, onPointerDownCell, exit };
+  return { editMode, draggingIdx, overIdx, onPointerDownCell, startDrag, exit };
 }
 
 export default function MetricsPanel({ navList }: { navList: any[] }) {
@@ -169,7 +176,7 @@ export default function MetricsPanel({ navList }: { navList: any[] }) {
   const [zeroExpanded, setZeroExpanded] = useState(false);
 
   const { order, move } = useMetricsOrder();
-  const { editMode, draggingIdx, overIdx, onPointerDownCell, exit } = useHorizontalDrag(move);
+  const { editMode, draggingIdx, overIdx, onPointerDownCell, startDrag, exit } = useHorizontalDrag(move);
 
   const navs = useMemo(
     () => navList.map((n: any) => Number(n.unit_nav)).filter((n) => !isNaN(n)),
@@ -203,6 +210,17 @@ export default function MetricsPanel({ navList }: { navList: any[] }) {
   const flats = zeroItems.filter(i => i.diff === 0);
   const worst = zeroItems[0];
   const avg = negatives.length > 0 ? negatives.reduce((s, i) => s + i.diff, 0) / negatives.length : 0;
+
+  /* 上/下/左/右移动 */
+  function canMoveUp(idx: number) { return idx >= TOP_ROW; }
+  function canMoveDown(idx: number) { return idx < TOP_ROW && idx + TOP_ROW < TOTAL_CELLS; }
+  function canMoveLeft(idx: number) { return idx !== 0 && idx !== TOP_ROW; }
+  function canMoveRight(idx: number) { return idx !== TOP_ROW - 1 && idx !== TOTAL_CELLS - 1; }
+
+  function doMoveUp(idx: number) { if (canMoveUp(idx)) move(idx, idx - TOP_ROW); }
+  function doMoveDown(idx: number) { if (canMoveDown(idx)) move(idx, idx + TOP_ROW); }
+  function doMoveLeft(idx: number) { if (canMoveLeft(idx)) move(idx, idx - 1); }
+  function doMoveRight(idx: number) { if (canMoveRight(idx)) move(idx, idx + 1); }
 
   function renderCell(key: MetricKey) {
     switch (key) {
@@ -282,7 +300,7 @@ export default function MetricsPanel({ navList }: { navList: any[] }) {
 
   return (
     <div>
-      {/* ★ 标题 + 周期切换（加 relative z-[3] 盖过热区） */}
+      {/* 标题 + 周期切换 */}
       <div className="flex items-center gap-2 mb-3 relative z-[3]">
         <div className="text-[15px] font-bold text-slate-900 flex-shrink-0">
           关键指标
@@ -291,7 +309,7 @@ export default function MetricsPanel({ navList }: { navList: any[] }) {
         {editMode ? (
           <div className="flex-1 flex items-center justify-between">
             <span className="text-[10px] text-purple-600 bg-purple-50 px-2 py-0.5 rounded-full font-medium">
-              拖动 / 点箭头排序
+              点箭头 / 拖 ⚏ 移动
             </span>
             <button
               type="button"
@@ -328,7 +346,7 @@ export default function MetricsPanel({ navList }: { navList: any[] }) {
         )}
       </div>
 
-      {/* ★ 3+2 布局：第一行 3 格，第二行 2 格 */}
+      {/* 3+2 布局 */}
       {(() => {
         const topRow = order.slice(0, 3);
         const bottomRow = order.slice(3);
@@ -339,8 +357,11 @@ export default function MetricsPanel({ navList }: { navList: any[] }) {
               const idx = startIdx + localIdx;
               const isDragging = draggingIdx === idx;
               const isOver = overIdx === idx && draggingIdx !== idx && draggingIdx !== null;
-              const canLeft = idx > 0;
-              const canRight = idx < order.length - 1;
+              const up = canMoveUp(idx);
+              const down = canMoveDown(idx);
+              const left = canMoveLeft(idx);
+              const right = canMoveRight(idx);
+
               return (
                 <div
                   key={key}
@@ -357,41 +378,83 @@ export default function MetricsPanel({ navList }: { navList: any[] }) {
                   {renderCell(key)}
 
                   {editMode && (
-                    <div className="absolute -top-6 left-0 right-0 flex justify-between">
+                    <div className="absolute -top-6 left-0 right-0 flex justify-center gap-0.5">
+                      {/* ↑ */}
                       <button
                         type="button"
                         onPointerDown={(e) => e.stopPropagation()}
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          if (canLeft) move(idx, idx - 1);
-                        }}
-                        disabled={!canLeft}
+                        onClick={(e) => { e.stopPropagation(); doMoveUp(idx); }}
+                        disabled={!up}
                         className={`w-5 h-5 rounded-full flex items-center justify-center
                                     shadow-sm transition-all active:scale-90
-                                    ${canLeft
-                                      ? "bg-white border border-slate-200"
-                                      : "bg-slate-100 opacity-40"}`}
+                                    ${up ? "bg-white border border-slate-200" : "bg-slate-100 opacity-40"}`}
+                        aria-label="上移"
+                      >
+                        <svg className="w-2.5 h-2.5 text-slate-700" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={3}>
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M5 15l7-7 7 7" />
+                        </svg>
+                      </button>
+
+                      {/* ← */}
+                      <button
+                        type="button"
+                        onPointerDown={(e) => e.stopPropagation()}
+                        onClick={(e) => { e.stopPropagation(); doMoveLeft(idx); }}
+                        disabled={!left}
+                        className={`w-5 h-5 rounded-full flex items-center justify-center
+                                    shadow-sm transition-all active:scale-90
+                                    ${left ? "bg-white border border-slate-200" : "bg-slate-100 opacity-40"}`}
+                        aria-label="左移"
                       >
                         <svg className="w-2.5 h-2.5 text-slate-700" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={3}>
                           <path strokeLinecap="round" strokeLinejoin="round" d="M15 19l-7-7 7-7" />
                         </svg>
                       </button>
+
+                      {/* 拖拽手柄 */}
+                      <div
+                        onPointerDown={(e) => startDrag(e, idx)}
+                        style={{ touchAction: "none" }}
+                        className="w-5 h-5 rounded-full flex items-center justify-center
+                                   bg-gradient-to-br from-violet-500 to-purple-600
+                                   shadow-sm shadow-purple-500/25 cursor-grab active:cursor-grabbing"
+                        aria-label="拖动排序"
+                        role="button"
+                      >
+                        <svg className="w-2.5 h-2.5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2.5}>
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M4 8h16M4 16h16" />
+                        </svg>
+                      </div>
+
+                      {/* → */}
                       <button
                         type="button"
                         onPointerDown={(e) => e.stopPropagation()}
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          if (canRight) move(idx, idx + 1);
-                        }}
-                        disabled={!canRight}
+                        onClick={(e) => { e.stopPropagation(); doMoveRight(idx); }}
+                        disabled={!right}
                         className={`w-5 h-5 rounded-full flex items-center justify-center
                                     shadow-sm transition-all active:scale-90
-                                    ${canRight
-                                      ? "bg-white border border-slate-200"
-                                      : "bg-slate-100 opacity-40"}`}
+                                    ${right ? "bg-white border border-slate-200" : "bg-slate-100 opacity-40"}`}
+                        aria-label="右移"
                       >
                         <svg className="w-2.5 h-2.5 text-slate-700" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={3}>
                           <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
+                        </svg>
+                      </button>
+
+                      {/* ↓ */}
+                      <button
+                        type="button"
+                        onPointerDown={(e) => e.stopPropagation()}
+                        onClick={(e) => { e.stopPropagation(); doMoveDown(idx); }}
+                        disabled={!down}
+                        className={`w-5 h-5 rounded-full flex items-center justify-center
+                                    shadow-sm transition-all active:scale-90
+                                    ${down ? "bg-white border border-slate-200" : "bg-slate-100 opacity-40"}`}
+                        aria-label="下移"
+                      >
+                        <svg className="w-2.5 h-2.5 text-slate-700" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={3}>
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
                         </svg>
                       </button>
                     </div>
