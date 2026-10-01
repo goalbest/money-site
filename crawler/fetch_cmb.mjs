@@ -89,6 +89,12 @@ let totalUpserted = 0;
 for (const p of CMB_PRODUCTS) {
   console.log(`→ [${p.dbId}] ${p.ripInn} (${p.saaCode})`);
   try {
+        // 每个产品前先访问它的历史页，让会话绑定该产品
+    await page.goto(
+      `https://mobile.cmbchina.com/IEntrustFinance/financeproduct/historynetvalue.html?XRIPINN=${p.ripInn}&Code=${p.ripInn}&XSAACOD=${p.saaCode}&offSal=Y`,
+      { waitUntil: 'domcontentloaded', timeout: 45000 }
+    );
+    await page.waitForTimeout(2000);
     // ── 翻页抓全部历史 ──
     let yNavDat = '0';
     let round = 0;
