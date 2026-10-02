@@ -47,7 +47,7 @@ export default function PageHeader({
             </div>
           )}
         </div>
-      </div
+      </div>
     </div>
   );
 }
