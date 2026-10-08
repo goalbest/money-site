@@ -4,7 +4,8 @@
 import { useCallback, useLayoutEffect, useRef, useState } from "react";
 import { DEFAULT_LAYOUT, ALL_MODULE_IDS } from "./homeModules";
 
-const STORAGE_KEY = "home_layout_v3";
+const STORAGE_KEY = "home_layout_v4";
+const CUSTOMIZED_KEY = "home_customized_v1";
 
 export type Zone = "tile" | "card" | "hidden";
 
@@ -65,6 +66,20 @@ function readLayout(): Layout {
     return getDefaultLayout();
   }
 }
+function isCustomized(): boolean {
+  if (typeof window === "undefined") return false;
+  try { return localStorage.getItem(CUSTOMIZED_KEY) === "1"; } catch { return false; }
+}
+
+function markCustomized() {
+  if (typeof window === "undefined") return;
+  try { localStorage.setItem(CUSTOMIZED_KEY, "1"); } catch {}
+}
+
+function clearCustomized() {
+  if (typeof window === "undefined") return;
+  try { localStorage.removeItem(CUSTOMIZED_KEY); } catch {}
+}
 
 /** 写入 localStorage（带节流，避免频繁写入） */
 let writeTimer: ReturnType<typeof setTimeout> | null = null;
@@ -90,6 +105,7 @@ function findZone(layout: Layout, id: string): Zone | null {
 export function useHomeLayout() {
   const [layout, setLayout] = useState<Layout>(getDefaultLayout);
   const [hydrated, setHydrated] = useState(false);
+  const [customized, setCustomized] = useState(false);
   const layoutRef = useRef(layout);
   layoutRef.current = layout;
 
@@ -98,13 +114,18 @@ export function useHomeLayout() {
     const next = readLayout();
     setLayout(next);
     setHydrated(true);
+    setCustomized(isCustomized());
   }, []);
 
   /** 更新布局：自动写入 localStorage */
-  const update = useCallback((next: Layout) => {
-    setLayout(next);
-    writeLayout(next);
-  }, []);
+const update = useCallback((next: Layout, isUserAction = true) => {
+  setLayout(next);
+  writeLayout(next);
+  if (isUserAction) {
+    setCustomized(true);
+    markCustomized();
+  }
+}, []);
 
   /** 在指定 zone 内移动模块 */
   const moveWithinZone = useCallback(
@@ -166,15 +187,18 @@ export function useHomeLayout() {
 
   /** 恢复默认布局 */
   const reset = useCallback(() => {
-    update(getDefaultLayout());
-  }, [update]);
+  update(getDefaultLayout(), false);
+  setCustomized(false);
+  clearCustomized();
+}, [update]);
 
-  return {
-    layout,
-    hydrated,
-    moveWithinZone,
-    moveToZone,
-    toggleVisible,
-    reset,
-  };
+return {
+  layout,
+  hydrated,
+  customized,
+  moveWithinZone,
+  moveToZone,
+  toggleVisible,
+  reset,
+};
 }

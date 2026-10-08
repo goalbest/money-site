@@ -91,6 +91,8 @@ export default function AddPage() {
   const lastYRef = useRef(0);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const formRef = useRef<HTMLDivElement>(null);
+  /* ★ 用户是否手动改过净值输入框（手改后不再自动覆盖） */
+  const navTouchedRef = useRef(false);
 
   useEffect(() => {
     const id = localStorage.getItem("user_id");
@@ -178,6 +180,8 @@ export default function AddPage() {
 
   const handleNavChange = useCallback(
     (v: string) => {
+      /* ★ 用户手动改净值 → 打标记，之后不再自动覆盖 */
+      navTouchedRef.current = true;
       setNav(v);
       const n = Number(v);
       if (n > 0 && amount && Number(amount) > 0) setShares((Number(amount) / n).toFixed(4));
@@ -208,9 +212,13 @@ export default function AddPage() {
     if (n > 0) setShares((v / n).toFixed(4));
   }
 
+  /* ★ 改日期 → 自动查当日净值（仅当用户未手动编辑过） */
   useEffect(() => {
     if (mode === "image") return;
     if (!buyDate || !selected?.id) return;
+    if (navTouchedRef.current) return;
+
+    let cancelled = false;
     (async () => {
       const { data } = await supabase
         .from("nav_history")
@@ -219,14 +227,18 @@ export default function AddPage() {
         .lte("nav_date", buyDate)
         .order("nav_date", { ascending: false })
         .limit(1);
-      if (data && data.length > 0 && !nav) {
+      if (cancelled) return;
+      if (data && data.length > 0) {
         setNav(Number(data[0].unit_nav).toFixed(4));
         setNavDate(data[0].nav_date);
       }
     })();
+    return () => { cancelled = true; };
   }, [buyDate, selected]);
 
   function selectProduct(p: any) {
+    /* ★ 换产品 → 重置标记，恢复自动填 */
+    navTouchedRef.current = false;
     setSelected(p);
     setSearchTerm(p.name);
     setProductName(p.name);
@@ -236,6 +248,8 @@ export default function AddPage() {
   }
 
   function clearSelected() {
+    /* ★ 清空 → 重置标记 */
+    navTouchedRef.current = false;
     setSelected(null);
     setSearchTerm("");
     setProductName("");
@@ -515,6 +529,8 @@ export default function AddPage() {
   }
 
   function resetForm() {
+    /* ★ 重置标记 */
+    navTouchedRef.current = false;
     setSelected(null);
     setSearchTerm("");
     setImageFile(null);

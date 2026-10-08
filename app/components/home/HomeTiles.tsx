@@ -62,7 +62,6 @@ type TileContent = { value: string; valueColor?: string; sub: string; unit?: str
 function getTileContent(id: string, m: HomeMetrics, snap: SnapData): TileContent {
   switch (id) {
     case "assetTrend": {
-      // ★ 真实走势
       if (snap.has7d) {
         const p = snap.trend7dPercent;
         return {
@@ -71,7 +70,6 @@ function getTileContent(id: string, m: HomeMetrics, snap: SnapData): TileContent
           sub: `近 7 天 ${fmtPercent(p)}`,
         };
       }
-      // 数据不足：显示总资产
       return {
         value: m.totalAssets > 0 ? fmtCompact(m.totalAssets) : "—",
         sub: snap.snapshots.length >= 2 ? `${snap.snapshots.length} 天记录` : "开始记录中",
@@ -235,7 +233,7 @@ export default function HomeTiles({
         className="flex gap-2.5 overflow-x-auto no-scrollbar
                    snap-x snap-mandatory
                    py-1.5 scroll-smooth"
-style={{ scrollbarWidth: "none", touchAction: "pan-y" }}
+        style={{ scrollbarWidth: "none", touchAction: "pan-y" }}
       >
         {visible.map((id, i) => {
           const meta = MODULE_MAP[id];
@@ -260,7 +258,7 @@ style={{ scrollbarWidth: "none", touchAction: "pan-y" }}
                           rounded-[14px] bg-white
                           flex flex-col justify-between p-2.5
                           transition-all duration-200
-                          ${isDragging ? "opacity-40 scale-95" : ""}
+                          ${isDragging ? "scale-[0.92] opacity-40" : ""}
                           ${isOver ? "ring-2 ring-purple-400 ring-offset-2 scale-[1.03]" : ""}
                           ${editMode
                             ? "animate-wiggle shadow-md shadow-purple-500/15"
@@ -295,22 +293,46 @@ style={{ scrollbarWidth: "none", touchAction: "pan-y" }}
               </div>
 
               {editMode && (
-                <button
-                  onClick={(e) => {
-                    e.preventDefault();
-                    e.stopPropagation();
-                    onHide(id);
-                  }}
-                  onPointerDown={(e) => e.stopPropagation()}
-                  className="absolute -top-1.5 -right-1.5 w-5 h-5 rounded-full
-                             flex items-center justify-center
-                             bg-rose-50 shadow-sm border border-rose-100
-                             active:scale-90 z-20"
-                >
-                  <svg className="w-2.5 h-2.5 text-rose-500" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={3}>
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
-                  </svg>
-                </button>
+                <>
+                  <div
+                    onPointerDown={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      startDrag(e, i);
+                    }}
+                    onPointerUp={(e) => e.stopPropagation()}
+                    style={{ touchAction: "none" }}
+                    className="absolute -top-2 right-6 w-6 h-6 rounded-full
+                               bg-gradient-to-br from-violet-500 to-purple-600
+                               flex items-center justify-center
+                               cursor-grab active:cursor-grabbing
+                               shadow-md shadow-purple-500/40 border-2 border-white
+                               z-30"
+                    aria-label="拖动排序"
+                    role="button"
+                  >
+                    <svg className="w-3 h-3 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={3}>
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M4 8h16M4 16h16" />
+                    </svg>
+                  </div>
+
+                  <button
+                    onClick={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      onHide(id);
+                    }}
+                    onPointerDown={(e) => e.stopPropagation()}
+                    className="absolute -top-1.5 -right-1.5 w-5 h-5 rounded-full
+                               flex items-center justify-center
+                               bg-rose-50 shadow-sm border border-rose-100
+                               active:scale-90 z-30"
+                  >
+                    <svg className="w-2.5 h-2.5 text-rose-500" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={3}>
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                    </svg>
+                  </button>
+                </>
               )}
             </div>
           );

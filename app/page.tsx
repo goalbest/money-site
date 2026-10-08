@@ -16,6 +16,7 @@ import { useGoals } from "../lib/useGoals";
 import GoalModal from "./components/home/GoalModal";
 import DCAModal from "./components/home/DCAModal";
 import { useDCAPlans } from "../lib/useDCAPlans";
+import { useRecommendedTiles } from "../lib/useRecommendedTiles";
 
 
 export default function Home() {
@@ -27,7 +28,7 @@ export default function Home() {
 
   /* ============ 数据层 ============ */
   const { metrics, loading: metricsLoading } = useHomeMetrics();
-  const { layout, hydrated, moveWithinZone, moveToZone, reset } = useHomeLayout();
+  const { layout, hydrated, customized, moveWithinZone, moveToZone, reset } = useHomeLayout();
 
   /* ============ 资产快照（每日自动存档） ============ */
   const snap = useAssetSnapshots({
@@ -36,6 +37,9 @@ export default function Home() {
     inTransit: metrics.totalInTransit,
     ready: !metricsLoading && metrics.count > 0,
   });
+
+  const recommendedTiles = useRecommendedTiles(metrics, snap);
+  const tileIds = customized ? layout.tile : recommendedTiles;
 
   /* ============ 目标进度 ============ */
   const goalsBase = useGoals(metrics.totalAssets);
@@ -414,13 +418,20 @@ export default function Home() {
         </div>
 
         {/* ============ 编辑模式提示 ============ */}
-        {editMode && !searchMode && (
-          <div className="card p-3 mb-4 bg-purple-50 border border-purple-100 animate-fade-in">
-            <div className="text-[12px] text-purple-700 leading-relaxed px-1">
-              <span className="font-semibold">编辑模式</span> · 磁贴 ← → 换位，主模块 ↑ ↓ 换位，× 隐藏；完成后点右上角"完成"
-            </div>
-          </div>
-        )}
+{editMode && !searchMode && (
+  <div className="card p-3 mb-4 bg-purple-50 border border-purple-100 animate-fade-in">
+    <div className="text-[12px] text-purple-700 leading-relaxed px-1
+                    flex items-center gap-2">
+      <svg className="w-3.5 h-3.5 text-purple-500 flex-shrink-0"
+           fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2.5}>
+        <path strokeLinecap="round" strokeLinejoin="round" d="M4 7h16M4 12h16M4 17h16" />
+      </svg>
+      <span>
+        <span className="font-semibold">编辑模式</span> · 按住<span className="font-semibold">紫色条</span>拖动换位，点 <span className="font-semibold">×</span> 隐藏；完成后点右上角"完成"
+      </span>
+    </div>
+  </div>
+)}
 
         {/* ============ Hero 卡 ============ */}
         <div
@@ -632,7 +643,7 @@ export default function Home() {
                 {/* ============ 磁贴区 ============ */}
         {!searchMode && (
                     <HomeTiles
-            ids={layout.tile}
+            ids={tileIds}
             metrics={metrics}
             snap={snap}
             editMode={editMode}
@@ -644,64 +655,83 @@ export default function Home() {
 
         {/* ============ 主模块区 ============ */}
                 {!searchMode && (
-          <div className="space-y-4">
-            {layout.card.map((id, idx) => {
-              const isDragging = cardDraggingIdx === idx;
-              const isOver = cardOverIdx === idx && cardDraggingIdx !== null && cardDraggingIdx !== idx;
+  <div className="space-y-4">
+    {layout.card.map((id, idx) => {
+      const isDragging = cardDraggingIdx === idx;
+      const isOver = cardOverIdx === idx && cardDraggingIdx !== null && cardDraggingIdx !== idx;
 
-              return (
-                <div
-                  key={id}
-                  data-card-index={idx}
-                  onPointerDown={(e) => {
-                    if (!editMode) return;
-                    startCardDrag(e, idx);
-                  }}
-                  style={{ touchAction: editMode ? "none" : "auto" }}
-                  className={`animate-fade-in-up relative transition-all duration-200
-                              ${isDragging ? "opacity-40 scale-[0.98]" : ""}
-                              ${isOver ? "ring-2 ring-purple-400 ring-offset-2" : ""}
-                              ${editMode && !isDragging ? "animate-wiggle rounded-[18px] shadow-lg shadow-purple-500/15" : ""}`}
-                >
-                  <div className={editMode ? "pointer-events-none" : ""}>
-                    <ModuleRenderer
-                      id={id}
-                      metrics={metrics}
-                      snap={snap}
-                      goals={goals}
-                      dca={dca}
-                      rankData={rankData}
-                      onLinkClick={handleLinkClick}
-                      onTitleLongPress={editMode ? undefined : () => {
-                        setEditMode(true);
-                        try { (navigator as any).vibrate?.(15); } catch {}
-                      }}
-                    />
-                  </div>
-
-                  {editMode && (
-                    <button
-                      onClick={(e) => {
-                        e.preventDefault();
-                        e.stopPropagation();
-                        moveToZone(id, "hidden");
-                      }}
-                      onPointerDown={(e) => e.stopPropagation()}
-                      className="absolute -top-2.5 -right-2.5 w-7 h-7 rounded-full
-                                 flex items-center justify-center
-                                 bg-rose-500 shadow-md shadow-rose-500/30 border border-white
-                                 active:scale-90 z-20 pointer-events-auto"
-                    >
-                      <svg className="w-3.5 h-3.5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={3}>
-                        <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
-                      </svg>
-                    </button>
-                  )}
-                </div>
-              );
-            })}
+      return (
+        <div
+          key={id}
+          data-card-index={idx}
+          style={{ touchAction: editMode ? "none" : "auto" }}
+          className={`animate-fade-in-up relative transition-all duration-200
+                      ${isDragging ? "scale-[0.94] opacity-30" : ""}
+                      ${isOver ? "ring-2 ring-purple-400 ring-offset-2" : ""}
+                      ${editMode && !isDragging ? "animate-wiggle rounded-[18px] shadow-lg shadow-purple-500/15" : ""}`}
+        >
+          <div className={editMode ? "pointer-events-none" : ""}>
+            <ModuleRenderer
+              id={id}
+              metrics={metrics}
+              snap={snap}
+              goals={goals}
+              dca={dca}
+              rankData={rankData}
+              onLinkClick={handleLinkClick}
+              onTitleLongPress={editMode ? undefined : () => {
+                setEditMode(true);
+                try { (navigator as any).vibrate?.(15); } catch {}
+              }}
+            />
           </div>
-        )}
+
+          {editMode && (
+            <>
+             <div
+                onPointerDown={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  startCardDrag(e, idx);
+                }}
+                style={{ touchAction: "none" }}
+                className="absolute -top-3.5 right-10 w-8 h-8 rounded-full
+                           bg-gradient-to-br from-violet-500 to-purple-600
+                           flex items-center justify-center
+                           cursor-grab active:cursor-grabbing
+                           shadow-md shadow-purple-500/40 border-2 border-white
+                           z-20"
+                aria-label="拖动排序"
+                role="button"
+              >
+                <svg className="w-4 h-4 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2.5}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M4 7h16M4 12h16M4 17h16" />
+                </svg>
+              </div>
+
+              <button
+                onClick={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  moveToZone(id, "hidden");
+                }}
+                onPointerDown={(e) => e.stopPropagation()}
+                className="absolute -top-2.5 -right-2.5 w-7 h-7 rounded-full
+                           flex items-center justify-center
+                           bg-rose-500 shadow-md shadow-rose-500/30 border border-white
+                           active:scale-90 z-20"
+              >
+                <svg className="w-3.5 h-3.5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={3}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </>
+          )}
+        </div>
+      );
+    })}
+  </div>
+)}
 
         {/* ============ 管理全部模块按钮 ============ */}
         {!searchMode && !editMode && (
@@ -727,7 +757,18 @@ export default function Home() {
               {layout.tile.length + layout.card.length} 个已启用
             </span>
           </button>
-        )}
+        )} 
+{!searchMode && !editMode && !customized && (
+  <div className="mt-2 text-center text-[10px] text-slate-400">
+    磁贴根据你的数据智能推荐 ·
+    <button
+      onClick={() => setEditMode(true)}
+      className="text-purple-500 font-medium ml-1"
+    >
+      自定义
+    </button>
+  </div>
+)}
 
         {/* ============ 免责声明 ============ */}
         {!searchMode && !editMode && (

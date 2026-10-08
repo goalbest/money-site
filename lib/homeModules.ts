@@ -389,26 +389,32 @@ export const MODULE_MAP: Record<string, ModuleMeta> = Object.fromEntries(
 
 export const ALL_MODULE_IDS = MODULE_META.map(m => m.id);
 
-/** 默认布局（首次访问时的初始分区） */
+/** 默认布局（首次访问 / 恢复推荐时的初始分区） */
 export const DEFAULT_LAYOUT = {
   tile: [
     "assetTrend",
     "pending",
-    "monthStats",
-    "monthProfit",
     "navStale",
-    "abnormalDrop",
+    "monthProfit",
   ],
-    card: ["holdings", "topToday", "profitRank"],
+  card: [
+    "holdings",
+    "topToday",
+    "monthStats",
+  ],
   hidden: [
+    "abnormalDrop",
+    "takeProfit",
+    "stopLoss",
+    "profitRank",
+    "hotRank",
+    "newRank",
     "recentTx",
     "assetDistribution",
     "hotSearch",
     "newHigh",
     "idleLong",
     "streakWin",
-    "takeProfit",
-    "stopLoss",
     "concentration",
     "beatDeposit",
     "beatInflation",

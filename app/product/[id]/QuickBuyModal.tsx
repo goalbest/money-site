@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { supabase } from "../../../lib/supabase";
 import { recalcHoldingFromTransactions, fetchNavByDate } from "../../../lib/holdings";
 
@@ -29,28 +29,55 @@ export default function QuickBuyModal({
   const [msg, setMsg] = useState("");
   const [navLoading, setNavLoading] = useState(false);
 
-  /* 打开时初始化 */
+  /* ★ 用户是否手动改过净值输入框 */
+  const navTouchedRef = useRef(false);
+  /* ★ 上一次已处理的日期（避免重复触发） */
+  const prevDateRef = useRef("");
+
+  /* 打开时初始化 + 查一次当日净值 */
   useEffect(() => {
     if (!open) return;
-    setDate(todayStr());
+    const t = todayStr();
+    setDate(t);
+    prevDateRef.current = t;
+    navTouchedRef.current = false;
     setNav(defaultNav ? String(defaultNav) : "");
     setAmount("");
     setNote("");
     setMsg("");
-  }, [open, defaultNav]);
 
-  /* ★ 日期变化 → 自动查当日净值 */
+    let cancelled = false;
+    setNavLoading(true);
+    (async () => {
+      const n = await fetchNavByDate(productId, t);
+      if (!cancelled && n != null) setNav(n.toFixed(4));
+      if (!cancelled) setNavLoading(false);
+    })();
+    return () => { cancelled = true; };
+  }, [open, productId, defaultNav]);
+
+  /* ★ 日期变化 → 自动查净值（仅当用户未手动编辑过） */
   useEffect(() => {
     if (!open || !date) return;
+    if (prevDateRef.current === date) return;   // 已处理过这个日期
+    prevDateRef.current = date;
+    if (navTouchedRef.current) return;           // 用户手改过 → 不覆盖
+
     let cancelled = false;
+    setNavLoading(true);
     (async () => {
-      setNavLoading(true);
       const n = await fetchNavByDate(productId, date);
       if (!cancelled && n != null) setNav(n.toFixed(4));
       if (!cancelled) setNavLoading(false);
     })();
     return () => { cancelled = true; };
   }, [open, date, productId]);
+
+  /* ★ 用户手动改净值 → 打标记，之后不再自动覆盖 */
+  function handleNavChange(v: string) {
+    navTouchedRef.current = true;
+    setNav(v);
+  }
 
   if (!open) return null;
 
@@ -69,7 +96,6 @@ export default function QuickBuyModal({
     try {
       const addShares = amt / navNum;
 
-      /* 1) 先写交易记录 */
       await supabase.from("transactions").insert({
         user_id: Number(userId),
         product_id: productId,
@@ -81,7 +107,6 @@ export default function QuickBuyModal({
         note: note || (existingHolding ? "追加购买" : "购买"),
       });
 
-      /* 2) ★ 根据所有交易重算持仓（不用手动加减） */
       await recalcHoldingFromTransactions(userId, productId);
 
       localStorage.removeItem("cache_home_cache_v3");
@@ -150,7 +175,7 @@ export default function QuickBuyModal({
                     type="number"
                     step="0.0001"
                     value={nav}
-                    onChange={(e) => setNav(e.target.value)}
+                    onChange={(e) => handleNavChange(e.target.value)}
                     placeholder="1.0234"
                     className="input-field w-full px-4 py-3 text-base font-mono tabular"
                   />

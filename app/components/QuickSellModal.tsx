@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { supabase } from "../../lib/supabase";
 import { recalcHoldingFromTransactions, fetchNavByDate } from "../../lib/holdings";
 
@@ -24,28 +24,60 @@ export default function QuickSellModal({ open, holding, onClose, onSuccess }: Pr
   const [msg, setMsg] = useState("");
   const [navLoading, setNavLoading] = useState(false);
 
-  /* 打开时初始化 */
+  /* ★ 用户是否手动改过净值输入框 */
+  const navTouchedRef = useRef(false);
+  /* ★ 上一次已处理的日期 */
+  const prevDateRef = useRef("");
+
+  /* 打开时初始化 + 查一次当日净值 */
   useEffect(() => {
     if (!open) return;
+    const t = todayStr();
+    const pid = holding?.products?.id;
+
     setShares("");
+    setDate(t);
+    prevDateRef.current = t;
+    navTouchedRef.current = false;
     setNav(holding?.products?.unit_nav ? Number(holding.products.unit_nav).toFixed(4) : "");
-    setDate(todayStr());
     setNote("");
     setMsg("");
+
+    if (!pid) return;
+    let cancelled = false;
+    setNavLoading(true);
+    (async () => {
+      const n = await fetchNavByDate(pid, t);
+      if (!cancelled && n != null) setNav(n.toFixed(4));
+      if (!cancelled) setNavLoading(false);
+    })();
+    return () => { cancelled = true; };
   }, [open, holding]);
 
-  /* ★ 日期变化 → 自动查当日净值 */
+  /* ★ 日期变化 → 自动查净值（仅当用户未手动编辑过） */
   useEffect(() => {
-    if (!open || !date || !holding?.products?.id) return;
+    if (!open || !date) return;
+    const pid = holding?.products?.id;
+    if (!pid) return;
+    if (prevDateRef.current === date) return;    // 已处理
+    prevDateRef.current = date;
+    if (navTouchedRef.current) return;            // 用户手改过，不覆盖
+
     let cancelled = false;
+    setNavLoading(true);
     (async () => {
-      setNavLoading(true);
-      const n = await fetchNavByDate(holding.products.id, date);
+      const n = await fetchNavByDate(pid, date);
       if (!cancelled && n != null) setNav(n.toFixed(4));
       if (!cancelled) setNavLoading(false);
     })();
     return () => { cancelled = true; };
   }, [open, date, holding?.products?.id]);
+
+  /* ★ 用户手动改净值 */
+  function handleNavChange(v: string) {
+    navTouchedRef.current = true;
+    setNav(v);
+  }
 
   if (!open || !holding) return null;
 
@@ -70,7 +102,6 @@ export default function QuickSellModal({ open, holding, onClose, onSuccess }: Pr
       const remainShares = currentShares - sh;
       const isClosed = remainShares < 0.01;
 
-      /* 1) 写交易记录 */
       await supabase.from("transactions").insert({
         user_id: userId,
         product_id: holding.products.id,
@@ -82,7 +113,6 @@ export default function QuickSellModal({ open, holding, onClose, onSuccess }: Pr
         note: note || (isClosed ? "清仓" : "部分赎回"),
       });
 
-      /* 2) ★ 根据所有交易重算持仓 */
       await recalcHoldingFromTransactions(userId, holding.products.id);
 
       localStorage.removeItem("cache_home_cache_v3");
@@ -140,7 +170,7 @@ export default function QuickSellModal({ open, holding, onClose, onSuccess }: Pr
               <div>
                 <label className="block text-[11px] text-slate-500 mb-2">赎回净值</label>
                 <input type="number" step="0.0001" value={nav}
-                       onChange={(e) => setNav(e.target.value)}
+                       onChange={(e) => handleNavChange(e.target.value)}
                        className="input-field w-full px-4 py-3 text-[14px] font-mono tabular" />
               </div>
 
