@@ -29,7 +29,7 @@ if (!SUPABASE_URL || !SUPABASE_KEY) { console.error('❌ env 缺失'); process.e
 const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
 
 console.log('═══════════════════════════════');
-console.log('中国银行净值更新（Playwright 两步走）');
+console.log('中国银行净值更新（点击查看更多）');
 console.log('═══════════════════════════════\n');
 
 // ── 从 product_sources 读中国银行产品 ──
@@ -47,10 +47,10 @@ const BOC_PRODUCTS = (sources || []).map(s => ({
   productCode: s.params.product_id,
 }));
 
-console.log(`📌 读到 ${BOC_PRODUCTS.length} 个中国银行产品:`);
+console.log(`📌 读到 ${BOC_PRODUCTS.length} 个中国银行产品:\n`);
 BOC_PRODUCTS.forEach(p => console.log(`   - ${p.productCode}`));
-console.log('');
 if (BOC_PRODUCTS.length === 0) { console.log('无产品，退出'); process.exit(0); }
+console.log('');
 
 const browser = await chromium.launch({ headless: true });
 const context = await browser.newContext({
@@ -61,7 +61,49 @@ const context = await browser.newContext({
 const page = await context.newPage();
 
 let updated = 0, failed = 0;
-const today = new Date().toISOString().slice(0, 10);
+
+// 从文本中解析所有 (日期, 单位净值, 累计净值) 组合
+function parseNavList(text) {
+  const lines = text.split('\n').map(s => s.trim()).filter(Boolean);
+  const result = [];
+  for (let i = 0; i < lines.length - 2; i++) {
+    // 模式：日期 | 单位净值 | 数值 | 累计净值 | 数值 （可能顺序不同）
+    const dateMatch = lines[i].match(/^(\d{4})[\/\-](\d{1,2})[\/\-](\d{1,2})$/);
+    if (!dateMatch) continue;
+
+    const date = `${dateMatch[1]}-${dateMatch[2].padStart(2,'0')}-${dateMatch[3].padStart(2,'0')}`;
+    const next = lines[i + 1];
+    const nextNext = lines[i + 2];
+
+    // 找后面的净值
+    let nav = null, accum = null;
+    if (next && next.includes('单位净值')) {
+      const v = parseFloat(lines[i + 2]);
+      if (isFinite(v) && v > 0) nav = v;
+    }
+    if (nextNext && nextNext.includes('累计净值')) {
+      const v = parseFloat(lines[i + 3]);
+      if (isFinite(v) && v > 0) accum = v;
+    }
+
+    // 简化：如果 next 是数字，直接当 nav
+    if (nav === null && /^[0-9]+\.[0-9]+$/.test(next)) {
+      nav = parseFloat(next);
+    }
+
+    if (nav !== null) {
+      result.push({ date, nav, accum });
+    }
+  }
+  // 去重
+  const seen = new Set();
+  return result.filter(r => {
+    const k = r.date;
+    if (seen.has(k)) return false;
+    seen.add(k);
+    return true;
+  });
+}
 
 for (const p of BOC_PRODUCTS) {
   console.log(`→ [${p.dbId}] ${p.productCode}`);
@@ -69,72 +111,61 @@ for (const p of BOC_PRODUCTS) {
     // ① 访问详情页（带 productId）
     const detailUrl = `https://ebsnew.boc.cn/bocphone/VueLocalCli4/bocFinanceDetail/index.html#/productDetail?functionCode=bocFinanceProductDetail&productId=${p.productCode}`;
     await page.goto(detailUrl, { waitUntil: 'domcontentloaded', timeout: 45000 });
-    await page.waitForTimeout(3000);
+    await page.waitForTimeout(4000);
+
+    const detailText = await page.evaluate(() => document.body.innerText);
     console.log('   详情页已加载');
 
-    // ② 抓产品名 + 最新净值（详情页就有）
-    const detailContent = await page.evaluate(() => document.body.innerText);
-    const nameMatch = detailContent.match(/（[^）]*）([^\n(（]+?)\(([A-Z0-9]+)\)/);
+    // 从详情页抓产品名 + 最新净值
+    const nameMatch = detailText.match(/（[^）]*）([^\n(（|]+?)\(([A-Z0-9]+)\)/);
     const productName = nameMatch?.[1]?.trim() || null;
 
-    const navMatch = detailContent.match(/([0-9]+\.[0-9]{4})\s*$/m) 
-                  || detailContent.match(/单位净值[^\d]*([0-9]+\.[0-9]{4})/);
-    let latestNav = navMatch ? parseFloat(navMatch[1]) : null;
+    // 抓详情页的最新净值: "2026/10/08 | 单位净值 | 1.0024"
+    let latestFromDetail = null;
+    const latestMatch = detailText.match(/(\d{4}\/\d{1,2}\/\d{1,2})\s*\|\s*单位净值\s*\|\s*([0-9]+\.[0-9]+)/);
+    if (latestMatch) {
+      latestFromDetail = {
+        date: latestMatch[1].replace(/\//g, '-'),
+        nav: parseFloat(latestMatch[2]),
+        accum: null,
+      };
+      console.log(`   详情页最新: ${latestFromDetail.nav} @ ${latestFromDetail.date}`);
+    }
 
-    // ③ 用 JS 改 hash 到历史净值页
-    await page.evaluate(() => {
-      window.location.hash = '#/productDetail/profitList';
-    });
-    await page.waitForTimeout(5000);
-    console.log('   历史页已加载');
-
-    // 调试：打印页面文本
-    const debugText = await page.evaluate(() => document.body.innerText);
-    console.log('   页面文本前 800 字:');
-    console.log('   ' + debugText.slice(0, 800).replace(/\n/g, ' | '));
-
-    // 也打印 HTML 结构
-    const debugHTML = await page.evaluate(() => {
-      const tables = document.querySelectorAll('table');
-      if (tables.length > 0) return '找到 ' + tables.length + ' 个 table';
-      const rows = document.querySelectorAll('[class*="row"], [class*="Row"], [class*="list"]');
-      return 'table=0，其他 div 行: ' + rows.length;
-    });
-    console.log('   HTML 结构: ' + debugHTML);
-
-    // ④ 读历史表格 DOM（第一行 = 最新）
-    const rows = await page.evaluate(() => {
-      // 找所有含日期的行
-      const all = document.body.innerText.split('\n').map(s => s.trim()).filter(Boolean);
-      const result = [];
-      for (let i = 0; i < all.length; i++) {
-        if (/^\d{4}[-/]\d{1,2}[-/]\d{1,2}$/.test(all[i])) {
-          // 下一行应该是单位净值，再下一行是累计净值
-          const date = all[i];
-          const nav = all[i + 1];
-          const accum = all[i + 2];
-          if (/^[0-9]+\.[0-9]+$/.test(nav)) {
-            result.push({
-              date: date.replace(/\//g, '-'),
-              nav: parseFloat(nav),
-              accum: /^[0-9]+\.[0-9]+$/.test(accum) ? parseFloat(accum) : null,
-            });
-          }
-        }
+    // ② 点击"查看更多"
+    let clicked = false;
+    try {
+      const btn = await page.locator('text=查看更多').first();
+      if (await btn.count() > 0) {
+        await btn.click();
+        clicked = true;
+        console.log('   已点击"查看更多"');
+        await page.waitForTimeout(5000);
       }
-      return result.slice(0, 30); // 最多 30 条
-    });
+    } catch (e) {
+      console.log(`   点"查看更多"失败: ${e.message}`);
+    }
 
-    console.log(`   历史页拿到 ${rows.length} 条`);
+    // ③ 读页面文本，解析净值列表
+    const listText = await page.evaluate(() => document.body.innerText);
+    console.log(`   历史页文本前 300 字: ${listText.slice(0, 300).replace(/\n/g, ' | ')}`);
 
-    if (rows.length === 0) {
-      console.log('   ⚠️ 未解析到历史数据\n');
+    const list = parseNavList(listText);
+    console.log(`   解析到 ${list.length} 条`);
+
+    // 加上详情页最新一条（去重）
+    if (latestFromDetail && !list.find(r => r.date === latestFromDetail.date)) {
+      list.unshift(latestFromDetail);
+    }
+
+    if (list.length === 0) {
+      console.log('   ⚠️ 没有净值数据\n');
       failed++;
       continue;
     }
 
-    // ⑤ 批量写 nav_history
-    const navRows = rows.map(r => ({
+    // ④ 批量写 nav_history
+    const navRows = list.map(r => ({
       product_id: p.dbId,
       nav_date: r.date,
       unit_nav: r.nav,
@@ -150,8 +181,8 @@ for (const p of BOC_PRODUCTS) {
       continue;
     }
 
-    // ⑥ 更新 products 最新净值 + 名字
-    const latestRow = rows[0];
+    // ⑤ 更新 products
+    const latestRow = list[0];
     const updates = {
       unit_nav: latestRow.nav,
       nav_date: latestRow.date,
@@ -160,12 +191,11 @@ for (const p of BOC_PRODUCTS) {
     if (productName && !productName.startsWith('中行产品')) updates.name = productName;
 
     await supabase.from('products').update(updates).eq('id', p.dbId);
-
     await supabase.from('product_sources')
       .update({ last_fetch_at: new Date().toISOString(), last_error: null })
       .eq('id', p.srcId);
 
-    console.log(`   ✅ 写入 ${rows.length} 条，最新: ${latestRow.nav} @ ${latestRow.date}\n`);
+    console.log(`   ✅ 写入 ${list.length} 条，最新: ${latestRow.nav} @ ${latestRow.date}\n`);
     updated++;
     await page.waitForTimeout(1000);
   } catch (e) {
