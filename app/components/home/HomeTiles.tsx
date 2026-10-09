@@ -231,9 +231,9 @@ export default function HomeTiles({
     <div className="mb-4">
       <div
         className="flex gap-2.5 overflow-x-auto no-scrollbar
-                   snap-x snap-mandatory
+                   snap-x snap-proximity
                    py-1.5 scroll-smooth"
-        style={{ scrollbarWidth: "none", touchAction: "pan-y" }}
+        style={{ scrollbarWidth: "none", touchAction: "pan-x pan-y" }}
       >
         {visible.map((id, i) => {
           const meta = MODULE_MAP[id];

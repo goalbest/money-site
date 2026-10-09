@@ -27,7 +27,7 @@ export default function NavHistoryList({
   visibleCount = 8,
   itemHeight = 48,
 }: Props) {
-  // 按日期倒序（最新在上），并计算相邻差
+  // 按日期倒序（最新在上），并计算相邻差值
   const list = useMemo(() => {
     const sorted = [...rows].sort((a, b) =>
       String(a.nav_date).localeCompare(String(b.nav_date))
@@ -35,8 +35,8 @@ export default function NavHistoryList({
     return sorted.map((r, i) => {
       const cur = Number(r.unit_nav);
       const prev = i > 0 ? Number(sorted[i - 1].unit_nav) : null;
-      const diff =
-        prev != null && prev > 0 ? ((cur - prev) / prev) * 100 : null;
+      // ★ 日涨跌 = 今天净值 - 昨天净值（差值，不是百分比）
+      const diff = prev != null ? cur - prev : null;
       return {
         date: String(r.nav_date),
         nav: cur,
@@ -79,14 +79,14 @@ export default function NavHistoryList({
             {fmtNav(row.nav)}
           </span>
 
-          {/* 累计净值（小字） */}
+          {/* 累计净值 */}
           {row.accum != null && (
             <span className="font-mono text-[11px] text-slate-400 tabular text-right w-[60px] flex-shrink-0">
               {row.accum.toFixed(4)}
             </span>
           )}
 
-          {/* 日涨跌 */}
+          {/* 日涨跌（差值，不是百分比） */}
           <span
             className={`font-mono text-[12px] tabular text-right w-[68px] flex-shrink-0 ${
               row.diff == null
@@ -100,7 +100,7 @@ export default function NavHistoryList({
           >
             {row.diff == null
               ? "—"
-              : `${row.diff >= 0 ? "+" : ""}${row.diff.toFixed(3)}%`}
+              : `${row.diff >= 0 ? "+" : ""}${row.diff.toFixed(4)}`}
           </span>
         </div>
       )}

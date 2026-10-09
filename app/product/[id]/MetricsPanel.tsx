@@ -151,13 +151,13 @@ function useHorizontalDrag(onReorder: (from: number, to: number) => void) {
     }
     function onUp() {
       const d = dragRef.current;
-      if (d && d.from !== d.over) onReorder(d.from, d.over);
       dragRef.current = null;
       setDraggingIdx(null);
       setOverIdx(null);
       window.removeEventListener("pointermove", onMove);
       window.removeEventListener("pointerup", onUp);
       window.removeEventListener("pointercancel", onUp);
+      if (d && d.from !== d.over) onReorder(d.from, d.over);
     }
     window.addEventListener("pointermove", onMove, { passive: false });
     window.addEventListener("pointerup", onUp);
@@ -210,17 +210,6 @@ export default function MetricsPanel({ navList }: { navList: any[] }) {
   const flats = zeroItems.filter(i => i.diff === 0);
   const worst = zeroItems[0];
   const avg = negatives.length > 0 ? negatives.reduce((s, i) => s + i.diff, 0) / negatives.length : 0;
-
-  /* 上/下/左/右移动 */
-  function canMoveUp(idx: number) { return idx >= TOP_ROW; }
-  function canMoveDown(idx: number) { return idx < TOP_ROW && idx + TOP_ROW < TOTAL_CELLS; }
-  function canMoveLeft(idx: number) { return idx !== 0 && idx !== TOP_ROW; }
-  function canMoveRight(idx: number) { return idx !== TOP_ROW - 1 && idx !== TOTAL_CELLS - 1; }
-
-  function doMoveUp(idx: number) { if (canMoveUp(idx)) move(idx, idx - TOP_ROW); }
-  function doMoveDown(idx: number) { if (canMoveDown(idx)) move(idx, idx + TOP_ROW); }
-  function doMoveLeft(idx: number) { if (canMoveLeft(idx)) move(idx, idx - 1); }
-  function doMoveRight(idx: number) { if (canMoveRight(idx)) move(idx, idx + 1); }
 
   function renderCell(key: MetricKey) {
     switch (key) {
@@ -309,7 +298,7 @@ export default function MetricsPanel({ navList }: { navList: any[] }) {
         {editMode ? (
           <div className="flex-1 flex items-center justify-between">
             <span className="text-[10px] text-purple-600 bg-purple-50 px-2 py-0.5 rounded-full font-medium">
-              点箭头 / 拖 ⚏ 移动
+              拖 ⚏ 移动
             </span>
             <button
               type="button"
@@ -357,10 +346,6 @@ export default function MetricsPanel({ navList }: { navList: any[] }) {
               const idx = startIdx + localIdx;
               const isDragging = draggingIdx === idx;
               const isOver = overIdx === idx && draggingIdx !== idx && draggingIdx !== null;
-              const up = canMoveUp(idx);
-              const down = canMoveDown(idx);
-              const left = canMoveLeft(idx);
-              const right = canMoveRight(idx);
 
               return (
                 <div
@@ -371,92 +356,32 @@ export default function MetricsPanel({ navList }: { navList: any[] }) {
                   className={`relative flex-1 min-w-0 p-2.5 rounded-xl select-none
                               transition-all duration-200
                               ${cellBg(key)}
-                              ${isDragging ? "opacity-40 scale-95" : ""}
+                              ${isDragging ? "opacity-40 scale-[0.92]" : ""}
                               ${isOver ? "ring-2 ring-purple-400 ring-offset-1 scale-[1.05]" : ""}
                               ${editMode ? "animate-wiggle" : ""}`}
                 >
                   {renderCell(key)}
 
                   {editMode && (
-                    <div className="absolute -top-6 left-0 right-0 flex justify-center gap-0.5">
-                      {/* ↑ */}
-                      <button
-                        type="button"
-                        onPointerDown={(e) => e.stopPropagation()}
-                        onClick={(e) => { e.stopPropagation(); doMoveUp(idx); }}
-                        disabled={!up}
-                        className={`w-5 h-5 rounded-full flex items-center justify-center
-                                    shadow-sm transition-all active:scale-90
-                                    ${up ? "bg-white border border-slate-200" : "bg-slate-100 opacity-40"}`}
-                        aria-label="上移"
-                      >
-                        <svg className="w-2.5 h-2.5 text-slate-700" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={3}>
-                          <path strokeLinecap="round" strokeLinejoin="round" d="M5 15l7-7 7 7" />
-                        </svg>
-                      </button>
-
-                      {/* ← */}
-                      <button
-                        type="button"
-                        onPointerDown={(e) => e.stopPropagation()}
-                        onClick={(e) => { e.stopPropagation(); doMoveLeft(idx); }}
-                        disabled={!left}
-                        className={`w-5 h-5 rounded-full flex items-center justify-center
-                                    shadow-sm transition-all active:scale-90
-                                    ${left ? "bg-white border border-slate-200" : "bg-slate-100 opacity-40"}`}
-                        aria-label="左移"
-                      >
-                        <svg className="w-2.5 h-2.5 text-slate-700" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={3}>
-                          <path strokeLinecap="round" strokeLinejoin="round" d="M15 19l-7-7 7-7" />
-                        </svg>
-                      </button>
-
-                      {/* 拖拽手柄 */}
-                      <div
-                        onPointerDown={(e) => startDrag(e, idx)}
-                        style={{ touchAction: "none" }}
-                        className="w-5 h-5 rounded-full flex items-center justify-center
-                                   bg-gradient-to-br from-violet-500 to-purple-600
-                                   shadow-sm shadow-purple-500/25 cursor-grab active:cursor-grabbing"
-                        aria-label="拖动排序"
-                        role="button"
-                      >
-                        <svg className="w-2.5 h-2.5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2.5}>
-                          <path strokeLinecap="round" strokeLinejoin="round" d="M4 8h16M4 16h16" />
-                        </svg>
-                      </div>
-
-                      {/* → */}
-                      <button
-                        type="button"
-                        onPointerDown={(e) => e.stopPropagation()}
-                        onClick={(e) => { e.stopPropagation(); doMoveRight(idx); }}
-                        disabled={!right}
-                        className={`w-5 h-5 rounded-full flex items-center justify-center
-                                    shadow-sm transition-all active:scale-90
-                                    ${right ? "bg-white border border-slate-200" : "bg-slate-100 opacity-40"}`}
-                        aria-label="右移"
-                      >
-                        <svg className="w-2.5 h-2.5 text-slate-700" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={3}>
-                          <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
-                        </svg>
-                      </button>
-
-                      {/* ↓ */}
-                      <button
-                        type="button"
-                        onPointerDown={(e) => e.stopPropagation()}
-                        onClick={(e) => { e.stopPropagation(); doMoveDown(idx); }}
-                        disabled={!down}
-                        className={`w-5 h-5 rounded-full flex items-center justify-center
-                                    shadow-sm transition-all active:scale-90
-                                    ${down ? "bg-white border border-slate-200" : "bg-slate-100 opacity-40"}`}
-                        aria-label="下移"
-                      >
-                        <svg className="w-2.5 h-2.5 text-slate-700" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={3}>
-                          <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
-                        </svg>
-                      </button>
+                    <div
+                      onPointerDown={(e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        startDrag(e, idx);
+                      }}
+                      style={{ touchAction: "none" }}
+                      className="absolute -top-2.5 left-1/2 -translate-x-1/2 w-7 h-7 rounded-full
+                                 bg-gradient-to-br from-violet-500 to-purple-600
+                                 flex items-center justify-center
+                                 cursor-grab active:cursor-grabbing
+                                 shadow-md shadow-purple-500/40 border-2 border-white
+                                 z-20"
+                      aria-label="拖动排序"
+                      role="button"
+                    >
+                      <svg className="w-3.5 h-3.5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2.5}>
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M4 8h16M4 16h16" />
+                      </svg>
                     </div>
                   )}
                 </div>
@@ -466,7 +391,7 @@ export default function MetricsPanel({ navList }: { navList: any[] }) {
         );
 
         return (
-          <div className={`relative z-[3] space-y-1.5 ${editMode ? "pt-6" : ""}`}>
+          <div className={`relative z-[3] space-y-1.5 ${editMode ? "pt-3" : ""}`}>
             {renderGrid(topRow, 0)}
             {renderGrid(bottomRow, 3)}
           </div>

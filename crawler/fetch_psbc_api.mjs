@@ -8,7 +8,6 @@ import { fileURLToPath } from 'url';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
-// ── env ──
 (function loadEnv() {
   for (const p of [resolve(__dirname, '..', '.env.local'), resolve(process.cwd(), '.env.local')]) {
     if (existsSync(p)) {
@@ -31,26 +30,32 @@ if (!SUPABASE_URL || !SUPABASE_KEY) { console.error('❌ env 缺失'); process.e
 const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 
-// ── HTTPS agent（老协议兼容）──
+// ── HTTPS ──
 const AGENT = new https.Agent({
   rejectUnauthorized: false, minVersion: 'TLSv1', ciphers: 'DEFAULT@SECLEVEL=1',
   secureOptions: 0x4 | crypto.constants.SSL_OP_NO_SSLv2 | crypto.constants.SSL_OP_NO_SSLv3,
 });
-const API = 'https://s.psbc.com/portal/PsbcService/finquerytwo/';
+const HEADERS = {
+  'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/130.0.0.0 Safari/537.36',
+  'Referer': 'https://www.psbc-wm.com/',
+  'Accept': 'application/json, text/plain, */*',
+};
+const BASE = 'https://www.psbc-wm.com';
+const API = '/pswm-api';
 
-function get(url) {
+function getJson(url) {
   return new Promise((resolve, reject) => {
     const u = new URL(url);
     const req = https.request({
-      hostname: u.hostname, port: 443, path: u.pathname + u.search, method: 'GET',
-      headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/130.0.0.0 Safari/537.36',
-        'Accept': '*/*', 'Referer': 'https://www.psbc.com/',
-      }, agent: AGENT,
+      hostname: u.hostname, port: 443, path: u.pathname + u.search,
+      method: 'GET', headers: HEADERS, agent: AGENT,
     }, res => {
       let d = ''; res.setEncoding('utf8');
       res.on('data', c => d += c);
-      res.on('end', () => resolve(d));
+      res.on('end', () => {
+        try { resolve(JSON.parse(d)); }
+        catch (e) { reject(new Error(`不是 JSON: ${d.slice(0, 200)}`)); }
+      });
     });
     req.on('error', reject);
     req.setTimeout(20000, () => req.destroy(new Error('timeout')));
@@ -58,29 +63,33 @@ function get(url) {
   });
 }
 
-// 按关键词搜索（用产品代码搜）
-async function searchByKeyword(keyword) {
-  const ts = Date.now();
-  const params = new URLSearchParams({
-    callback: 'cb', currency: '', deadline: '', netproduct: '', risklevel: '',
-    entruststartamt: '', buystatus: '', product_status: '',
-    zhongyouflag: '', bankflag: '', investor_nature: '', order: '',
-    finkeyword: keyword, pageNum: '1', _: String(ts),
-  });
-  const text = await get(`${API}?${params}`);
-  const m = text.match(/^[^(]+\(([\s\S]*)\)\s*;?\s*$/);
-  if (!m) throw new Error('JSONP 解析失败');
-  return JSON.parse(m[1]);
+// 拿最新 3 条净值（用真实日期）
+async function fetchLatestNav(wpCode) {
+  const u = new URL(BASE + API + '/product/nvlist');
+  u.searchParams.set('wp_code', wpCode);
+  u.searchParams.set('pageSize', '3');
+  u.searchParams.set('pageNum', '1');
+  const json = await getJson(u.toString());
+  const list = json.data?.list || [];
+  return list.map(x => ({
+    nav_date: `${String(x.update_date).slice(0,4)}-${String(x.update_date).slice(4,6)}-${String(x.update_date).slice(6,8)}`,
+    unit_nav: parseFloat(x.nav),
+    accum_nav: parseFloat(x.accumulative_nav),
+  }));
 }
 
-// ══════════════ 主流程 ══════════════
+// ══════════════════════════════════
 console.log('═══════════════════════════════');
-console.log('邮储/中邮产品日常更新（按需抓）');
+console.log('邮储/中邮净值更新（真实日期）');
 console.log('═══════════════════════════════\n');
 
-const t0 = Date.now();
+// ── 周末跳过 ──
+const dayOfWeek = new Date().getDay();
+if (dayOfWeek === 0 || dayOfWeek === 6) {
+  console.log('📅 周末不抓取，退出');
+  process.exit(0);
+}
 
-// ── 读数据库里所有邮储/中邮产品 ──
 console.log('→ 读 products 表...');
 const { data: prods, error } = await supabase
   .from('products')
@@ -88,54 +97,51 @@ const { data: prods, error } = await supabase
   .in('bank', ['邮储银行', '中邮理财'])
   .not('bank_code', 'is', null);
 
-if (error) { console.error('❌ 读取失败:', error.message); process.exit(1); }
-
+if (error) { console.error('❌ 读 products 失败:', error.message); process.exit(1); }
 console.log(`← 读到 ${prods.length} 个产品\n`);
 if (prods.length === 0) { console.log('无产品，退出'); process.exit(0); }
 
-const today = new Date().toISOString().slice(0, 10);
-let updated = 0, failed = 0, notFound = 0;
+const t0 = Date.now();
+let ok = 0, failed = 0, noData = 0;
 
 for (let i = 0; i < prods.length; i++) {
   const p = prods[i];
   try {
-    const data = await searchByKeyword(p.bank_code);
-    const hit = (data.resultList || []).find(x => x.SECODE === p.bank_code);
-
-    if (!hit) {
-      console.log(`  ⚠️ [${i+1}/${prods.length}] ${p.name} 未找到`);
-      notFound++;
-      await sleep(400);
+    const list = await fetchLatestNav(p.bank_code);
+    if (list.length === 0) {
+      console.log(`  ⚠️ [${i+1}/${prods.length}] ${p.name} 无数据`);
+      noData++;
+      await sleep(300);
       continue;
     }
 
-    const nav = parseFloat(hit.LATEST_NET);
-    const seven = parseFloat(hit.SEVEN_ANNUAL_YIELD);
-    const wf = parseFloat(hit.WF_EARN);
+    const latest = list[0];
 
-    const updates = { nav_date: today };
-    if (isFinite(nav) && nav > 0) updates.unit_nav = nav;
-    if (isFinite(seven) && seven > 0) updates.annual_7d_yield = seven;
-    if (isFinite(wf) && wf > 0) updates.daily_income = wf;
+    // 批量写（一次写 3 条，避免漏掉）
+    await supabase.from('nav_history').upsert(
+      list.map(x => ({
+        product_id: p.id,
+        nav_date: x.nav_date,
+        unit_nav: x.unit_nav,
+        accum_nav: x.accum_nav,
+      })),
+      { onConflict: 'product_id,nav_date' }
+    );
 
-    await supabase.from('products').update(updates).eq('id', p.id);
+    // 更新 products
+    await supabase.from('products').update({
+      unit_nav: latest.unit_nav,
+      nav_date: latest.nav_date,
+    }).eq('id', p.id);
 
-    if (isFinite(nav) && nav > 0) {
-      await supabase.from('nav_history').upsert(
-        { product_id: p.id, nav_date: today, unit_nav: nav },
-        { onConflict: 'product_id,nav_date' }
-      );
-      console.log(`  ✅ [${i+1}/${prods.length}] ${p.name} → ${nav}`);
-    } else {
-      console.log(`  ✅ [${i+1}/${prods.length}] ${p.name} → 7日年化 ${seven}`);
-    }
-    updated++;
-    await sleep(500);
+    console.log(`  ✅ [${i+1}/${prods.length}] ${p.name} → ${latest.unit_nav} @ ${latest.nav_date}`);
+    ok++;
+    await sleep(400);
   } catch (e) {
     console.log(`  ❌ [${i+1}/${prods.length}] ${p.name}: ${e.message}`);
     failed++;
-    await sleep(1000);
+    await sleep(800);
   }
 }
 
-console.log(`\n🎉 更新 ${updated}，未找到 ${notFound}，失败 ${failed}（总耗时 ${((Date.now()-t0)/1000).toFixed(1)}s）`);
+console.log(`\n🎉 成功 ${ok}，无数据 ${noData}，失败 ${failed}（${((Date.now()-t0)/1000).toFixed(1)}s）`);

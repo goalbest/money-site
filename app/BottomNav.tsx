@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { useEffect, useRef, useState } from "react";
 
 const TABS = [
   {
@@ -33,7 +34,32 @@ const TABS = [
 
 export default function BottomNav() {
   const pathname = usePathname();
-    if (
+  const [hidden, setHidden] = useState(false);
+  const lastYRef = useRef(0);
+
+  useEffect(() => {
+    lastYRef.current = window.scrollY;
+
+    function onScroll() {
+      const y = window.scrollY;
+      const delta = y - lastYRef.current;
+
+      if (y < 80) {
+        setHidden(false);
+      } else if (delta > 6) {
+        setHidden(true);
+      } else if (delta < -6) {
+        setHidden(false);
+      }
+
+      lastYRef.current = y;
+    }
+
+    window.addEventListener("scroll", onScroll, { passive: true });
+    return () => window.removeEventListener("scroll", onScroll);
+  }, []);
+
+  if (
     pathname?.startsWith("/product/") ||
     pathname?.startsWith("/login") ||
     pathname?.startsWith("/add") ||
@@ -41,60 +67,87 @@ export default function BottomNav() {
   ) return null;
 
   return (
-    <div className="bottom-nav fixed bottom-0 left-0 right-0 z-50 pb-[env(safe-area-inset-bottom)]">
-      <div className="max-w-3xl mx-auto flex items-center justify-around h-16 px-2">
-        {TABS.map((tab) => {
-          if (tab.key === "add") {
-            return (
-              <Link key={tab.key} href={tab.href} className="relative -mt-7">
-                <div
-                  className="w-14 h-14 rounded-full flex items-center justify-center
-                             transition-all duration-300 ease-out
-                             hover:scale-105 active:scale-95"
-                  style={{
-                    background: "linear-gradient(135deg, #6366f1 0%, #a855f7 55%, #ec4899 100%)",
-                    boxShadow:
-                      "0 10px 24px -4px rgba(139, 92, 246, 0.45), 0 4px 10px -2px rgba(236, 72, 153, 0.3)",
-                  }}
+    <div
+      className="fixed left-0 right-0 z-50 pointer-events-none
+                 transition-all duration-800 ease-out"
+      style={{
+        bottom: "calc(12px + env(safe-area-inset-bottom))",
+        transform: hidden ? "translateY(200%)" : "translateY(0)",
+        opacity: hidden ? 0 : 1,
+      }}
+    >
+      <div className="max-w-3xl mx-auto px-4">
+        <div
+          className="pointer-events-auto
+                     rounded-[26px]
+                     border border-white/40
+                     flex items-center justify-around
+                     h-[58px] px-2
+                     relative"
+          style={{
+            background: "rgba(255, 255, 255, 0.55)",
+boxShadow:
+  "0 8px 32px rgba(15,23,42,0.08), 0 2px 8px rgba(15,23,42,0.04), inset 0 1px 0 rgba(255,255,255,0.6)",
+          }}
+        >
+          {TABS.map((tab) => {
+            if (tab.key === "add") {
+              return (
+                <Link
+                  key={tab.key}
+                  href={tab.href}
+                  className="relative -mt-5 flex-shrink-0 active:scale-95 transition-transform"
                 >
-                  <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M12 4v16m8-8H4" />
-                  </svg>
-                </div>
+                  <div
+                    className="w-12 h-12 rounded-full flex items-center justify-center
+                               transition-all duration-300 ease-out"
+                    style={{
+                      background: "linear-gradient(135deg, #6366f1 0%, #a855f7 55%, #ec4899 100%)",
+                      boxShadow:
+                        "0 8px 20px -6px rgba(139, 92, 246, 0.5), 0 3px 8px -2px rgba(236, 72, 153, 0.3)",
+                    }}
+                  >
+                    <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M12 5v14m7-7H5" />
+                    </svg>
+                  </div>
+                </Link>
+              );
+            }
+
+            const isActive = tab.href === "/"
+              ? pathname === "/"
+              : pathname?.startsWith(tab.href);
+
+            return (
+              <Link
+                key={tab.key}
+                href={tab.href}
+                className="flex-1 flex flex-col items-center justify-center gap-0.5 py-1
+                           transition-all duration-300 active:scale-95"
+              >
+                <svg
+                  className={`w-[22px] h-[22px] transition-all duration-300 ${
+                    isActive ? "text-purple-600" : "text-slate-500"
+                  }`}
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                  strokeWidth={isActive ? 2.3 : 1.9}
+                >
+                  <path strokeLinecap="round" strokeLinejoin="round" d={tab.icon} />
+                </svg>
+                <span
+                  className={`text-[10px] transition-colors duration-300 ${
+                    isActive ? "text-purple-600 font-semibold" : "text-slate-500"
+                  }`}
+                >
+                  {tab.label}
+                </span>
               </Link>
             );
-          }
-          const isActive = tab.href === "/"
-  ? pathname === "/"
-  : pathname?.startsWith(tab.href);
-          return (
-            <Link
-              key={tab.key}
-              href={tab.href}
-              className="flex-1 flex flex-col items-center justify-center gap-1 py-1
-                         transition-all duration-300"
-            >
-              <svg
-                className={`w-[22px] h-[22px] transition-all duration-300 ${
-                  isActive ? "text-purple-600" : "text-slate-400"
-                }`}
-                fill="none"
-                stroke="currentColor"
-                viewBox="0 0 24 24"
-                strokeWidth={isActive ? 2.3 : 1.9}
-              >
-                <path strokeLinecap="round" strokeLinejoin="round" d={tab.icon} />
-              </svg>
-              <span
-                className={`text-[10px] transition-colors duration-300 ${
-                  isActive ? "text-purple-600 font-semibold" : "text-slate-400"
-                }`}
-              >
-                {tab.label}
-              </span>
-            </Link>
-          );
-        })}
+          })}
+        </div>
       </div>
     </div>
   );
