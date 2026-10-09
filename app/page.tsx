@@ -391,16 +391,7 @@ export default function Home() {
           </div>
 
           {editMode ? (
-            <button
-              onClick={() => setEditMode(false)}
-              className="px-4 py-2 rounded-full
-                         bg-gradient-to-r from-violet-500 to-purple-600
-                         text-white text-[12px] font-semibold
-                         shadow-md shadow-purple-500/25
-                         active:scale-95 transition-all flex-shrink-0"
-            >
-              完成
-            </button>
+            <div className="w-9 h-9 flex-shrink-0" /> 
           ) : (
             <Link
               href="/profile"
@@ -666,7 +657,7 @@ export default function Home() {
           data-card-index={idx}
           style={{ touchAction: editMode ? "none" : "auto" }}
           className={`animate-fade-in-up relative transition-all duration-200
-                      ${isDragging ? "scale-[0.94] opacity-30" : ""}
+                      ${isDragging ? "scale-[0.94] opacity-40" : ""}
                       ${isOver ? "ring-2 ring-purple-400 ring-offset-2" : ""}
                       ${editMode && !isDragging ? "animate-wiggle rounded-[18px] shadow-lg shadow-purple-500/15" : ""}`}
         >
@@ -780,6 +771,25 @@ export default function Home() {
           </div>
         )}
       </div>
+
+      {/* ============ 编辑模式悬浮"完成"按钮 ============ */}
+      {editMode && (
+        <button
+          onClick={() => setEditMode(false)}
+          className="fixed right-5 z-[60]
+                     w-14 h-14 rounded-full
+                     bg-gradient-to-br from-violet-500 to-purple-600
+                     flex items-center justify-center
+                     shadow-xl shadow-purple-500/40
+                     active:scale-90 transition-transform"
+          style={{ bottom: "calc(88px + env(safe-area-inset-bottom))" }}
+          aria-label="完成编辑"
+        >
+          <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={3}>
+            <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+          </svg>
+        </button>
+      )}
 
       {/* ============ 抽屉 ============ */}
       <HomeDrawer

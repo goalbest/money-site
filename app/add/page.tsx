@@ -427,9 +427,17 @@ export default function AddPage() {
     setSubmitting(true);
     setMsg("");
 
+    const buyAmt = Number(amount);
+    const shareNum = Number(shares) || (nav ? buyAmt / Number(nav) : 0);
+
+    if (!shareNum || shareNum <= 0) {
+      setMsg("请填写净值或份额，否则无法计算持仓");
+      formRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+      setSubmitting(false);
+      return;
+    }
+
     try {
-      const buyAmt = Number(amount);
-      const shareNum = Number(shares) || (nav ? buyAmt / Number(nav) : 0);
 
       let productId: number | null = null;
       if (selected) productId = selected.id;
@@ -785,7 +793,7 @@ export default function AddPage() {
         )}
 
         {/* 搜不到产品时：粘贴分享链接 */}
-        {mode === "search" && (
+        {mode === "search" && !selected && (
           <div className="mb-4 animate-fade-in-up delay-2">
             <div className="flex items-start gap-2.5 mb-2.5 px-1">
               <div className="w-7 h-7 rounded-lg bg-purple-50
@@ -1150,9 +1158,12 @@ export default function AddPage() {
                   placeholder="自动计算"
                   className="input-field w-full px-3 py-3 text-[15px] font-mono tabular"
                 />
-                {amount && nav && (
-                  <div className="text-[10px] text-slate-400 mt-1.5 font-mono tabular">
-                    ¥ {Number(amount).toLocaleString("zh-CN")} ÷ {Number(nav).toFixed(4)} = {Number(shares).toFixed(4)} 份
+                {amount && Number(amount) > 0 && !nav && !shares && (
+                  <div className="text-[10px] text-amber-500 mt-1.5 flex items-center gap-1">
+                    <svg className="w-3 h-3 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2.5}>
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v2m0 4h.01M5 19h14a2 2 0 001.84-2.75L13.74 4a2 2 0 00-3.5 0L3.16 16.25A2 2 0 005 19z" />
+                    </svg>
+                    未填净值或份额，保存后持仓金额将算不出来
                   </div>
                 )}
               </div>

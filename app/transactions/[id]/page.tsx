@@ -4,6 +4,7 @@ import { useState, useEffect } from "react";
 import { useRouter, useParams } from "next/navigation";
 import Link from "next/link";
 import { supabase } from "../../../lib/supabase";
+import { recalcHoldingFromTransactions } from "../../../lib/holdings";
 import PageHeader from "../../PageHeader";
 
 export default function TransactionDetailPage() {
@@ -49,71 +50,6 @@ export default function TransactionDetailPage() {
     setLoading(false);
   }
 
-  async function recalcHolding(uid: string, productId: number) {
-    const { data: txs } = await supabase
-      .from("transactions")
-      .select("*")
-      .eq("user_id", uid)
-      .eq("product_id", productId)
-      .order("trade_date", { ascending: true })
-      .order("id", { ascending: true });
-
-    let totalAmount = 0;
-    let totalShares = 0;
-
-    (txs || []).forEach((t: any) => {
-      const amt = Number(t.amount || 0);
-      const sh = Number(t.shares || 0);
-      if (t.type === "buy") {
-        totalAmount += amt;
-        totalShares += sh;
-      } else if (t.type === "sell" || t.type === "close") {
-        totalAmount -= amt;
-        totalShares -= sh;
-      }
-    });
-
-    const { data: existing } = await supabase
-      .from("user_holdings")
-      .select("id")
-      .eq("user_id", uid)
-      .eq("product_id", productId)
-      .maybeSingle();
-
-    if (totalShares <= 0.001) {
-      if (existing) {
-        await supabase
-          .from("user_holdings")
-          .update({
-            status: "closed",
-            holding_amount: 0,
-            shares: 0,
-            closed_at: new Date().toISOString(),
-          })
-          .eq("id", existing.id);
-      }
-    } else {
-      if (existing) {
-        await supabase
-          .from("user_holdings")
-          .update({
-            holding_amount: totalAmount,
-            shares: totalShares,
-            status: "active",
-          })
-          .eq("id", existing.id);
-      } else {
-        await supabase.from("user_holdings").insert({
-          user_id: uid,
-          product_id: productId,
-          holding_amount: totalAmount,
-          shares: totalShares,
-          status: "active",
-          hold_date: txs?.[0]?.trade_date || new Date().toISOString().split("T")[0],
-        });
-      }
-    }
-  }
 
   async function handleSave() {
     if (!tx || !userId) return;
@@ -147,7 +83,7 @@ export default function TransactionDetailPage() {
     setSubmitting(true);
     try {
       await supabase.from("transactions").delete().eq("id", tx.id);
-      await recalcHolding(userId, tx.products.id);
+await recalcHoldingFromTransactions(userId, tx.products.id);
       localStorage.removeItem("cache_home_cache_v3");
       localStorage.removeItem("cache_transactions");
       localStorage.removeItem("cache_holdings");
