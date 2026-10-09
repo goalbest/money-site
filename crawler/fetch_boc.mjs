@@ -88,6 +88,20 @@ for (const p of BOC_PRODUCTS) {
     await page.waitForTimeout(5000);
     console.log('   历史页已加载');
 
+    // 调试：打印页面文本
+    const debugText = await page.evaluate(() => document.body.innerText);
+    console.log('   页面文本前 800 字:');
+    console.log('   ' + debugText.slice(0, 800).replace(/\n/g, ' | '));
+
+    // 也打印 HTML 结构
+    const debugHTML = await page.evaluate(() => {
+      const tables = document.querySelectorAll('table');
+      if (tables.length > 0) return '找到 ' + tables.length + ' 个 table';
+      const rows = document.querySelectorAll('[class*="row"], [class*="Row"], [class*="list"]');
+      return 'table=0，其他 div 行: ' + rows.length;
+    });
+    console.log('   HTML 结构: ' + debugHTML);
+
     // ④ 读历史表格 DOM（第一行 = 最新）
     const rows = await page.evaluate(() => {
       // 找所有含日期的行
