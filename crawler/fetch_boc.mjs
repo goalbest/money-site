@@ -32,7 +32,6 @@ console.log('══════════════════════�
 console.log('中国银行净值更新（点击查看更多）');
 console.log('═══════════════════════════════\n');
 
-// ── 从 product_sources 读中国银行产品 ──
 const { data: sources, error: srcErr } = await supabase
   .from('product_sources')
   .select('id, product_id, params')
@@ -62,12 +61,11 @@ const page = await context.newPage();
 
 let updated = 0, failed = 0;
 
-// 从文本中解析所有 (日期, 单位净值, 累计净值) 组合
+// 从文本解析 (日期, 单位净值, 累计净值)
 function parseNavList(text) {
   const lines = text.split('\n').map(s => s.trim()).filter(Boolean);
   const result = [];
   for (let i = 0; i < lines.length - 2; i++) {
-    // 模式：日期 | 单位净值 | 数值 | 累计净值 | 数值 （可能顺序不同）
     const dateMatch = lines[i].match(/^(\d{4})[\/\-](\d{1,2})[\/\-](\d{1,2})$/);
     if (!dateMatch) continue;
 
@@ -75,32 +73,19 @@ function parseNavList(text) {
     const next = lines[i + 1];
     const nextNext = lines[i + 2];
 
-    // 找后面的净值
+    // 日期后紧跟的两个数字 = 单位净值、累计净值
     let nav = null, accum = null;
-    if (next && next.includes('单位净值')) {
-      const v = parseFloat(lines[i + 2]);
-      if (isFinite(v) && v > 0) nav = v;
-    }
-    if (nextNext && nextNext.includes('累计净值')) {
-      const v = parseFloat(lines[i + 3]);
-      if (isFinite(v) && v > 0) accum = v;
-    }
-
-    // 简化：如果 next 是数字，直接当 nav
-    if (nav === null && /^[0-9]+\.[0-9]+$/.test(next)) {
-      nav = parseFloat(next);
-    }
+    if (/^[0-9]+\.[0-9]+$/.test(next)) nav = parseFloat(next);
+    if (/^[0-9]+\.[0-9]+$/.test(nextNext)) accum = parseFloat(nextNext);
 
     if (nav !== null) {
       result.push({ date, nav, accum });
     }
   }
-  // 去重
   const seen = new Set();
   return result.filter(r => {
-    const k = r.date;
-    if (seen.has(k)) return false;
-    seen.add(k);
+    if (seen.has(r.date)) return false;
+    seen.add(r.date);
     return true;
   });
 }
@@ -108,7 +93,6 @@ function parseNavList(text) {
 for (const p of BOC_PRODUCTS) {
   console.log(`→ [${p.dbId}] ${p.productCode}`);
   try {
-    // ① 访问详情页（带 productId）
     const detailUrl = `https://ebsnew.boc.cn/bocphone/VueLocalCli4/bocFinanceDetail/index.html#/productDetail?functionCode=bocFinanceProductDetail&productId=${p.productCode}`;
     await page.goto(detailUrl, { waitUntil: 'domcontentloaded', timeout: 45000 });
     await page.waitForTimeout(4000);
@@ -116,29 +100,14 @@ for (const p of BOC_PRODUCTS) {
     const detailText = await page.evaluate(() => document.body.innerText);
     console.log('   详情页已加载');
 
-    // 从详情页抓产品名 + 最新净值
     const nameMatch = detailText.match(/（[^）]*）([^\n(（|]+?)\(([A-Z0-9]+)\)/);
     const productName = nameMatch?.[1]?.trim() || null;
 
-    // 抓详情页的最新净值: "2026/10/08 | 单位净值 | 1.0024"
-    let latestFromDetail = null;
-    const latestMatch = detailText.match(/(\d{4}\/\d{1,2}\/\d{1,2})\s*\|\s*单位净值\s*\|\s*([0-9]+\.[0-9]+)/);
-    if (latestMatch) {
-      latestFromDetail = {
-        date: latestMatch[1].replace(/\//g, '-'),
-        nav: parseFloat(latestMatch[2]),
-        accum: null,
-      };
-      console.log(`   详情页最新: ${latestFromDetail.nav} @ ${latestFromDetail.date}`);
-    }
-
-    // ② 点击"查看更多"
-    let clicked = false;
+    // 点击"查看更多"
     try {
       const btn = await page.locator('text=查看更多').first();
       if (await btn.count() > 0) {
         await btn.click();
-        clicked = true;
         console.log('   已点击"查看更多"');
         await page.waitForTimeout(5000);
       }
@@ -146,17 +115,9 @@ for (const p of BOC_PRODUCTS) {
       console.log(`   点"查看更多"失败: ${e.message}`);
     }
 
-    // ③ 读页面文本，解析净值列表
     const listText = await page.evaluate(() => document.body.innerText);
-    console.log(`   历史页文本前 300 字: ${listText.slice(0, 300).replace(/\n/g, ' | ')}`);
-
     const list = parseNavList(listText);
     console.log(`   解析到 ${list.length} 条`);
-
-    // 加上详情页最新一条（去重）
-    if (latestFromDetail && !list.find(r => r.date === latestFromDetail.date)) {
-      list.unshift(latestFromDetail);
-    }
 
     if (list.length === 0) {
       console.log('   ⚠️ 没有净值数据\n');
@@ -164,7 +125,10 @@ for (const p of BOC_PRODUCTS) {
       continue;
     }
 
-    // ④ 批量写 nav_history
+    // 打印前 3 条调试
+    console.log('   前 3 条:');
+    list.slice(0, 3).forEach(r => console.log(`     ${r.date} | nav=${r.nav} | accum=${r.accum}`));
+
     const navRows = list.map(r => ({
       product_id: p.dbId,
       nav_date: r.date,
@@ -181,7 +145,6 @@ for (const p of BOC_PRODUCTS) {
       continue;
     }
 
-    // ⑤ 更新 products
     const latestRow = list[0];
     const updates = {
       unit_nav: latestRow.nav,
