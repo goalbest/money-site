@@ -1,5 +1,5 @@
 // crawler/fetch_psbc_history.mjs
-// 一次性补全邮储/中邮产品的全部历史净值
+// 一次性补全邮储/中邮产品的全部历史净值 + 规则
 
 import { createClient } from '@supabase/supabase-js';
 import https from 'https';
@@ -88,6 +88,28 @@ function fmtDate(d) {
   return `${s.slice(0, 4)}-${s.slice(4, 6)}-${s.slice(6, 8)}`;
 }
 
+// ── 解析 SFRULE 文本（中邮"赎回规则"字段）──
+function parseSFRule(sfrule) {
+  if (!sfrule) return { arrival: null, cutoff: null };
+
+  let arrival = null;
+  // "下个交易日" → 1
+  if (/下+个?交易日/.test(sfrule)) arrival = 1;
+  // "T+2" → 2
+  const tMatch = sfrule.match(/T\+?(\d+)/);
+  if (tMatch) arrival = parseInt(tMatch[1], 10);
+  // "3个工作日内" → 3
+  const wMatch = sfrule.match(/(\d+)\s*个工作日/);
+  if (wMatch) arrival = parseInt(wMatch[1], 10);
+
+  let cutoff = null;
+  // 只有"XX:XX前/之前"才当截止时间（避免把"12点到账"误判）
+  const cMatch = sfrule.match(/(\d{1,2}):(\d{2})\s*(?:前|之前)/);
+  if (cMatch) cutoff = `${cMatch[1].padStart(2, '0')}:${cMatch[2]}`;
+
+  return { arrival, cutoff };
+}
+
 // ══════════════ 主流程 ══════════════
 console.log('═══════════════════════════════');
 console.log('邮储/中邮历史净值补全');
@@ -113,7 +135,7 @@ for (const p of prods) {
   console.log(`   bank_code: ${p.bank_code}`);
 
   try {
-    // ① 搜索拿 wp_code（一般等于 bank_code，但不保证）
+    // ① 搜索拿 wp_code
     const s = await search(p.bank_code);
     const hit = (s.data?.list || []).find(x => x.wp_code === p.bank_code);
 
@@ -121,16 +143,25 @@ for (const p of prods) {
       console.log(`   ⚠️ 搜不到，跳过\n`);
       continue;
     }
+
+    // ★ Bug 1 修复：补回 wpCode 定义
     const wpCode = hit.wp_code;
-    console.log(`   命中: ${hit.wp_name}`);
-        // 从 search 接口读规则
+
+    // 从 search 接口读规则
     const riskLevel = hit.RISKLEVEL ? `R${hit.RISKLEVEL}` : null;
     const sfrule = hit.SFRULE || '';
-    const arrM = sfrule.match(/T\+?(\d+)/);
-    const arrivalDays = arrM ? parseInt(arrM[1], 10) : null;
-    const cutM = sfrule.match(/(\d{1,2}):(\d{2})/);
-    const cutoffTime = cutM ? `${cutM[1].padStart(2,'0')}:${cutM[2]}` : null;
+    const { arrival: arrivalDays, cutoff: cutoffTime } = parseSFRule(sfrule);
+
     console.log(`   规则: 风险${riskLevel || '?'}, 到账T+${arrivalDays || '?'}, 截止${cutoffTime || '?'}`);
+    console.log(`   SFRULE原文: "${sfrule}"`);
+
+    // ★ Bug 2 修复：无论有没有新净值，先更新规则
+    await supabase.from('products').update({
+      risk_level: riskLevel,
+      redeem_arrival_days: arrivalDays,
+      redeem_confirm_days: 1,
+      redeem_cutoff_time: cutoffTime,
+    }).eq('id', p.id);
 
     // ② 读数据库里该产品的最新日期
     const { data: latestRow } = await supabase
@@ -151,7 +182,7 @@ for (const p of prods) {
 
     if (totalPage === 0) { console.log('   ⚠️ 无历史\n'); continue; }
 
-    // ③ 翻页抓（增量：遇到旧数据就停）
+    // ④ 翻页抓（增量：遇到旧数据就停）
     const allRows = [];
     for (let page = 1; page <= totalPage; page++) {
       const res = page === 1 ? first : await nvlist(wpCode, page);
@@ -161,7 +192,7 @@ for (const p of prods) {
       let hitOld = false;
       for (const x of list) {
         const navDate = fmtDate(x.update_date);
-        if (navDate <= lastNavDate) { hitOld = true; break; }  // 遇到旧数据停
+        if (navDate <= lastNavDate) { hitOld = true; break; }
         const nav = parseFloat(x.nav);
         const accum = parseFloat(x.accumulative_nav);
         if (!isFinite(nav) || nav <= 0) continue;
@@ -183,7 +214,7 @@ for (const p of prods) {
       await sleep(300);
     }
 
-    // ④ 批量 upsert（每批 30，避免 stack depth 限制）
+    // ⑤ 批量 upsert nav_history
     let ok = 0;
     for (let i = 0; i < allRows.length; i += 30) {
       const batch = allRows.slice(i, i + 30);
@@ -199,19 +230,14 @@ for (const p of prods) {
     }
     totalUpserted += ok;
 
-    // ⑤ 更新 products 最新净值
-    // allRows[0] 是最新（第 1 页第 1 条）
+    // ⑥ 有净值时，更新 products 最新净值
     if (allRows.length > 0) {
       const latest = allRows[0];
-      console.log(`   📝 更新 products: ${latest.unit_nav} @ ${latest.nav_date}`);
-    await supabase.from('products').update({
-      unit_nav: latest.unit_nav,
-      nav_date: latest.nav_date,
-      risk_level: riskLevel,
-      redeem_arrival_days: arrivalDays,
-      redeem_confirm_days: 1,
-      redeem_cutoff_time: cutoffTime,
-    }).eq('id', p.id);
+      await supabase.from('products').update({
+        unit_nav: latest.unit_nav,
+        nav_date: latest.nav_date,
+      }).eq('id', p.id);
+      console.log(`   📝 products: ${latest.unit_nav} @ ${latest.nav_date}`);
     }
 
     console.log(`   ✅ 写入 ${ok} 条\n`);
