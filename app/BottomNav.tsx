@@ -41,11 +41,6 @@ export default function BottomNav() {
     // 切页时先重置显示状态
     setHidden(false);
 
-    // 延迟初始化，等浏览器的 scroll restoration 完成
-    const timer = setTimeout(() => {
-      lastYRef.current = window.scrollY;
-    }, 80);
-
     function onScroll() {
       const y = window.scrollY;
       const delta = y - lastYRef.current;
@@ -61,10 +56,17 @@ export default function BottomNav() {
       lastYRef.current = y;
     }
 
-    window.addEventListener("scroll", onScroll, { passive: true });
+    // ★ 延迟绑定 scroll 监听，避免浏览器 scroll restoration 误触发
+    let attached = false;
+    const timer = setTimeout(() => {
+      lastYRef.current = window.scrollY;
+      window.addEventListener("scroll", onScroll, { passive: true });
+      attached = true;
+    }, 500);
+
     return () => {
       clearTimeout(timer);
-      window.removeEventListener("scroll", onScroll);
+      if (attached) window.removeEventListener("scroll", onScroll);
     };
   }, [pathname]);
 

@@ -36,7 +36,6 @@ function fmtCompact(n: number): string {
   const abs = Math.abs(n);
   const sign = n < 0 ? "-" : "";
   if (abs >= 10000) return `${sign}${(abs / 10000).toFixed(2)}万`;
-  if (abs >= 1000) return `${sign}${(abs / 1000).toFixed(1)}k`;
   return `${sign}${abs.toFixed(0)}`;
 }
 
@@ -315,14 +314,26 @@ export default function CalendarPage() {
       });
       return rows.sort((a, b) => b.date.localeCompare(a.date));
     }
-    return Object.entries(dayMap)
-      .map(([date, profit]) => ({
-        date,
-        profit,
-        count: productDayMap[date] ? Object.keys(productDayMap[date]).length : 0,
-      }))
-      .sort((a, b) => b.date.localeCompare(a.date));
-  }, [viewMode, selectedProduct, productDayMap, dayMap]);
+
+    // ★ 按 bankFilter 过滤 + 只统计符合筛选的产品
+    const rows: { date: string; profit: number; count: number }[] = [];
+    Object.entries(productDayMap).forEach(([date, map]) => {
+      let sum = 0;
+      let count = 0;
+      Object.entries(map).forEach(([pidStr, profit]) => {
+        const pid = Number(pidStr);
+        const meta = holdings.find((h: any) => h.product_id === pid)?.products;
+        if (!meta) return;
+        if (bankFilter !== "全部" && meta.bank !== bankFilter) return;
+        sum += profit;
+        count++;
+      });
+      if (count > 0) {
+        rows.push({ date, profit: sum, count });
+      }
+    });
+    return rows.sort((a, b) => b.date.localeCompare(a.date));
+  }, [viewMode, selectedProduct, productDayMap, bankFilter, holdings]);
 
   const selectedProductDayProfit = selectedDate != null && selectedProduct != null
     ? productDayMap[selectedDate]?.[selectedProduct] ?? 0
@@ -417,8 +428,9 @@ export default function CalendarPage() {
     if (privacy) return "••";
     if (n === 0) return "0";
     const sign = n > 0 ? "+" : "";
-    if (Math.abs(n) >= 1000) return `${sign}${(n / 1000).toFixed(1)}k`;
-    return `${sign}${n.toFixed(0)}`;
+    const abs = Math.abs(n);
+    if (abs >= 10000) return `${sign}${(abs / 10000).toFixed(1)}万`;
+    return `${sign}${abs.toFixed(0)}`;
   }
   function fmtCellSmall(n: number) {
     if (privacy) return "••";

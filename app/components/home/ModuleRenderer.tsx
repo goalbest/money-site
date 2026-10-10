@@ -27,7 +27,6 @@ function fmtDelta(n: number): string {
   const sign = n >= 0 ? "+" : "-";
   const abs = Math.abs(n);
   if (abs >= 10000) return `${sign}${(abs / 10000).toFixed(2)}万`;
-  if (abs >= 1000) return `${sign}${(abs / 1000).toFixed(1)}k`;
   return `${sign}${abs.toFixed(2)}`;
 }
 function profitColor(n: number): string {

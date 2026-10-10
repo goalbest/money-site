@@ -39,9 +39,10 @@ const DEFAULT_THEME = { icon_bg: "#f1f3f7", icon_color: "#64748b" };
    格式化
    ============================================================ */
 function fmtCompact(n: number): string {
-  if (Math.abs(n) >= 10000) return `${(n / 10000).toFixed(2)}万`;
-  if (Math.abs(n) >= 1000) return `${(n / 1000).toFixed(1)}k`;
-  return n.toFixed(2);
+  const abs = Math.abs(n);
+  const sign = n < 0 ? "-" : "";
+  if (abs >= 10000) return `${sign}${(abs / 10000).toFixed(2)}万`;
+  return `${sign}${abs.toFixed(0)}`;
 }
 function fmtPercent(n: number): string {
   return `${n >= 0 ? "+" : ""}${n.toFixed(2)}%`;
@@ -50,7 +51,6 @@ function fmtDelta(n: number): string {
   const sign = n >= 0 ? "+" : "-";
   const abs = Math.abs(n);
   if (abs >= 10000) return `${sign}${(abs / 10000).toFixed(2)}万`;
-  if (abs >= 1000) return `${sign}${(abs / 1000).toFixed(1)}k`;
   return `${sign}${abs.toFixed(2)}`;
 }
 
