@@ -195,6 +195,7 @@ for (const p of prods) {
     // allRows[0] 是最新（第 1 页第 1 条）
     if (allRows.length > 0) {
       const latest = allRows[0];
+      console.log(`   📝 更新 products: ${latest.unit_nav} @ ${latest.nav_date}`);
       await supabase.from('products').update({
         unit_nav: latest.unit_nav,
         nav_date: latest.nav_date,

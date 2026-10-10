@@ -720,7 +720,7 @@ export default function CalendarPage() {
               let bgStyle: React.CSSProperties = {};
               if (!isSelected && profit !== null && profit !== 0) {
                 const intensity = Math.min(Math.abs(profit) / maxAbs, 1);
-                const alpha = 0.06 + intensity * 0.18;
+                const alpha = 0.06 + intensity * 0.22;   // 0.06 ~ 0.28
                 if (profit > 0) {
                   bgStyle.background = `rgba(244, 63, 94, ${alpha})`;
                 } else {
