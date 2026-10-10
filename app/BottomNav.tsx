@@ -35,11 +35,21 @@ const TABS = [
 export default function BottomNav() {
   const pathname = usePathname();
   const [hidden, setHidden] = useState(false);
+  /* ★ 切页瞬间禁用动画，让导航条"瞬移"回原位 */
+  const [noAnim, setNoAnim] = useState(false);
   const lastYRef = useRef(0);
 
   useEffect(() => {
-    // 切页时先重置显示状态
+    /* 切页：先无动画复位 */
+    setNoAnim(true);
     setHidden(false);
+    lastYRef.current = typeof window !== "undefined" ? window.scrollY : 0;
+
+    /* 50ms 后恢复动画，让后续滚动隐藏/显示正常过渡 */
+    const resumeTimer = setTimeout(() => {
+      setNoAnim(false);
+      lastYRef.current = window.scrollY;
+    }, 50);
 
     function onScroll() {
       const y = window.scrollY;
@@ -56,16 +66,17 @@ export default function BottomNav() {
       lastYRef.current = y;
     }
 
-    // ★ 延迟绑定 scroll 监听，避免浏览器 scroll restoration 误触发
+    /* 延迟绑定 scroll 监听，避免浏览器 scroll restoration 误触发 */
     let attached = false;
-    const timer = setTimeout(() => {
+    const attachTimer = setTimeout(() => {
       lastYRef.current = window.scrollY;
       window.addEventListener("scroll", onScroll, { passive: true });
       attached = true;
     }, 500);
 
     return () => {
-      clearTimeout(timer);
+      clearTimeout(resumeTimer);
+      clearTimeout(attachTimer);
       if (attached) window.removeEventListener("scroll", onScroll);
     };
   }, [pathname]);
@@ -79,12 +90,16 @@ export default function BottomNav() {
 
   return (
     <div
-      className="fixed left-0 right-0 z-50 pointer-events-none
-                 transition-all duration-800 ease-out"
+      className="fixed left-0 right-0 z-50 pointer-events-none"
       style={{
-        bottom: "calc(12px + env(safe-area-inset-bottom))",
+        bottom: "12px",
+        paddingBottom: "env(safe-area-inset-bottom)",
         transform: hidden ? "translateY(200%)" : "translateY(0)",
         opacity: hidden ? 0 : 1,
+        /* ★ 只过渡 transform 和 opacity，不碰 bottom */
+        transition: noAnim
+          ? "none"
+          : "transform 0.5s cubic-bezier(0.16, 1, 0.3, 1), opacity 0.5s ease-out",
       }}
     >
       <div className="max-w-3xl mx-auto px-4">
@@ -96,9 +111,9 @@ export default function BottomNav() {
                      h-[58px] px-2
                      relative"
           style={{
-            background: "rgba(255, 255, 255, 0.55)",
-boxShadow:
-  "0 8px 32px rgba(15,23,42,0.08), 0 2px 8px rgba(15,23,42,0.04), inset 0 1px 0 rgba(255,255,255,0.6)",
+            background: "rgba(255, 255, 255, 0.72)",
+            boxShadow:
+              "0 8px 32px rgba(15,23,42,0.08), 0 2px 8px rgba(15,23,42,0.04), inset 0 1px 0 rgba(255,255,255,0.6)",
           }}
         >
           {TABS.map((tab) => {
