@@ -88,25 +88,30 @@ console.log('   ✅ 会话已建立\n');
 function parseRules(text) {
   let riskLevel = null, arrivalDays = null, cutoffTime = null;
 
-  // 风险等级
+  // 1. 风险等级
   const riskM = text.match(/(?:P?R)(\d)/i);
   if (riskM) riskLevel = `R${riskM[1]}`;
 
-  // 到账：T+N / 最快T+N到账 / N个工作日到账
-  const arrPatterns = [
-    /T\+?(\d+)\s*(?:个?交易日?)?到账/,
-    /最快T\+?(\d+)/,
-    /(\d+)\s*个工作日[^\n]{0,15}到账/,
-    /T\+?(\d+)\s*个?工作日/,
-  ];
-  for (const re of arrPatterns) {
-    const m = text.match(re);
-    if (m) { arrivalDays = parseInt(m[1], 10); break; }
+  // 2. 截止时间：优先匹配“T日XX:XX前”
+  const cutM = text.match(/T日\s*(\d{1,2}):(\d{2})\s*(?:前|之前)/);
+  if (cutM) {
+    cutoffTime = `${cutM[1].padStart(2, '0')}:${cutM[2]}`;
+  } else {
+    // 备选：匹配任意“XX:XX前”
+    const anyCutM = text.match(/(\d{1,2}):(\d{2})\s*(?:前|之前)/);
+    if (anyCutM) cutoffTime = `${anyCutM[1].padStart(2, '0')}:${anyCutM[2]}`;
   }
 
-  // 截止时间
-  const cutM = text.match(/(\d{1,2}):(\d{2})\s*(?:前|之前)/);
-  if (cutM) cutoffTime = `${cutM[1].padStart(2, '0')}:${cutM[2]}`;
+  // 3. 到账时间：优先匹配复合规则中的“T+N日到账”
+  //    例如 “T+2日到账；否则T+3日到账” → 取T+2
+  const arrivalM = text.match(/T\+?(\d+)\s*日?\s*到账/);
+  if (arrivalM) {
+    arrivalDays = parseInt(arrivalM[1], 10);
+  } else {
+    // 备选：匹配“最快T+N”或“N个工作日到账”
+    const altM = text.match(/最快T\+?(\d+)/) || text.match(/(\d+)\s*个工作日[^\n]*到账/);
+    if (altM) arrivalDays = parseInt(altM[1], 10);
+  }
 
   return { riskLevel, arrivalDays, cutoffTime };
 }
