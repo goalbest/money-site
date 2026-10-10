@@ -517,30 +517,23 @@ export default function Home() {
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
               onFocus={() => searchTerm.trim() && setShowSuggest(true)}
-              onKeyDown={(e) => e.key === "Enter" && handleSearch()}
-              className="input-field w-full pl-11 pr-20 py-3.5 text-sm relative z-[1]"
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && searchTerm.trim()) {
+                  window.location.href = `/discover?q=${encodeURIComponent(searchTerm.trim())}`;
+                }
+              }}
+              className="input-field w-full pl-11 pr-10 py-3.5 text-sm relative z-[1]"
             />
             {searchTerm && (
               <button
                 onClick={clearSearch}
-                className="absolute inset-y-0 right-16 pr-2 flex items-center z-10"
+                className="absolute inset-y-0 right-3 pr-2 flex items-center z-10"
               >
                 <svg className="w-4 h-4 text-slate-400 hover:text-slate-600" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
                   <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
                 </svg>
               </button>
             )}
-            <button
-              onClick={handleSearch}
-              className="absolute inset-y-1.5 right-1.5 px-3.5 rounded-xl z-10
-                         bg-gradient-to-r from-violet-500 to-purple-600
-                         text-white text-[12px] font-semibold
-                         shadow-md shadow-purple-500/25
-                         hover:shadow-lg active:scale-95
-                         transition-all duration-200"
-            >
-              搜索
-            </button>
 
             {/* ★ 实时下拉建议 */}
             {showSuggest && suggestions.length > 0 && !searchMode && (
@@ -581,6 +574,20 @@ export default function Home() {
                     </Link>
                   );
                 })}
+
+                <Link
+                  href={`/discover?q=${encodeURIComponent(searchTerm.trim())}`}
+                  onClick={() => setShowSuggest(false)}
+                  className="flex items-center justify-center gap-1
+                             px-4 py-3 border-t divider
+                             text-[12px] text-purple-600 font-medium
+                             hover:bg-purple-50/50 transition-colors"
+                >
+                  查看全部结果
+                  <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2.5}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
+                  </svg>
+                </Link>
               </div>
             )}
           </div>

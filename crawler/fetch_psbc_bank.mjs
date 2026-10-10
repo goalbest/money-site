@@ -209,7 +209,7 @@ for (const n of byCodeMap.values()) {
   if (!p) {
     console.log(`🆕 新建: ${n.name} (${n.code})`);
     const newId = await createProduct({
-      name: n.name, bank: '邮储银行', bank_code: n.code,
+      name: n.name, bank: '中邮理财', bank_code: n.code,
       unit_nav: n.unit_nav, nav_date: n.nav_date,
     });
     if (!newId) continue;

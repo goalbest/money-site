@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useRef, useMemo } from "react";
+import { useState, useEffect, useMemo, useRef } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { supabase } from "../../../lib/supabase";
 import { getBankInfo } from "../../../lib/banks";
@@ -13,6 +13,7 @@ import EditHoldingModal from "../../components/EditHoldingModal";
 import NavHistoryList from "../../components/NavHistoryList";
 import { useDragSort } from "../../components/home/useDragSort";
 import { useProductLayout, type ProductModuleKey } from "../../../lib/useProductLayout";
+
 
 type Range = "7d" | "30d" | "90d" | "1y" | "all";
 const RANGES: { key: Range; label: string; days: number }[] = [
@@ -39,6 +40,29 @@ export default function ProductPage() {
   const [editHoldingOpen, setEditHoldingOpen] = useState(false);
   const [copied, setCopied] = useState(false);
   const [inWatchlist, setInWatchlist] = useState(false);
+  const longPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  function handleLongPressStart(e: React.PointerEvent) {
+    if (editMode) return;
+
+    // 长按的是按钮/链接/chips 区域 → 不触发
+    const target = e.target as HTMLElement;
+    if (target.closest("button, a, [data-no-drag], .segment-group")) return;
+
+    if (longPressTimer.current) clearTimeout(longPressTimer.current);
+    longPressTimer.current = setTimeout(() => {
+      setEditMode(true);
+      try { (navigator as any).vibrate?.(15); } catch {}
+      longPressTimer.current = null;
+    }, 500);
+  }
+  function handleLongPressEnd() {
+    if (longPressTimer.current) {
+      clearTimeout(longPressTimer.current);
+      longPressTimer.current = null;
+    }
+  }
+
 
   /* ============ 支持 ?action= 参数自动打开弹窗 ============ */
   useEffect(() => {
@@ -54,24 +78,16 @@ export default function ProductPage() {
 
   const { order: productOrder, hydrated: productLayoutHydrated, move: moveProductModule } = useProductLayout();
   const [editMode, setEditMode] = useState(false);
-  const pressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  /* ★ enabled 恒为 true，由外部决定何时调用 startDrag */
   const {
     draggingIndex: cardDraggingIdx,
     overIndex: cardOverIdx,
     startDrag: startCardDrag,
   } = useDragSort({
     onReorder: moveProductModule,
-    enabled: true,
+    enabled: editMode,
     dataKey: "product-module-index",
   });
-
-  /* 用 ref 保存最新的 startCardDrag */
-  const startDragRef = useRef(startCardDrag);
-  useEffect(() => {
-    startDragRef.current = startCardDrag;
-  }, [startCardDrag]);
 
   useEffect(() => {
     async function load() {
@@ -180,61 +196,6 @@ export default function ProductPage() {
         setInWatchlist(true);
       }
     } catch {}
-  }
-
-  /* ★ 长按标题：一步到位 → 进入编辑模式 + 立即拖动 */
-  function handleTitlePress(e: React.PointerEvent, idx: number) {
-    if (editMode) return;
-
-    const target = e.target as HTMLElement;
-    if (target.closest("button, a, [data-no-drag], .segment-group")) return;
-
-    if (pressTimer.current) clearTimeout(pressTimer.current);
-
-    /* ★ 立即捕获字段（React 19 合成事件在异步回调里会丢） */
-    const x0 = e.clientX;
-    const y0 = e.clientY;
-    const ptype = e.pointerType || "touch";
-    const btn = typeof e.button === "number" ? e.button : 0;
-
-    pressTimer.current = setTimeout(() => {
-      setEditMode(true);
-      try { (navigator as any).vibrate?.(15); } catch {}
-
-      /* ★ 用 plain object 代替合成事件 */
-      startDragRef.current(
-        {
-          pointerType: ptype,
-          button: btn,
-          clientX: x0,
-          clientY: y0,
-          preventDefault: () => {},
-          stopPropagation: () => {},
-        } as any,
-        idx
-      );
-      pressTimer.current = null;
-    }, 350);
-
-    function onMove(ev: PointerEvent) {
-      const dx = ev.clientX - x0;
-      const dy = ev.clientY - y0;
-      if (dx * dx + dy * dy > 64) {
-        if (pressTimer.current) {
-          clearTimeout(pressTimer.current);
-          pressTimer.current = null;
-        }
-        window.removeEventListener("pointermove", onMove);
-      }
-    }
-    window.addEventListener("pointermove", onMove, { passive: true });
-    window.addEventListener("pointerup", () => {
-      if (pressTimer.current) {
-        clearTimeout(pressTimer.current);
-        pressTimer.current = null;
-      }
-      window.removeEventListener("pointermove", onMove);
-    }, { once: true });
   }
 
   if (loading) {
@@ -363,13 +324,7 @@ export default function ProductPage() {
               <div className="text-[15px] font-bold text-slate-900">净值明细</div>
               <div className="text-[11px] text-slate-400 tabular">共 {navList.length} 条</div>
             </div>
-            <div className="px-5 py-2 bg-slate-50/60 border-b divider flex items-center gap-3">
-              <span className="text-[10px] font-semibold text-slate-500 tracking-wider w-[92px]">日期</span>
-              <span className="text-[10px] font-semibold text-slate-500 tracking-wider flex-1 text-right">单位净值</span>
-              <span className="text-[10px] font-semibold text-slate-500 tracking-wider text-right w-[60px]">累计</span>
-              <span className="text-[10px] font-semibold text-slate-500 tracking-wider text-right w-[68px]">日涨跌</span>
-            </div>
-            <NavHistoryList rows={navList} visibleCount={8} itemHeight={48} />
+            <NavHistoryList rows={navList} />
           </div>
         );
 
@@ -434,16 +389,7 @@ export default function ProductPage() {
             </div>
           </div>
           {editMode ? (
-            <button
-              onClick={() => setEditMode(false)}
-              className="px-4 py-2 rounded-full
-                         bg-gradient-to-r from-violet-500 to-purple-600
-                         text-white text-[12px] font-semibold
-                         shadow-md shadow-purple-500/25
-                         active:scale-95 transition-all flex-shrink-0"
-            >
-              完成
-            </button>
+            <div className="w-9 h-9 flex-shrink-0" />
           ) : (
             <button
               onClick={copyName}
@@ -538,8 +484,15 @@ export default function ProductPage() {
 
         {editMode && (
           <div className="card p-3 mb-4 bg-purple-50 border border-purple-100 animate-fade-in">
-            <div className="text-[12px] text-purple-700 leading-relaxed px-1">
-              <span className="font-semibold">编辑模式</span> · 拖动卡片排序，或点 ↑↓ 按钮；完成后点右上角"完成"
+            <div className="text-[12px] text-purple-700 leading-relaxed px-1
+                            flex items-center gap-2">
+              <svg className="w-3.5 h-3.5 text-purple-500 flex-shrink-0"
+                   fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2.5}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M4 7h16M4 12h16M4 17h16" />
+              </svg>
+              <span>
+                <span className="font-semibold">编辑模式</span> · 按住<span className="font-semibold">紫色手柄</span>拖动换位；完成后点右下角对勾
+              </span>
             </div>
           </div>
         )}
@@ -550,77 +503,54 @@ export default function ProductPage() {
 
           const isDragging = cardDraggingIdx === idx;
           const isOver = cardOverIdx === idx && cardDraggingIdx !== null && cardDraggingIdx !== idx;
-          const canUp = idx > 0;
-          const canDown = idx < productOrder.length - 1;
 
           return (
             <div
               key={key}
               data-product-module-index={idx}
               className={`relative mb-4 transition-all duration-200
-                          ${isDragging ? "opacity-40 scale-[0.98]" : ""}
+                          ${isDragging ? "opacity-40 scale-[0.96]" : ""}
                           ${isOver ? "ring-2 ring-purple-400 ring-offset-2 rounded-[20px]" : ""}
-                          ${editMode ? "animate-wiggle" : ""}`}
+                          ${editMode && !isDragging ? "animate-wiggle" : ""}`}
             >
               <div className={editMode ? "pointer-events-none" : ""}>
                 {content}
               </div>
 
+              {/* ★ 非编辑模式：顶部 52px 长按热区 */}
               {!editMode && (
                 <div
-                  onPointerDown={(e) => handleTitlePress(e, idx)}
+                  onTouchStart={handleLongPressStart}
+                  onTouchEnd={handleLongPressEnd}
+                  onTouchMove={handleLongPressEnd}
+                  onMouseDown={handleLongPressStart}
+                  onMouseUp={handleLongPressEnd}
+                  onMouseLeave={handleLongPressEnd}
                   className="absolute top-0 left-0 right-0 z-[2]"
-                  style={{
-                    height: 52,
-                    touchAction: "auto",
-                  }}
+                  style={{ height: 52, touchAction: "auto" }}
                 />
               )}
 
               {editMode && (
                 <div
-                  onPointerDown={(e) => startCardDrag(e, idx)}
-                  className="absolute inset-0 z-[1]"
+                  onPointerDown={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    startCardDrag(e, idx);
+                  }}
                   style={{ touchAction: "none" }}
-                />
-              )}
-
-              {editMode && (
-                <div className="absolute -top-2 right-2 flex gap-1 z-20">
-                  <button
-                    onPointerDown={(e) => e.stopPropagation()}
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      if (canUp) moveProductModule(idx, idx - 1);
-                    }}
-                    disabled={!canUp}
-                    className={`w-7 h-7 rounded-full flex items-center justify-center
-                                transition-all active:scale-90 shadow-sm
-                                ${canUp
-                                  ? "bg-white border border-slate-200 hover:bg-slate-50"
-                                  : "bg-slate-100 opacity-40"}`}
-                  >
-                    <svg className="w-3.5 h-3.5 text-slate-700" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2.5}>
-                      <path strokeLinecap="round" strokeLinejoin="round" d="M5 15l7-7 7 7" />
-                    </svg>
-                  </button>
-                  <button
-                    onPointerDown={(e) => e.stopPropagation()}
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      if (canDown) moveProductModule(idx, idx + 1);
-                    }}
-                    disabled={!canDown}
-                    className={`w-7 h-7 rounded-full flex items-center justify-center
-                                transition-all active:scale-90 shadow-sm
-                                ${canDown
-                                  ? "bg-white border border-slate-200 hover:bg-slate-50"
-                                  : "bg-slate-100 opacity-40"}`}
-                  >
-                    <svg className="w-3.5 h-3.5 text-slate-700" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2.5}>
-                      <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
-                    </svg>
-                  </button>
+                  className="absolute -top-3 right-3 w-8 h-8 rounded-full
+                             bg-gradient-to-br from-violet-500 to-purple-600
+                             flex items-center justify-center
+                             cursor-grab active:cursor-grabbing
+                             shadow-md shadow-purple-500/40 border-2 border-white
+                             z-20"
+                  aria-label="拖动排序"
+                  role="button"
+                >
+                  <svg className="w-4 h-4 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2.5}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M4 7h16M4 12h16M4 17h16" />
+                  </svg>
                 </div>
               )}
             </div>
@@ -630,6 +560,26 @@ export default function ProductPage() {
         <div className="h-4" />
       </div>
 
+      {/* ============ 编辑模式悬浮"完成"按钮 ============ */}
+      {editMode && (
+        <button
+          onClick={() => setEditMode(false)}
+          className="fixed right-5 z-[60]
+                     w-14 h-14 rounded-full
+                     bg-gradient-to-br from-violet-500 to-purple-600
+                     flex items-center justify-center
+                     shadow-xl shadow-purple-500/40
+                     active:scale-90 transition-transform"
+          style={{ bottom: "calc(88px + env(safe-area-inset-bottom))" }}
+          aria-label="完成编辑"
+        >
+          <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={3}>
+            <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+          </svg>
+        </button>
+      )}
+
+      {/* 底部操作栏 */}
       <div
         className="fixed bottom-0 left-0 right-0 z-40"
         style={{

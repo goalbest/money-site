@@ -96,7 +96,7 @@ console.log('══════════════════════�
 const { data: prods, error } = await supabase
   .from('products')
   .select('id, name, bank, bank_code')
-  .in('bank', ['邮储银行', '中邮理财'])
+  .eq('bank', '中邮理财')
   .not('bank_code', 'is', null)
   .order('id');
 

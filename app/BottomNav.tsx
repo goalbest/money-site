@@ -38,7 +38,13 @@ export default function BottomNav() {
   const lastYRef = useRef(0);
 
   useEffect(() => {
-    lastYRef.current = window.scrollY;
+    // 切页时先重置显示状态
+    setHidden(false);
+
+    // 延迟初始化，等浏览器的 scroll restoration 完成
+    const timer = setTimeout(() => {
+      lastYRef.current = window.scrollY;
+    }, 80);
 
     function onScroll() {
       const y = window.scrollY;
@@ -56,8 +62,11 @@ export default function BottomNav() {
     }
 
     window.addEventListener("scroll", onScroll, { passive: true });
-    return () => window.removeEventListener("scroll", onScroll);
-  }, []);
+    return () => {
+      clearTimeout(timer);
+      window.removeEventListener("scroll", onScroll);
+    };
+  }, [pathname]);
 
   if (
     pathname?.startsWith("/product/") ||

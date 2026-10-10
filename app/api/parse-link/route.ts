@@ -44,7 +44,6 @@ export async function POST(request: Request) {
       }
 
       // 中邮理财 vs 邮储银行（按 code 前缀判断）
-      const isZywm = /^(26|25|24|23)\d{2}/.test(productCode);
       product = {
         code: psbcProd.code,
         name: psbcProd.name,
@@ -55,7 +54,7 @@ export async function POST(request: Request) {
         riskLevel: psbcProd.riskLevel,
       };
       sourceType = isZywm ? 'zywm' : 'psbc';
-      bank = isZywm ? '中邮理财' : '邮储银行';
+      bank = '中邮理财';
       params = { product_code: psbcProd.code };
     } else if (hostname.includes('boc.cn')) {
       // 中国银行：只解析参数，不立即抓取（净值交给 Playwright 脚本）

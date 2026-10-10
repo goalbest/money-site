@@ -1,13 +1,11 @@
 "use client";
 
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useEffect, useRef, useCallback, Suspense } from "react";
+import { useSearchParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import { supabase } from "../../lib/supabase";
 import { getBankInfo, BANKS } from "../../lib/banks";
 
-/* ============================================================
-   排序维度
-   ============================================================ */
 type SortKey = "daily_return" | "annualized_1m" | "unit_nav" | "nav_date" | "steady";
 
 const SORTS: { key: SortKey; label: string; field: string }[] = [
@@ -20,15 +18,9 @@ const SORTS: { key: SortKey; label: string; field: string }[] = [
 
 const PAGE_SIZE = 30;
 
-/* ============================================================
-   localStorage 键
-   ============================================================ */
 const LS_BANK = "discover_bank_v1";
 const LS_SORT = "discover_sort_v1";
 
-/* ============================================================
-   产品行
-   ============================================================ */
 function ProductRow({
   product,
   index,
@@ -62,7 +54,6 @@ function ProductRow({
                  border-b divider last:border-b-0
                  transition-colors duration-150"
     >
-      {/* 排名 */}
       <span
         className={`w-7 h-7 rounded-lg flex items-center justify-center
                     text-[11px] font-bold flex-shrink-0 tabular ${rankStyle}`}
@@ -70,7 +61,6 @@ function ProductRow({
         {rank}
       </span>
 
-      {/* 银行 + 产品名 */}
       <div className="flex-1 min-w-0">
         <div className="flex items-center gap-1.5">
           <span
@@ -94,7 +84,6 @@ function ProductRow({
         </div>
       </div>
 
-      {/* 右侧：万收 / 年化 */}
       <div className="text-right flex-shrink-0">
         <div
           className={`font-mono font-bold text-[14px] tabular ${
@@ -121,10 +110,10 @@ function ProductRow({
   );
 }
 
-/* ============================================================
-   主页面
-   ============================================================ */
-export default function DiscoverPage() {
+function DiscoverInner() {
+  const searchParams = useSearchParams();
+  const router = useRouter();
+
   const [bank, setBank] = useState("全部");
   const [sortKey, setSortKey] = useState<SortKey>("daily_return");
   const [items, setItems] = useState<any[]>([]);
@@ -139,7 +128,7 @@ export default function DiscoverPage() {
 
   const reqIdRef = useRef(0);
 
-  /* ---------- 首帧：读 localStorage 记忆 ---------- */
+  /* ---------- 首帧：读 localStorage + URL 参数 ---------- */
   useEffect(() => {
     try {
       const b = localStorage.getItem(LS_BANK);
@@ -147,6 +136,14 @@ export default function DiscoverPage() {
       if (b) setBank(b);
       if (s && SORTS.some(x => x.key === s)) setSortKey(s);
     } catch {}
+
+    /* ★ 读 URL ?q=xxx 自动搜索 */
+    const q = searchParams?.get("q");
+    if (q && q.trim()) {
+      setSearchTerm(q);
+      runSearch(q.trim());
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   /* ---------- 数据加载 ---------- */
@@ -168,11 +165,9 @@ export default function DiscoverPage() {
         )
         .not(field, "is", null);
 
-      // 稳健：只显示近 1 月年化 > 0 且今日 > 0
       if (sortKey === "steady") {
         query = query.gt("annualized_1m", 0).gt("daily_return", 0);
       } else if (sortKey !== "nav_date") {
-        // 其他排序：过滤掉负值
         query = query.gt(field, 0);
       }
 
@@ -184,7 +179,6 @@ export default function DiscoverPage() {
         .order(field, { ascending: false })
         .range(offset, offset + PAGE_SIZE - 1);
 
-      // 防止竞态：只接受最新一次请求
       if (myReq !== reqIdRef.current) return;
 
       const list = data || [];
@@ -201,26 +195,19 @@ export default function DiscoverPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [bank, sortKey]);
 
-  /* ---------- 银行切换：记忆 ---------- */
   function selectBank(b: string) {
     setBank(b);
     try { localStorage.setItem(LS_BANK, b); } catch {}
   }
 
-  /* ---------- 排序切换：记忆 ---------- */
   function selectSort(k: SortKey) {
     setSortKey(k);
     try { localStorage.setItem(LS_SORT, k); } catch {}
   }
 
   /* ---------- 搜索 ---------- */
-  async function handleSearch() {
-    const term = searchTerm.trim();
-    if (!term) {
-      setSearchMode("");
-      setSearchResults([]);
-      return;
-    }
+  async function runSearch(term: string) {
+    if (!term) return;
     setSearchMode(term);
     setSearchLoading(true);
     let query = supabase
@@ -239,20 +226,30 @@ export default function DiscoverPage() {
     setSearchLoading(false);
   }
 
+  async function handleSearch() {
+    const term = searchTerm.trim();
+    if (!term) {
+      setSearchMode("");
+      setSearchResults([]);
+      return;
+    }
+    await runSearch(term);
+  }
+
   function clearSearch() {
     setSearchTerm("");
     setSearchMode("");
     setSearchResults([]);
+    /* 清掉 URL 上的 ?q= */
+    router.replace("/discover");
   }
 
-  /* ---------- 银行 chip 列表 ---------- */
   const bankChips = ["全部", ...BANKS.slice(0, -1).map(b => b.name)];
 
   return (
     <div className="min-h-screen pb-24">
       <div className="container mx-auto px-5 pt-8 max-w-3xl">
 
-        {/* 顶部标题 */}
         <div className="flex items-center gap-3 mb-5">
           <div className="flex-1">
             <div className="text-[22px] font-bold tracking-tight text-slate-900">
@@ -301,7 +298,6 @@ export default function DiscoverPage() {
           </button>
         </div>
 
-        {/* ============ 搜索结果模式 ============ */}
         {searchMode ? (
           <div className="animate-fade-in-up">
             <div className="flex items-center justify-between mb-3 px-1">
@@ -340,7 +336,6 @@ export default function DiscoverPage() {
           </div>
         ) : (
           <>
-            {/* ============ 银行 chip ============ */}
             <div className="mb-3 animate-fade-in-up">
               <div className="flex gap-2 overflow-x-auto no-scrollbar -mx-5 px-5 pb-1">
                 {bankChips.map((b) => {
@@ -360,7 +355,6 @@ export default function DiscoverPage() {
               </div>
             </div>
 
-            {/* ============ 排序 tabs ============ */}
             <div className="mb-4 animate-fade-in-up delay-1">
               <div className="segment-group flex">
                 {SORTS.map((s) => {
@@ -380,7 +374,6 @@ export default function DiscoverPage() {
               </div>
             </div>
 
-            {/* ============ 列表 ============ */}
             <div className="animate-fade-in-up delay-2">
               {loading ? (
                 <div className="card overflow-hidden">
@@ -415,7 +408,6 @@ export default function DiscoverPage() {
                     ))}
                   </div>
 
-                  {/* 加载更多 */}
                   {hasMore && (
                     <button
                       onClick={() => loadProducts(false)}
@@ -446,5 +438,17 @@ export default function DiscoverPage() {
         <div className="h-8" />
       </div>
     </div>
+  );
+}
+
+export default function DiscoverPage() {
+  return (
+    <Suspense fallback={
+      <div className="min-h-screen flex items-center justify-center">
+        <div className="text-slate-400 text-sm">加载中...</div>
+      </div>
+    }>
+      <DiscoverInner />
+    </Suspense>
   );
 }

@@ -36,9 +36,3 @@ jobs:
           SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
         run: node crawler/fetch_psbc_api.mjs
 
-      - name: Run NAV update script
-        env:
-          NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
-          NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
-          HEADLESS: 'true'
-        run: node crawler/update_holdings.mjs

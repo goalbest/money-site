@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 
-const STORAGE_KEY = "metrics_order_v1";
+const STORAGE_KEY = "metrics_order_v2";
 
 export const DEFAULT_METRICS_ORDER = [
   "nav",
@@ -10,6 +10,7 @@ export const DEFAULT_METRICS_ORDER = [
   "annualized",
   "wanfen",
   "zero",
+  "drawdown",
 ] as const;
 
 export type MetricKey = typeof DEFAULT_METRICS_ORDER[number];
@@ -21,7 +22,6 @@ function read(): MetricKey[] {
     if (!raw) return [...DEFAULT_METRICS_ORDER];
     const parsed = JSON.parse(raw);
     if (!Array.isArray(parsed)) return [...DEFAULT_METRICS_ORDER];
-    // 校验：只保留合法 key，缺失的补上
     const valid = new Set<string>(DEFAULT_METRICS_ORDER);
     const cleaned = parsed.filter((k: any) => valid.has(k));
     for (const k of DEFAULT_METRICS_ORDER) {

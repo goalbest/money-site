@@ -15,9 +15,6 @@ const PERIODS: { key: Period; label: string; days: number; endOffset: number }[]
   { key: "1y", label: "近1年", days: 365, endOffset: 0 },
 ];
 
-const TOP_ROW = 3;
-const TOTAL_CELLS = 5;
-
 function calcChange(navs: number[], days: number, endOffset: number): number | null {
   const endIdx = navs.length - 1 - endOffset;
   if (endIdx < 1) return null;
@@ -68,6 +65,40 @@ function calcZeroDays(navs: number[], days: number, endOffset: number) {
   return { zero, total };
 }
 
+/* ★ 最大回撤 */
+function calcMaxDrawdown(
+  navs: number[],
+  days: number,
+  endOffset: number
+): { percent: number; peak: number; trough: number } | null {
+  const endIdx = navs.length - 1 - endOffset;
+  if (endIdx < 1) return null;
+  const startIdx = Math.max(0, endIdx - days);
+  if (endIdx - startIdx < 2) return null;
+
+  let peak = navs[startIdx];
+  let maxDD = 0;
+  let bestPeak = peak;
+  let bestTrough = peak;
+
+  for (let i = startIdx + 1; i <= endIdx; i++) {
+    const cur = navs[i];
+    if (cur > peak) {
+      peak = cur;
+    } else if (peak > 0) {
+      const dd = (peak - cur) / peak;
+      if (dd > maxDD) {
+        maxDD = dd;
+        bestPeak = peak;
+        bestTrough = cur;
+      }
+    }
+  }
+
+  if (maxDD <= 0.00001) return null;
+  return { percent: maxDD * 100, peak: bestPeak, trough: bestTrough };
+}
+
 type ZeroItem = { date: string; diff: number };
 
 function collectZeroDays(navs: number[], dates: string[], days: number, endOffset: number): ZeroItem[] {
@@ -101,7 +132,6 @@ function useHorizontalDrag(onReorder: (from: number, to: number) => void) {
   const dragRef = useRef<{ from: number; over: number } | null>(null);
   const pressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  /* 非编辑模式：长按格子进入编辑 */
   function onPointerDownCell(e: React.PointerEvent, _idx: number) {
     if (editMode) return;
     if (pressTimer.current) clearTimeout(pressTimer.current);
@@ -128,7 +158,6 @@ function useHorizontalDrag(onReorder: (from: number, to: number) => void) {
     window.addEventListener("pointerup", onUp, { once: true });
   }
 
-  /* 拖拽手柄：只有手柄上按下才启动拖动 */
   function startDrag(e: React.PointerEvent, idx: number) {
     if (!editMode) return;
     e.preventDefault();
@@ -193,6 +222,7 @@ export default function MetricsPanel({ navList }: { navList: any[] }) {
   const annualized = calcAnnualized(navs, cfg.days, cfg.endOffset);
   const wanfen = calcWanFenSum(navs, cfg.days, cfg.endOffset);
   const { zero: zeroDays, total: totalDays } = calcZeroDays(navs, cfg.days, cfg.endOffset);
+  const maxDrawdown = calcMaxDrawdown(navs, cfg.days, cfg.endOffset);
 
   const zeroRatio = totalDays > 0 ? zeroDays / totalDays : 0;
   const zeroWarn = zeroRatio >= 0.4;
@@ -277,6 +307,20 @@ export default function MetricsPanel({ navList }: { navList: any[] }) {
             </div>
           </>
         );
+      case "drawdown":
+        return (
+          <>
+            <div className="text-[10px] text-amber-500 mb-1 truncate">回撤</div>
+            <div className={`font-mono font-bold text-[12px] tabular leading-none truncate ${maxDrawdown == null ? "text-slate-400" : "text-amber-600"}`}>
+              {maxDrawdown == null ? "—" : `-${maxDrawdown.percent.toFixed(2)}%`}
+            </div>
+            <div className="text-[9px] text-slate-400 mt-1.5 tabular truncate">
+              {maxDrawdown == null
+                ? periodLabel
+                : `${maxDrawdown.peak.toFixed(4)}→${maxDrawdown.trough.toFixed(4)}`}
+            </div>
+          </>
+        );
     }
   }
 
@@ -284,6 +328,7 @@ export default function MetricsPanel({ navList }: { navList: any[] }) {
     if (key === "annualized") return "bg-rose-50/60";
     if (key === "wanfen") return "bg-blue-50/60";
     if (key === "zero") return zeroBg;
+    if (key === "drawdown") return "bg-amber-50/60";
     return "bg-slate-50/80";
   }
 
@@ -335,68 +380,53 @@ export default function MetricsPanel({ navList }: { navList: any[] }) {
         )}
       </div>
 
-      {/* 3+2 布局 */}
-      {(() => {
-        const topRow = order.slice(0, 3);
-        const bottomRow = order.slice(3);
+      {/* ★ 6 格网格：小屏 2 列，大屏 3 列 */}
+      <div className={`grid grid-cols-2 sm:grid-cols-3 gap-1.5 relative z-[3] ${editMode ? "pt-3" : ""}`}>
+        {order.map((key, idx) => {
+          const isDragging = draggingIdx === idx;
+          const isOver = overIdx === idx && draggingIdx !== idx && draggingIdx !== null;
 
-        const renderGrid = (keys: MetricKey[], startIdx: number) => (
-          <div className="flex gap-1.5">
-            {keys.map((key, localIdx) => {
-              const idx = startIdx + localIdx;
-              const isDragging = draggingIdx === idx;
-              const isOver = overIdx === idx && draggingIdx !== idx && draggingIdx !== null;
+          return (
+            <div
+              key={key}
+              data-metrics-index={idx}
+              onPointerDown={(e) => onPointerDownCell(e, idx)}
+              style={{ touchAction: editMode ? "none" : "auto" }}
+              className={`relative min-w-0 p-2.5 rounded-xl select-none
+                          transition-all duration-200
+                          ${cellBg(key)}
+                          ${isDragging ? "opacity-40 scale-[0.92]" : ""}
+                          ${isOver ? "ring-2 ring-purple-400 ring-offset-1 scale-[1.05]" : ""}
+                          ${editMode ? "animate-wiggle" : ""}`}
+            >
+              {renderCell(key)}
 
-              return (
+              {editMode && (
                 <div
-                  key={key}
-                  data-metrics-index={idx}
-                  onPointerDown={(e) => onPointerDownCell(e, idx)}
-                  style={{ touchAction: editMode ? "none" : "auto" }}
-                  className={`relative flex-1 min-w-0 p-2.5 rounded-xl select-none
-                              transition-all duration-200
-                              ${cellBg(key)}
-                              ${isDragging ? "opacity-40 scale-[0.92]" : ""}
-                              ${isOver ? "ring-2 ring-purple-400 ring-offset-1 scale-[1.05]" : ""}
-                              ${editMode ? "animate-wiggle" : ""}`}
+                  onPointerDown={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    startDrag(e, idx);
+                  }}
+                  style={{ touchAction: "none" }}
+                  className="absolute -top-2.5 left-1/2 -translate-x-1/2 w-7 h-7 rounded-full
+                             bg-gradient-to-br from-violet-500 to-purple-600
+                             flex items-center justify-center
+                             cursor-grab active:cursor-grabbing
+                             shadow-md shadow-purple-500/40 border-2 border-white
+                             z-20"
+                  aria-label="拖动排序"
+                  role="button"
                 >
-                  {renderCell(key)}
-
-                  {editMode && (
-                    <div
-                      onPointerDown={(e) => {
-                        e.preventDefault();
-                        e.stopPropagation();
-                        startDrag(e, idx);
-                      }}
-                      style={{ touchAction: "none" }}
-                      className="absolute -top-2.5 left-1/2 -translate-x-1/2 w-7 h-7 rounded-full
-                                 bg-gradient-to-br from-violet-500 to-purple-600
-                                 flex items-center justify-center
-                                 cursor-grab active:cursor-grabbing
-                                 shadow-md shadow-purple-500/40 border-2 border-white
-                                 z-20"
-                      aria-label="拖动排序"
-                      role="button"
-                    >
-                      <svg className="w-3.5 h-3.5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2.5}>
-                        <path strokeLinecap="round" strokeLinejoin="round" d="M4 8h16M4 16h16" />
-                      </svg>
-                    </div>
-                  )}
+                  <svg className="w-3.5 h-3.5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2.5}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M4 8h16M4 16h16" />
+                  </svg>
                 </div>
-              );
-            })}
-          </div>
-        );
-
-        return (
-          <div className={`relative z-[3] space-y-1.5 ${editMode ? "pt-3" : ""}`}>
-            {renderGrid(topRow, 0)}
-            {renderGrid(bottomRow, 3)}
-          </div>
-        );
-      })()}
+              )}
+            </div>
+          );
+        })}
+      </div>
 
       {/* 挂0 展开按钮 */}
       {!editMode && zeroDays > 0 && (

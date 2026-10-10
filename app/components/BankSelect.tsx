@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useMemo } from "react";
-import { BANKS } from "../../lib/banks";
+import { BANKS, matchBanks } from "../../lib/banks";
 
 type Props = {
   open: boolean;
@@ -55,12 +55,7 @@ export default function BankSelect({ open, current, onClose, onSelect }: Props) 
   const { commonList, groupedOthers, fallbackList, searchMode, total } = useMemo(() => {
     const term = search.trim().toLowerCase();
     const filtered = term
-      ? BANKS.filter(
-          b =>
-            b.name.toLowerCase().includes(term) ||
-            b.label.toLowerCase().includes(term) ||
-            b.keywords.some(k => k.toLowerCase().includes(term))
-        )
+      ? matchBanks(search)   // ★ 用新的模糊匹配
       : BANKS;
 
     // 搜索模式：不分组，直接平铺

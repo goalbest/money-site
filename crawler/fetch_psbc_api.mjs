@@ -83,18 +83,12 @@ console.log('══════════════════════�
 console.log('邮储/中邮净值更新（真实日期）');
 console.log('═══════════════════════════════\n');
 
-// ── 周末跳过 ──
-const dayOfWeek = new Date().getDay();
-if (dayOfWeek === 0 || dayOfWeek === 6) {
-  console.log('📅 周末不抓取，退出');
-  process.exit(0);
-}
 
 console.log('→ 读 products 表...');
 const { data: prods, error } = await supabase
   .from('products')
   .select('id, name, bank, bank_code')
-  .in('bank', ['邮储银行', '中邮理财'])
+  .eq('bank', '中邮理财')
   .not('bank_code', 'is', null);
 
 if (error) { console.error('❌ 读 products 失败:', error.message); process.exit(1); }
