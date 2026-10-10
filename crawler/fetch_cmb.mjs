@@ -177,15 +177,23 @@ for (const p of CMB_PRODUCTS) {
           accum_nav: parseFloat(x.totalNetValue),
         }));
 
-      // 如果本页最旧日期 <= 数据库最新 → 翻到已知区域，停止
-      const oldestInPage = list[list.length - 1]?.date;
-      if (oldestInPage && oldestInPage <= lastNavDate) {
-        allRows.push(...newRows);
-        console.log(`   翻到已知区域（${oldestInPage}），停止翻页`);
+      // 只保留比数据库新的数据
+      const newRows = list
+        .filter(x => x.date > lastNavDate)
+        .map(x => ({
+          product_id: p.dbId,
+          nav_date: x.date,
+          unit_nav: parseFloat(x.unitNetValue),
+          accum_nav: parseFloat(x.totalNetValue),
+        }));
+      allRows.push(...newRows);
+
+      // 如果本页出现旧数据 → 已经翻到已知区域 → 停止翻页
+      const hasOld = list.some(x => x.date <= lastNavDate);
+      if (hasOld) {
+        console.log(`   翻到已知区域，停止翻页`);
         break;
       }
-
-      allRows.push(...newRows);
 
       if (list.length < 30) break;
       const next = reqY1?.yNavDat;
@@ -196,19 +204,7 @@ for (const p of CMB_PRODUCTS) {
       await page.waitForTimeout(800);
     }
 
-    if (allRows.length === 0) { console.log('   ⚠️ 无数据\n'); continue; }
-    console.log(`   拿到 ${allRows.length} 条净值（${round + 1} 页）`);
-
-    console.log(`   最新: ${latest.unitNetValue} @ ${latest.date}`);
-
-    // ── 批量写入 nav_history ──
-    const { error } = await supabase.from('nav_history').upsert(allRows, {
-      onConflict: 'product_id,nav_date',
-    });
-    if (error) { console.log(`   ❌ upsert 失败: ${error.message}\n`); continue; }
-    totalUpserted += allRows.length;
-
-    // 如果有真名且当前是占位符 → 更新名字
+    // ── 名字更新（独立跑，不依赖有无新数据）──
     if (realName) {
       const { data: cur } = await supabase
         .from('products').select('name').eq('id', p.dbId).single();
@@ -217,6 +213,22 @@ for (const p of CMB_PRODUCTS) {
         console.log(`   名字已更新: ${realName}`);
       }
     }
+
+    // ── 无新数据 → 不写 nav_history，只更新名字 ──
+    if (allRows.length === 0) {
+      console.log(`   ✅ 无新数据（已是最新 ${lastNavDate}）\n`);
+      continue;
+    }
+
+    console.log(`   拿到 ${allRows.length} 条新净值（${round + 1} 页）`);
+    console.log(`   最新: ${latest.unitNetValue} @ ${latest.date}`);
+
+    // ── 批量写入 nav_history ──
+    const { error } = await supabase.from('nav_history').upsert(allRows, {
+      onConflict: 'product_id,nav_date',
+    });
+    if (error) { console.log(`   ❌ upsert 失败: ${error.message}\n`); continue; }
+    totalUpserted += allRows.length;
 
     // ── 更新 products 最新净值 ──
     const updates = {
