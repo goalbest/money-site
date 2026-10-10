@@ -1,7 +1,10 @@
 // crawler/fetch_abc.mjs
-// 农银理财净值抓取（官方 API，无签名）
+// 农银理财净值抓取（兼容老旧TLS + 备用域名）
 
 import { createClient } from '@supabase/supabase-js';
+import https from 'https';
+import http from 'http';
+import crypto from 'crypto';
 import { readFileSync, existsSync } from 'fs';
 import { resolve, dirname } from 'path';
 import { fileURLToPath } from 'url';
@@ -31,7 +34,68 @@ if (!SUPABASE_URL || !SUPABASE_KEY) { console.error('❌ env 缺失'); process.e
 const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 
-const API = 'https://ewealth.abchina.com/app/data/api/DataService/OwnProdNetValueFilterV3';
+// ── 兼容老旧 TLS 的 Agent ──
+const AGENT = new https.Agent({
+  rejectUnauthorized: false,
+  minVersion: 'TLSv1',
+  ciphers: 'DEFAULT@SECLEVEL=1',
+  secureOptions: 0x4 | crypto.constants.SSL_OP_NO_SSLv2 | crypto.constants.SSL_OP_NO_SSLv3,
+});
+
+const HEADERS = {
+  'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/130.0.0.0 Safari/537.36',
+  'Referer': 'https://wx.abchina.com/',
+  'Accept': 'application/json, text/plain, */*',
+};
+
+// 通用 GET（自动尝试 HTTPS 和 HTTP）
+function httpGet(url) {
+  return new Promise((resolve, reject) => {
+    const u = new URL(url);
+    const isHttps = u.protocol === 'https:';
+    const lib = isHttps ? https : http;
+    const opts = {
+      hostname: u.hostname,
+      port: isHttps ? 443 : 80,
+      path: u.pathname + u.search,
+      method: 'GET',
+      headers: HEADERS,
+      ...(isHttps ? { agent: AGENT } : {}),
+    };
+    const req = lib.request(opts, (res) => {
+      let d = '';
+      res.on('data', c => d += c);
+      res.on('end', () => resolve({ status: res.statusCode, body: d }));
+    });
+    req.on('error', reject);
+    req.setTimeout(20000, () => req.destroy(new Error('timeout')));
+    req.end();
+  });
+}
+
+// ── 尝试多个域名和协议组合，返回第一个可用的 ──
+const ENDPOINTS = [
+  'https://ewealth.abchina.com/app/data/api/DataService/OwnProdNetValueFilterV3',
+  'http://ewealth.abchina.com/app/data/api/DataService/OwnProdNetValueFilterV3',
+  'https://ewealth.abchina.com.cn/app/data/api/DataService/OwnProdNetValueFilterV3',
+  'http://ewealth.abchina.com.cn/app/data/api/DataService/OwnProdNetValueFilterV3',
+];
+
+async function fetchNav(productCode) {
+  for (const base of ENDPOINTS) {
+    const url = `${base}?i=1&s=15000&w=${encodeURIComponent(productCode)}`;
+    try {
+      const { status, body } = await httpGet(url);
+      if (status === 200) {
+        const json = JSON.parse(body);
+        return json;
+      }
+    } catch (e) {
+      // 试下一个
+    }
+  }
+  throw new Error('所有端点均失败');
+}
 
 console.log('═══════════════════════════════');
 console.log('农银理财净值更新');
@@ -57,19 +121,6 @@ ABC_PRODUCTS.forEach(p => console.log(`   - ${p.productCode}`));
 if (ABC_PRODUCTS.length === 0) { console.log('无产品，退出'); process.exit(0); }
 console.log('');
 
-async function fetchNav(productCode) {
-  const url = `${API}?i=1&s=15000&w=${encodeURIComponent(productCode)}`;
-  const r = await fetch(url, {
-    headers: {
-      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/130.0.0.0 Safari/537.36',
-      'Referer': 'https://wx.abchina.com/',
-      'Accept': 'application/json, text/plain, */*',
-    },
-  });
-  if (!r.ok) throw new Error(`HTTP ${r.status}`);
-  return await r.json();
-}
-
 let totalUpserted = 0;
 
 for (const p of ABC_PRODUCTS) {
@@ -78,16 +129,21 @@ for (const p of ABC_PRODUCTS) {
     const data = await fetchNav(p.productCode);
 
     // 兼容多种返回结构
-    const list = data?.Data || data?.data || data?.result || [];
-    if (!Array.isArray(list) || list.length === 0) {
-      console.log(`   ⚠️ 无数据，返回结构: ${JSON.stringify(data).slice(0, 200)}\n`);
+    let list = [];
+    if (data.Data && Array.isArray(data.Data)) list = data.Data;
+    else if (data.Data && data.Data.Table) list = data.Data.Table;
+    else if (data.Data && data.Data.Table1) list = data.Data.Table1;
+    else if (data.data && Array.isArray(data.data)) list = data.data;
+    else if (Array.isArray(data)) list = data;
+
+    if (list.length === 0) {
+      console.log(`   ⚠️ 无数据，返回结构: ${JSON.stringify(data).slice(0, 300)}\n`);
       continue;
     }
 
     console.log(`   拿到 ${list.length} 条`);
-    console.log(`   样本: ${JSON.stringify(list[0]).slice(0, 200)}`);
+    console.log(`   样本: ${JSON.stringify(list[0]).slice(0, 300)}`);
 
-    // 解析字段（兼容多种字段名）
     const rows = list.map(x => {
       const dateRaw = x.NetValueDate || x.navDate || x.date || x.FDate || '';
       const dateStr = String(dateRaw).replace(/\//g, '-').slice(0, 10);
@@ -105,26 +161,20 @@ for (const p of ABC_PRODUCTS) {
 
     if (rows.length === 0) { console.log('   ⚠️ 无有效数据\n'); continue; }
 
-    // 按日期排序（新的在前）
     rows.sort((a, b) => b.nav_date.localeCompare(a.nav_date));
 
-    // 批量 upsert（每批 30）
     let ok = 0;
     for (let i = 0; i < rows.length; i += 30) {
       const batch = rows.slice(i, i + 30);
       const { error } = await supabase.from('nav_history').upsert(batch, {
         onConflict: 'product_id,nav_date',
       });
-      if (error) {
-        console.log(`   ⚠️ 批次失败: ${error.message}`);
-      } else {
-        ok += batch.length;
-      }
+      if (error) console.log(`   ⚠️ 批次失败: ${error.message}`);
+      else ok += batch.length;
       await sleep(100);
     }
     totalUpserted += ok;
 
-    // 更新 products
     const latest = rows[0];
     await supabase.from('products').update({
       unit_nav: latest.unit_nav,
