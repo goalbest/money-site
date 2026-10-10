@@ -92,7 +92,7 @@ function parseRules(text) {
   const riskM = text.match(/(?:P?R)(\d)/i);
   if (riskM) riskLevel = `R${riskM[1]}`;
 
-  // 2. 截止时间：优先匹配"T日XX:XX前"
+  // 2. 截止时间
   const cutM = text.match(/T日\s*(\d{1,2}):(\d{2})\s*(?:前|之前)/);
   if (cutM) {
     cutoffTime = `${cutM[1].padStart(2, '0')}:${cutM[2]}`;
@@ -101,21 +101,16 @@ function parseRules(text) {
     if (anyCutM) cutoffTime = `${anyCutM[1].padStart(2, '0')}:${anyCutM[2]}`;
   }
 
-  // 3. 到账时间
-  // 优先识别复杂表格（按周循环）→ 保守 T+5
-  const isComplexWeekly = /周二\s*15:00|周五\s*15:00|下周三|下周四|下周五/.test(text);
+  // 3. 到账时间（多格式）
+  const m1 = text.match(/T\+?(\d+)\s*日?\s*到账/);   // T+2日到账
+  const m2 = text.match(/最快T\+?(\d+)/);             // 最快T+1
+  const m3 = text.match(/(\d+)\s*个工作日[^\n]{0,10}(?:到账|内)/); // 3个工作日内
+  const m4 = text.match(/预计\s*T\+?(\d+)/);          // 预计T+1
+  const m5 = text.match(/T\+?(\d+)\s*内/);            // ★ T+5内
+  const m6 = text.match(/T\+?(\d+)\s*(?:个?交易日?)/); // T+2交易日
 
-  if (isComplexWeekly) {
-    arrivalDays = 5;
-  } else {
-    const m1 = text.match(/T\+?(\d+)\s*日?\s*到账/);
-    const m2 = text.match(/最快T\+?(\d+)/);
-    const m3 = text.match(/(\d+)\s*个工作日[^\n]{0,10}(?:到账|内)/);
-    const m4 = text.match(/预计\s*T\+?(\d+)/);
-
-    const arrivalMatch = m1 || m2 || m3 || m4;
-    if (arrivalMatch) arrivalDays = parseInt(arrivalMatch[1], 10);
-  }
+  const arrivalMatch = m1 || m2 || m3 || m4 || m5 || m6;
+  if (arrivalMatch) arrivalDays = parseInt(arrivalMatch[1], 10);
 
   return { riskLevel, arrivalDays, cutoffTime };
 }
