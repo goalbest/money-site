@@ -123,6 +123,14 @@ for (const p of prods) {
     }
     const wpCode = hit.wp_code;
     console.log(`   命中: ${hit.wp_name}`);
+        // 从 search 接口读规则
+    const riskLevel = hit.RISKLEVEL ? `R${hit.RISKLEVEL}` : null;
+    const sfrule = hit.SFRULE || '';
+    const arrM = sfrule.match(/T\+?(\d+)/);
+    const arrivalDays = arrM ? parseInt(arrM[1], 10) : null;
+    const cutM = sfrule.match(/(\d{1,2}):(\d{2})/);
+    const cutoffTime = cutM ? `${cutM[1].padStart(2,'0')}:${cutM[2]}` : null;
+    console.log(`   规则: 风险${riskLevel || '?'}, 到账T+${arrivalDays || '?'}, 截止${cutoffTime || '?'}`);
 
     // ② 读数据库里该产品的最新日期
     const { data: latestRow } = await supabase
@@ -196,10 +204,14 @@ for (const p of prods) {
     if (allRows.length > 0) {
       const latest = allRows[0];
       console.log(`   📝 更新 products: ${latest.unit_nav} @ ${latest.nav_date}`);
-      await supabase.from('products').update({
-        unit_nav: latest.unit_nav,
-        nav_date: latest.nav_date,
-      }).eq('id', p.id);
+    await supabase.from('products').update({
+      unit_nav: latest.unit_nav,
+      nav_date: latest.nav_date,
+      risk_level: riskLevel,
+      redeem_arrival_days: arrivalDays,
+      redeem_confirm_days: 1,
+      redeem_cutoff_time: cutoffTime,
+    }).eq('id', p.id);
     }
 
     console.log(`   ✅ 写入 ${ok} 条\n`);
