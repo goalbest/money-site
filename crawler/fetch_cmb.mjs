@@ -102,11 +102,21 @@ function parseRules(text) {
     if (anyCutM) cutoffTime = `${anyCutM[1].padStart(2, '0')}:${anyCutM[2]}`;
   }
 
-  // 3. 到账时间：优先匹配复合规则中的“T+N日到账”
-  //    例如 “T+2日到账；否则T+3日到账” → 取T+2
-  const arrivalM = text.match(/T\+?(\d+)\s*日?\s*到账/);
-  if (arrivalM) {
-    arrivalDays = parseInt(arrivalM[1], 10);
+  // 3. 到账时间（多种格式）
+  //    优先识别复杂表格（按周循环）→ 保守 T+5
+  const isComplexWeekly = /周二\s*15:00|周五\s*15:00|下周三|下周四|下周五/.test(text);
+
+  if (isComplexWeekly) {
+    // 复杂按周规则 → 保守给 T+5 工作日
+    arrivalDays = 5;
+  } else {
+    const m1 = text.match(/T\+?(\d+)\s*日?\s*到账/);
+    const m2 = text.match(/最快T\+?(\d+)/);
+    const m3 = text.match(/(\d+)\s*个工作日[^\n]{0,10}(?:到账|内)/);
+    const m4 = text.match(/预计\s*T\+?(\d+)/);
+
+    const arrivalMatch = m1 || m2 || m3 || m4;
+    if (arrivalMatch) arrivalDays = parseInt(arrivalMatch[1], 10);
   } else {
     // 备选：匹配“最快T+N”或“N个工作日到账”
     const altM = text.match(/最快T\+?(\d+)/) || text.match(/(\d+)\s*个工作日[^\n]*到账/);
