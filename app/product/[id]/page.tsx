@@ -482,6 +482,45 @@ export default function ProductPage() {
           )}
         </div>
 
+        {/* 交易规则 */}
+        {(product.risk_level || product.redeem_arrival_days != null || product.redeem_cutoff_time) && (
+          <div className="card p-5 mb-4 animate-fade-in-up delay-2">
+            <div className="text-[14px] font-bold text-slate-900 mb-3">交易规则</div>
+            <div className="grid grid-cols-3 gap-3">
+              {product.risk_level && (
+                <div>
+                  <div className="text-[10px] text-slate-400 mb-1">风险等级</div>
+                  <div className="text-[13px] font-semibold text-slate-900">
+                    {product.risk_level}{' '}
+                    {product.risk_level === 'R1' && '低风险'}
+                    {product.risk_level === 'R2' && '中低风险'}
+                    {product.risk_level === 'R3' && '中风险'}
+                    {product.risk_level === 'R4' && '中高风险'}
+                    {product.risk_level === 'R5' && '高风险'}
+                  </div>
+                </div>
+              )}
+              {product.redeem_arrival_days != null && (
+                <div>
+                  <div className="text-[10px] text-slate-400 mb-1">赎回到账</div>
+                  <div className="text-[13px] font-semibold text-slate-900">
+                    T+{product.redeem_arrival_days}
+                  </div>
+                </div>
+              )}
+              {product.redeem_cutoff_time && (
+                <div>
+                  <div className="text-[10px] text-slate-400 mb-1">赎回截止</div>
+                  <div className="text-[13px] font-semibold text-slate-900">
+                    {product.redeem_cutoff_time}
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
+
         {editMode && (
           <div className="card p-3 mb-4 bg-purple-50 border border-purple-100 animate-fade-in">
             <div className="text-[12px] text-purple-700 leading-relaxed px-1
