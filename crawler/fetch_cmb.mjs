@@ -100,19 +100,18 @@ for (const p of CMB_PRODUCTS) {
     let realName = null;
     try {
       const nameData = await page.evaluate(async ({ saaCode, ripInn }) => {
-        const r = await fetch('/ientrustfinance/product-statistics/get-history-performance', {
-          method: 'POST',
+        const url = `/ientrustfinance/product-statistics/get-history-performance?saaCode=${encodeURIComponent(saaCode)}&ripInn=${encodeURIComponent(ripInn)}`;
+        const r = await fetch(url, {
+          method: 'GET',
           headers: {
-            'Content-Type': 'application/json; charset=UTF-8',
             'X-Requested-With': 'XMLHttpRequest',
           },
-          body: JSON.stringify({ saaCode, ripInn, yDalCod: 'N' }),
         });
         return await r.json();
       }, { saaCode: p.saaCode, ripInn: p.ripInn });
 
       realName = nameData?.bizResult?.data?.ripSnm || null;
-      if (realName) console.log(`   真名: ${realName}`);
+      console.log(`   真名: ${realName || '(未拿到)'}`);
     } catch (e) {
       console.log(`   拿名字失败: ${e.message}`);
     }
