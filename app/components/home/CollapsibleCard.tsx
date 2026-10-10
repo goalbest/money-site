@@ -84,23 +84,43 @@ export default function CollapsibleCard({
     toggle();
   }
 
-  function handleTitlePointerDown() {
+  function handleTitlePointerDown(e: React.PointerEvent) {
     if (!onTitleLongPress) return;
     longPressedRef.current = false;
     if (pressTimer.current) clearTimeout(pressTimer.current);
+
+    const x0 = e.clientX;
+    const y0 = e.clientY;
+
     pressTimer.current = setTimeout(() => {
       longPressedRef.current = true;
       onTitleLongPress();
       try { (navigator as any).vibrate?.(15); } catch {}
       pressTimer.current = null;
     }, LONG_PRESS_MS);
-  }
 
-  function handleTitlePointerUp() {
-    if (pressTimer.current) {
-      clearTimeout(pressTimer.current);
-      pressTimer.current = null;
+    /* ★ 用位移判断，不用 onPointerLeave（手指微动不取消） */
+    function onMove(ev: PointerEvent) {
+      const dx = ev.clientX - x0;
+      const dy = ev.clientY - y0;
+      if (dx * dx + dy * dy > 100) {
+        if (pressTimer.current) {
+          clearTimeout(pressTimer.current);
+          pressTimer.current = null;
+        }
+        window.removeEventListener("pointermove", onMove);
+      }
     }
+    function onUp() {
+      if (pressTimer.current) {
+        clearTimeout(pressTimer.current);
+        pressTimer.current = null;
+      }
+      window.removeEventListener("pointermove", onMove);
+      window.removeEventListener("pointerup", onUp);
+    }
+    window.addEventListener("pointermove", onMove, { passive: true });
+    window.addEventListener("pointerup", onUp, { once: true });
   }
 
   const anim = hydrated && collapsible;
@@ -113,9 +133,7 @@ export default function CollapsibleCard({
         <button
           type="button"
           onClick={handleTitleClick}
-          onPointerDown={handleTitlePointerDown}
-          onPointerUp={handleTitlePointerUp}
-          onPointerLeave={handleTitlePointerUp}
+          onPointerDown={(e) => handleTitlePointerDown(e)}
           disabled={!collapsible}
           className="flex items-center gap-2 flex-1 min-w-0 text-left disabled:cursor-default select-none"
           aria-expanded={!collapsed}

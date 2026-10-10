@@ -5,13 +5,12 @@ export type ModuleCategory = "data" | "alert" | "insight" | "plan" | "quick";
 
 export type ModuleMeta = {
   id: string;
-  name: string;         // 完整名
-  shortName: string;    // 磁贴里显示的短名
-  icon: string;         // emoji
-  desc: string;         // 抽屉里的说明
+  name: string;
+  shortName: string;
+  icon: string;
+  desc: string;
   category: ModuleCategory;
   defaultZone: ModuleZone;
-  /** 需要哪些数据字段（用于懒加载判断） */
   needs?: ("holdings" | "transactions" | "navHistory" | "watchRules" | "searchLogs")[];
 };
 
@@ -37,7 +36,7 @@ export const MODULE_META: ModuleMeta[] = [
     defaultZone: "card",
     needs: ["holdings"],
   },
-    {
+  {
     id: "profitRank",
     name: "收益榜",
     shortName: "收益榜",
@@ -73,6 +72,18 @@ export const MODULE_META: ModuleMeta[] = [
     category: "data",
     defaultZone: "card",
     needs: ["transactions"],
+  },
+
+  // ============ 分析洞察（合并成一个） ============
+  {
+    id: "insights",
+    name: "分析洞察",
+    shortName: "洞察",
+    icon: "💡",
+    desc: "定存对比、通胀对比、集中度、最佳最差",
+    category: "insight",
+    defaultZone: "card",
+    needs: ["holdings"],
   },
 
   // ============ 磁贴 · 状态类 ============
@@ -201,43 +212,13 @@ export const MODULE_META: ModuleMeta[] = [
 
   // ============ 磁贴 · 分析洞察 ============
   {
-    id: "concentration",
-    name: "集中度分析",
-    shortName: "集中度",
-    icon: "🥧",
-    desc: "最大持仓占比（风险提示）",
-    category: "insight",
-    defaultZone: "tile",
-    needs: ["holdings"],
-  },
-  {
-    id: "beatDeposit",
-    name: "跑赢存款",
-    shortName: "跑赢存款",
-    icon: "🏦",
-    desc: "你的年化 vs 银行定存",
-    category: "insight",
-    defaultZone: "tile",
-    needs: ["holdings"],
-  },
-  {
-    id: "beatInflation",
-    name: "跑赢通胀",
-    shortName: "跑赢通胀",
-    icon: "🎯",
-    desc: "实际收益率 vs CPI",
-    category: "insight",
-    defaultZone: "tile",
-    needs: ["holdings"],
-  },
-  {
     id: "bestWorst",
     name: "最佳 / 最差",
     shortName: "最佳最差",
     icon: "🏆",
-    desc: "累计收益最高的产品",
+    desc: "累计收益最高/最低的产品（已被「分析洞察」包含）",
     category: "insight",
-    defaultZone: "tile",
+    defaultZone: "hidden",
     needs: ["holdings"],
   },
 
@@ -400,6 +381,7 @@ export const DEFAULT_LAYOUT = {
   card: [
     "holdings",
     "topToday",
+    "insights",
     "monthStats",
   ],
   hidden: [
@@ -415,9 +397,6 @@ export const DEFAULT_LAYOUT = {
     "newHigh",
     "idleLong",
     "streakWin",
-    "concentration",
-    "beatDeposit",
-    "beatInflation",
     "bestWorst",
     "goal",
     "dca",
@@ -435,7 +414,6 @@ export const DEFAULT_LAYOUT = {
   ],
 };
 
-/** 按分类分组（抽屉里用） */
 export const CATEGORY_LABELS: Record<ModuleCategory, string> = {
   data: "数据展示",
   alert: "智能提醒",

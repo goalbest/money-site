@@ -547,6 +547,105 @@ function PlaceholderContent({
 }
 
 /* ============================================================
+   分析洞察（合并：定存对比、通胀对比、集中度、最佳最差）
+   ============================================================ */
+function InsightsContent({ m }: { m: HomeMetrics }) {
+  const cells: {
+    label: string;
+    value: React.ReactNode;
+    sub?: string;
+    color?: string;
+    bg: string;
+  }[] = [
+    {
+      label: "vs 3年定存",
+      value: `${m.beatDeposit.diff >= 0 ? "+" : ""}${m.beatDeposit.diff.toFixed(2)}%`,
+      color: m.beatDeposit.positive ? "text-rose-500" : "text-emerald-500",
+      sub: `年化 ${m.myAnnual.toFixed(2)}%`,
+      bg: "bg-rose-50/60",
+    },
+    {
+      label: "vs 通胀",
+      value: `${m.beatInflation.diff >= 0 ? "+" : ""}${m.beatInflation.diff.toFixed(2)}%`,
+      color: m.beatInflation.positive ? "text-rose-500" : "text-emerald-500",
+      sub: `实际 ${m.beatInflation.diff.toFixed(2)}%`,
+      bg: "bg-emerald-50/60",
+    },
+    m.topBank
+      ? {
+          label: "集中度",
+          value: `${m.topBank.percent.toFixed(0)}%`,
+          color: m.topBank.percent > 50 ? "text-amber-500" : "text-slate-900",
+          sub: m.topBank.bank,
+          bg: "bg-amber-50/60",
+        }
+      : {
+          label: "集中度",
+          value: "—",
+          color: "text-slate-300",
+          sub: "无持仓",
+          bg: "bg-slate-50/70",
+        },
+    (m.bestProduct || m.worstProduct)
+      ? {
+          label: "最佳 / 最差",
+          value: (
+            <>
+              {m.bestProduct && (
+                <span className="text-rose-500">
+                  +{m.bestProduct.rate.toFixed(1)}%
+                </span>
+              )}
+              <span className="text-slate-300 text-[14px] mx-1">/</span>
+              {m.worstProduct && (
+                <span className="text-emerald-500">
+                  {m.worstProduct.rate.toFixed(1)}%
+                </span>
+              )}
+            </>
+          ),
+          sub: m.bestProduct?.name
+            ? m.bestProduct.name.length > 10
+              ? m.bestProduct.name.slice(0, 10) + "…"
+              : m.bestProduct.name
+            : "—",
+          bg: "bg-violet-50/60",
+        }
+      : {
+          label: "最佳 / 最差",
+          value: "—",
+          color: "text-slate-300",
+          sub: "无持仓",
+          bg: "bg-slate-50/70",
+        },
+  ];
+
+  return (
+    <div className="grid grid-cols-2 gap-2.5 p-4">
+      {cells.map((c, i) => (
+        <div
+          key={i}
+          className={`rounded-[14px] p-3.5 min-w-0 ${c.bg}`}
+        >
+          <div className="text-[10px] text-slate-500 mb-1.5 truncate">
+            {c.label}
+          </div>
+          <div className={`font-mono font-bold text-[18px] tabular leading-none truncate ${c.color || "text-slate-900"}`}>
+            {c.value}
+          </div>
+          {c.sub && (
+            <div className="text-[10px] text-slate-400 mt-1.5 truncate">
+              {c.sub}
+            </div>
+          )}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+
+/* ============================================================
    目标进度
    ============================================================ */
 function GoalContent({ m, goals }: { m: HomeMetrics; goals?: GoalsData }) {
@@ -1103,6 +1202,14 @@ export default function ModuleRenderer({
         snap.snapshots.length > 1 ? `${snap.snapshots.length} 天` : undefined,
         <AssetTrendContent m={m} snap={snap} />
       );
+
+    case "insights":
+      return wrapper(
+        "分析洞察",
+        undefined,
+        <InsightsContent m={m} />
+      );
+
 
     case "goal":
       return wrapper(

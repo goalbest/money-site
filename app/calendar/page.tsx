@@ -695,6 +695,47 @@ export default function CalendarPage() {
             </button>
           </div>
 
+          {/* ★ 月度概览 */}
+          {(() => {
+            const days = Object.entries(dayMap)
+              .filter(([d]) => d >= `${month}-01` && d <= monthEnd(month))
+              .map(([d, v]) => ({ date: d, profit: v }));
+            if (days.length < 2) return null;
+            const max = days.reduce((a, b) => a.profit > b.profit ? a : b);
+            const min = days.reduce((a, b) => a.profit < b.profit ? a : b);
+            if (max.profit <= 0 && min.profit >= 0) return null;
+            return (
+              <div className="flex items-center justify-center gap-3 mb-3 px-1
+                              text-[11px]">
+                {max.profit > 0 && (
+                  <div className="flex items-center gap-1">
+                    <span className="text-rose-500 font-semibold">
+                      {max.date.slice(5)}
+                    </span>
+                    <span className="font-mono text-rose-500 tabular">
+                      +{max.profit.toFixed(2)}
+                    </span>
+                    <span className="text-slate-400">最强</span>
+                  </div>
+                )}
+                {max.profit > 0 && min.profit < 0 && (
+                  <span className="text-slate-300">·</span>
+                )}
+                {min.profit < 0 && (
+                  <div className="flex items-center gap-1">
+                    <span className="text-emerald-500 font-semibold">
+                      {min.date.slice(5)}
+                    </span>
+                    <span className="font-mono text-emerald-500 tabular">
+                      {min.profit.toFixed(2)}
+                    </span>
+                    <span className="text-slate-400">最弱</span>
+                  </div>
+                )}
+              </div>
+            );
+          })()}
+
           <div className="grid grid-cols-7 mb-2">
             {["日", "一", "二", "三", "四", "五", "六"].map(w => (
               <div key={w} className="text-center text-[10px] text-slate-400 font-medium py-1">

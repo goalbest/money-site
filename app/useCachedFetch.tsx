@@ -71,18 +71,42 @@ export function SkeletonCard({ rows = 5 }: { rows?: number }) {
   );
 }
 
-export function SkeletonPage() {
+export function SkeletonPage({ title = "" }: { title?: string } = {}) {
   return (
-    <div className="min-h-screen bg-gray-50">
-      <div className="bg-gradient-to-br from-blue-600 via-blue-500 to-indigo-600 pb-8 rounded-b-3xl">
-        <div className="container mx-auto px-4 pt-6 max-w-3xl">
-          <div className="h-6 w-6 bg-white/20 rounded animate-pulse mb-4" />
-          <div className="h-6 w-32 bg-white/20 rounded animate-pulse" />
+    <div className="min-h-screen pb-24">
+      <div className="container mx-auto px-5 pt-8 max-w-3xl">
+        {/* 头部骨架（对应 PageHeader） */}
+        <div className="flex items-center gap-3 mb-5 animate-fade-in-up">
+          <div className="w-9 h-9 rounded-full bg-white border border-slate-200
+                          flex items-center justify-center flex-shrink-0">
+            <div className="w-3 h-3 bg-slate-200 rounded animate-pulse" />
+          </div>
+          <div className="flex-1 min-w-0">
+            {title ? (
+              <h1 className="text-[18px] font-bold tracking-tight text-slate-900 truncate">
+                {title}
+              </h1>
+            ) : (
+              <div className="h-5 w-24 bg-slate-200/60 rounded animate-pulse" />
+            )}
+          </div>
         </div>
-      </div>
-      <div className="container mx-auto px-4 -mt-4 max-w-3xl space-y-3">
-        <SkeletonCard rows={3} />
-        <SkeletonCard rows={5} />
+
+        {/* Hero 骨架（紫粉渐变） */}
+        <div
+          className="rounded-[24px] h-40 mb-5 animate-pulse"
+          style={{
+            background:
+              "linear-gradient(135deg, #6366f1 0%, #a855f7 55%, #ec4899 100%)",
+            opacity: 0.25,
+          }}
+        />
+
+        {/* 列表骨架 */}
+        <div className="space-y-3">
+          <SkeletonCard rows={2} />
+          <SkeletonCard rows={3} />
+        </div>
       </div>
     </div>
   );

@@ -17,9 +17,13 @@ import GoalModal from "./components/home/GoalModal";
 import DCAModal from "./components/home/DCAModal";
 import { useDCAPlans } from "../lib/useDCAPlans";
 import { useRecommendedTiles } from "../lib/useRecommendedTiles";
+import { useRouter } from "next/navigation";
+import CompareDateModal from "./components/CompareDateModal";
 
+const TILES_COLLAPSED_KEY = "home_tiles_collapsed_v1";
 
 export default function Home() {
+  const router = useRouter();
   /* ============ 基础状态 ============ */
   const [username, setUsername] = useState<string | null>(null);
   const [userId, setUserId] = useState<string | null>(null);
@@ -27,10 +31,10 @@ export default function Home() {
   const [lastUpdated, setLastUpdated] = useState("");
 
   /* ============ 数据层 ============ */
-  const { metrics, loading: metricsLoading } = useHomeMetrics();
+  const { metrics, loading: metricsLoading, getPeriodProfit } = useHomeMetrics();
   const { layout, hydrated, customized, moveWithinZone, moveToZone, reset } = useHomeLayout();
 
-  /* ============ 资产快照（每日自动存档） ============ */
+  /* ============ 资产快照 ============ */
   const snap = useAssetSnapshots({
     amount: metrics.totalAssets,
     holding: metrics.totalHolding,
@@ -46,7 +50,6 @@ export default function Home() {
   const [goalModalOpen, setGoalModalOpen] = useState(false);
   const [editingGoal, setEditingGoal] = useState<any | null>(null);
 
-  // 包装一层，方便 ModuleRenderer 直接调 openModal
   const goals = {
     ...goalsBase,
     openModal: (g?: any) => {
@@ -55,18 +58,16 @@ export default function Home() {
     },
   };
 
-    /* ============ 定投计划 ============ */
+  /* ============ 定投计划 ============ */
   const dcaBase = useDCAPlans();
   const [dcaModalOpen, setDcaModalOpen] = useState(false);
   const [editingDca, setEditingDca] = useState<any | null>(null);
 
-  // 打开页面时推进过期的计划
   useEffect(() => {
     if (dcaBase.hydrated) dcaBase.rollForward();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [dcaBase.hydrated]);
 
-  // 可用于定投的产品列表
   const dcaProducts = metrics.topHoldings.map((h: any) => ({
     id: h.products?.id,
     name: h.products?.name || "",
@@ -81,9 +82,31 @@ export default function Home() {
     },
   };
 
-    /* ============ 抽屉 / 编辑模式 ============ */
+  /* ============ 抽屉 / 编辑模式 ============ */
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [editMode, setEditMode] = useState(false);
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [tilesCollapsed, setTilesCollapsed] = useState(false);
+
+  /* ★ 资产对比 */
+  const [compareDate, setCompareDate] = useState<string | null>(null);
+  const [compareOpen, setCompareOpen] = useState(false);
+  const [compareRealProfit, setCompareRealProfit] = useState<number | null>(null);
+
+  useEffect(() => {
+    try {
+      const v = localStorage.getItem(TILES_COLLAPSED_KEY);
+      if (v === "1") setTilesCollapsed(true);
+    } catch {}
+  }, []);
+
+  function toggleTilesCollapsed() {
+    const next = !tilesCollapsed;
+    setTilesCollapsed(next);
+    try {
+      localStorage.setItem(TILES_COLLAPSED_KEY, next ? "1" : "0");
+    } catch {}
+  }
 
   /* 主模块区拖动 */
   const {
@@ -122,7 +145,7 @@ export default function Home() {
     }
   }
 
-  /* ============ 榜单数据（三份） ============ */
+  /* ============ 榜单数据 ============ */
   const [rankData, setRankData] = useState<{
     profit: any[];
     hot: any[];
@@ -144,7 +167,7 @@ export default function Home() {
   const animatedHolding = useCountUp(metrics.totalHolding, 1000, { startDelay: 150 });
   const animatedInTransit = useCountUp(metrics.totalInTransit, 1000, { startDelay: 150 });
   const animatedProfit = useCountUp(metrics.todayProfit, 1000, { startDelay: 150 });
-    /* 最新净值日期（所有持仓里最晚的） */
+
   const latestNavDate = useMemo(() => {
     const dates = metrics.topHoldings
       .map((h: any) => h.products?.nav_date)
@@ -153,13 +176,36 @@ export default function Home() {
     return dates.length > 0 ? String(dates[dates.length - 1]).slice(5) : null;
   }, [metrics.topHoldings]);
 
-  /* 数据是否新鲜（今天是否有净值） */
   const isFreshToday = (() => {
     if (!latestNavDate) return false;
     const d = new Date();
     const todayMD = `${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
     return latestNavDate === todayMD;
   })();
+
+  /* ★ 对比数据 */
+  const compareInfo = useMemo(() => {
+    const targetDate = compareDate || (() => {
+      const d = new Date();
+      d.setDate(d.getDate() - 1);
+      return d.toISOString().split("T")[0];
+    })();
+
+    let label = "昨天";
+    if (compareDate) {
+      const days = Math.floor(
+        (Date.now() - new Date(targetDate + "T00:00:00").getTime()) / 86400000
+      );
+      if (days <= 1) label = "昨天";
+      else if (days <= 3) label = "3天前";
+      else if (days <= 7) label = "1周前";
+      else if (days <= 30) label = "1月前";
+      else label = targetDate.slice(5);
+    }
+
+    const profit = getPeriodProfit(targetDate);
+    return { targetDate, label, profit, hasData: true };
+  }, [compareDate, getPeriodProfit]);
 
   /* ============ 初始化 ============ */
   useEffect(() => {
@@ -176,7 +222,7 @@ export default function Home() {
     fetchRankData();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
-    /* ★ 搜索实时下拉 */
+
   useEffect(() => {
     const term = searchTerm.trim();
     if (!term || searchMode) {
@@ -185,10 +231,23 @@ export default function Home() {
       return;
     }
     const t = setTimeout(async () => {
+      const { matchBanks } = await import("../lib/banks");
+      const matchedBanks = matchBanks(term);
+      const bankNames = matchedBanks.slice(0, 3).map(b => b.name);
+
+      let orParts = [
+        `name.ilike.%${term}%`,
+        `code.ilike.%${term}%`,
+        `bank.ilike.%${term}%`,
+      ];
+      for (const bn of bankNames) {
+        orParts.push(`bank.eq.${bn}`);
+      }
+
       const { data } = await supabase
         .from("products")
         .select("id, name, bank, code, annualized_1m")
-        .or(`name.ilike.%${term}%,bank.ilike.%${term}%,code.ilike.%${term}%`)
+        .or(orParts.join(","))
         .limit(8);
       setSuggestions(data || []);
       setShowSuggest(true);
@@ -196,7 +255,6 @@ export default function Home() {
     return () => clearTimeout(t);
   }, [searchTerm, searchMode]);
 
-  /* 点外部关闭 */
   useEffect(() => {
     function handleClick(e: MouseEvent) {
       if (searchBoxRef.current && !searchBoxRef.current.contains(e.target as Node)) {
@@ -252,6 +310,42 @@ export default function Home() {
   async function handleSearch() {
     const term = searchTerm.trim();
     if (!term) { setSearchMode(""); setSearchResults([]); return; }
+    async function handleSearch() {
+  const term = searchTerm.trim();
+  if (!term) { setSearchMode(""); setSearchResults([]); return; }
+
+  // ★ 银行名归一化：把"中国银行"→"中银理财"
+  const { matchBanks } = await import("../lib/banks");
+  const matchedBanks = matchBanks(term);
+  const bankNames = matchedBanks.slice(0, 3).map(b => b.name);
+
+  if (userId) {
+    // ... 原有的记录搜索日志代码保持不变
+  }
+
+  setSearchMode(term);
+  setSearchLoading(true);
+
+  // 组合查询：关键词 + 匹配到的银行标准名
+  let orParts = [
+    `name.ilike.%${term}%`,
+    `code.ilike.%${term}%`,
+    `bank.ilike.%${term}%`,
+  ];
+  // 加银行标准名精确匹配
+  for (const bn of bankNames) {
+    orParts.push(`bank.eq.${bn}`);
+  }
+
+  const { data } = await supabase
+    .from("products")
+    .select("id, name, bank, unit_nav, annualized_1m, nav_date, code")
+    .or(orParts.join(","))
+    .limit(30);
+
+  setSearchResults(data || []);
+  setSearchLoading(false);
+}
     if (userId) {
       fetch(`${process.env.NEXT_PUBLIC_SUPABASE_URL}/rest/v1/search_logs`, {
         method: "POST",
@@ -390,39 +484,62 @@ export default function Home() {
             </div>
           </div>
 
-          {editMode ? (
-            <div className="w-9 h-9 flex-shrink-0" /> 
-          ) : (
-            <Link
-              href="/profile"
-              className="w-9 h-9 rounded-full bg-white border border-slate-200
-                         hover:border-slate-300 hover:bg-slate-50
-                         flex items-center justify-center flex-shrink-0
-                         transition-all duration-300 active:scale-90"
-              aria-label="我的"
-            >
-              <svg className="w-4 h-4 text-slate-500" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
-                <path d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" strokeLinecap="round" strokeLinejoin="round" />
-              </svg>
-            </Link>
-          )}
+          <div className="flex items-center gap-2 flex-shrink-0">
+            {!editMode && (
+              <button
+                onClick={() => setSearchOpen(v => !v)}
+                className={`w-9 h-9 rounded-full border flex items-center justify-center
+                           transition-all duration-300 active:scale-90
+                           ${searchOpen
+                             ? "bg-purple-50 border-purple-200"
+                             : "bg-white border-slate-200 hover:border-slate-300 hover:bg-slate-50"}`}
+                aria-label="搜索"
+              >
+                {searchOpen ? (
+                  <svg className="w-4 h-4 text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2.5}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                ) : (
+                  <svg className="w-4 h-4 text-slate-500" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                  </svg>
+                )}
+              </button>
+            )}
+            {editMode ? (
+              <div className="w-9 h-9 flex-shrink-0" />
+            ) : (
+              <Link
+                href="/profile"
+                className="w-9 h-9 rounded-full bg-white border border-slate-200
+                           hover:border-slate-300 hover:bg-slate-50
+                           flex items-center justify-center flex-shrink-0
+                           transition-all duration-300 active:scale-90"
+                aria-label="我的"
+              >
+                <svg className="w-4 h-4 text-slate-500" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
+                  <path d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" strokeLinecap="round" strokeLinejoin="round" />
+                </svg>
+              </Link>
+            )}
+          </div>
         </div>
 
         {/* ============ 编辑模式提示 ============ */}
-{editMode && !searchMode && (
-  <div className="card p-3 mb-4 bg-purple-50 border border-purple-100 animate-fade-in">
-    <div className="text-[12px] text-purple-700 leading-relaxed px-1
-                    flex items-center gap-2">
-      <svg className="w-3.5 h-3.5 text-purple-500 flex-shrink-0"
-           fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2.5}>
-        <path strokeLinecap="round" strokeLinejoin="round" d="M4 7h16M4 12h16M4 17h16" />
-      </svg>
-      <span>
-        <span className="font-semibold">编辑模式</span> · 按住<span className="font-semibold">紫色条</span>拖动换位，点 <span className="font-semibold">×</span> 隐藏；完成后点右上角"完成"
-      </span>
-    </div>
-  </div>
-)}
+        {editMode && !searchMode && (
+          <div className="card p-3 mb-4 bg-purple-50 border border-purple-100 animate-fade-in">
+            <div className="text-[12px] text-purple-700 leading-relaxed px-1
+                            flex items-center gap-2">
+              <svg className="w-3.5 h-3.5 text-purple-500 flex-shrink-0"
+                   fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2.5}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M4 7h16M4 12h16M4 17h16" />
+              </svg>
+              <span>
+                <span className="font-semibold">编辑模式</span> · 按住<span className="font-semibold">紫色条</span>拖动换位，点 <span className="font-semibold">×</span> 隐藏；完成后点右上角"完成"
+              </span>
+            </div>
+          </div>
+        )}
 
         {/* ============ Hero 卡 ============ */}
         <div
@@ -500,11 +617,39 @@ export default function Home() {
                 </div>
               ))}
             </div>
+
+            {/* ★ 对比行 */}
+            {compareInfo && (
+              <div className="mt-4 pt-3 border-t border-white/15 flex items-center justify-between">
+                <button
+                  onClick={() => setCompareOpen(true)}
+                  className="flex items-center gap-1 text-[11px] text-white/75
+                             hover:text-white active:scale-95 transition-all"
+                >
+                  比{compareInfo.label}
+                  <svg className="w-3 h-3 opacity-70" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2.5}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
+                  </svg>
+                </button>
+                <button
+                  onClick={() => router.push("/calendar")}
+                  className="font-mono font-semibold text-[15px] text-white tabular
+                             flex items-center gap-0.5 active:scale-95 transition-all"
+                >
+                  {compareInfo.profit >= 0 ? "+" : ""}
+                  {compareInfo.profit.toFixed(2)}
+                  <svg className="w-3.5 h-3.5 opacity-60" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2.5}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
+                  </svg>
+                </button>
+              </div>
+            )}
           </div>
         </div>
 
         {/* ============ 搜索 + 发现 ============ */}
-<div className="flex gap-2 mb-4 animate-fade-in-up relative z-[100]">
+        {searchOpen && (
+        <div className="flex gap-2 mb-4 animate-fade-in-up relative z-[100]">
           <div ref={searchBoxRef} className="relative flex-1 min-w-0">
             <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none z-10">
               <svg className="w-4 h-4 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
@@ -535,11 +680,10 @@ export default function Home() {
               </button>
             )}
 
-            {/* ★ 实时下拉建议 */}
             {showSuggest && suggestions.length > 0 && !searchMode && (
-<div className="absolute top-full left-0 right-0 mt-2 z-[110]
-                bg-white rounded-2xl shadow-xl border border-slate-100
-                overflow-hidden max-h-80 overflow-y-auto">
+              <div className="absolute top-full left-0 right-0 mt-2 z-[110]
+                              bg-white rounded-2xl shadow-xl border border-slate-100
+                              overflow-hidden max-h-80 overflow-y-auto">
                 {suggestions.map((p) => {
                   const info = getBankInfo(p.bank);
                   return (
@@ -592,7 +736,6 @@ export default function Home() {
             )}
           </div>
 
-          {/* 发现入口 */}
           <Link
             href="/discover"
             className="flex-shrink-0 px-3.5 rounded-2xl
@@ -609,6 +752,7 @@ export default function Home() {
             发现
           </Link>
         </div>
+        )}
 
         {/* ============ 搜索结果 ============ */}
         {searchMode && (
@@ -638,9 +782,9 @@ export default function Home() {
           </div>
         )}
 
-                {/* ============ 磁贴区 ============ */}
-        {!searchMode && (
-                    <HomeTiles
+        {/* ============ 磁贴区 ============ */}
+        {!searchMode && tileIds.length > 0 && (
+          <HomeTiles
             ids={tileIds}
             metrics={metrics}
             snap={snap}
@@ -652,84 +796,84 @@ export default function Home() {
         )}
 
         {/* ============ 主模块区 ============ */}
-                {!searchMode && (
-  <div className="space-y-4">
-    {layout.card.map((id, idx) => {
-      const isDragging = cardDraggingIdx === idx;
-      const isOver = cardOverIdx === idx && cardDraggingIdx !== null && cardDraggingIdx !== idx;
+        {!searchMode && (
+          <div className="space-y-4">
+            {layout.card.map((id, idx) => {
+              const isDragging = cardDraggingIdx === idx;
+              const isOver = cardOverIdx === idx && cardDraggingIdx !== null && cardDraggingIdx !== idx;
 
-      return (
-        <div
-          key={id}
-          data-card-index={idx}
-          style={{ touchAction: editMode ? "none" : "auto" }}
-          className={`animate-fade-in-up relative transition-all duration-200
-                      ${isDragging ? "scale-[0.94] opacity-40" : ""}
-                      ${isOver ? "ring-2 ring-purple-400 ring-offset-2" : ""}
-                      ${editMode && !isDragging ? "animate-wiggle rounded-[18px] shadow-lg shadow-purple-500/15" : ""}`}
-        >
-          <div className={editMode ? "pointer-events-none" : ""}>
-            <ModuleRenderer
-              id={id}
-              metrics={metrics}
-              snap={snap}
-              goals={goals}
-              dca={dca}
-              rankData={rankData}
-              onLinkClick={handleLinkClick}
-              onTitleLongPress={editMode ? undefined : () => {
-                setEditMode(true);
-                try { (navigator as any).vibrate?.(15); } catch {}
-              }}
-            />
+              return (
+                <div
+                  key={id}
+                  data-card-index={idx}
+                  style={{ touchAction: editMode ? "none" : "auto" }}
+                  className={`animate-fade-in-up relative transition-all duration-200
+                              ${isDragging ? "scale-[0.94] opacity-40" : ""}
+                              ${isOver ? "ring-2 ring-purple-400 ring-offset-2" : ""}
+                              ${editMode && !isDragging ? "animate-wiggle rounded-[18px] shadow-lg shadow-purple-500/15" : ""}`}
+                >
+                  <div className={editMode ? "pointer-events-none" : ""}>
+                    <ModuleRenderer
+                      id={id}
+                      metrics={metrics}
+                      snap={snap}
+                      goals={goals}
+                      dca={dca}
+                      rankData={rankData}
+                      onLinkClick={handleLinkClick}
+                      onTitleLongPress={editMode ? undefined : () => {
+                        setEditMode(true);
+                        try { (navigator as any).vibrate?.(15); } catch {}
+                      }}
+                    />
+                  </div>
+
+                  {editMode && (
+                    <>
+                      <div
+                        onPointerDown={(e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          startCardDrag(e, idx);
+                        }}
+                        style={{ touchAction: "none" }}
+                        className="absolute -top-3.5 right-10 w-8 h-8 rounded-full
+                                   bg-gradient-to-br from-violet-500 to-purple-600
+                                   flex items-center justify-center
+                                   cursor-grab active:cursor-grabbing
+                                   shadow-md shadow-purple-500/40 border-2 border-white
+                                   z-20"
+                        aria-label="拖动排序"
+                        role="button"
+                      >
+                        <svg className="w-4 h-4 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2.5}>
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M4 7h16M4 12h16M4 17h16" />
+                        </svg>
+                      </div>
+
+                      <button
+                        onClick={(e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          moveToZone(id, "hidden");
+                        }}
+                        onPointerDown={(e) => e.stopPropagation()}
+                        className="absolute -top-2.5 -right-2.5 w-7 h-7 rounded-full
+                                   flex items-center justify-center
+                                   bg-rose-500 shadow-md shadow-rose-500/30 border border-white
+                                   active:scale-90 z-20"
+                      >
+                        <svg className="w-3.5 h-3.5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={3}>
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                        </svg>
+                      </button>
+                    </>
+                  )}
+                </div>
+              );
+            })}
           </div>
-
-          {editMode && (
-            <>
-             <div
-                onPointerDown={(e) => {
-                  e.preventDefault();
-                  e.stopPropagation();
-                  startCardDrag(e, idx);
-                }}
-                style={{ touchAction: "none" }}
-                className="absolute -top-3.5 right-10 w-8 h-8 rounded-full
-                           bg-gradient-to-br from-violet-500 to-purple-600
-                           flex items-center justify-center
-                           cursor-grab active:cursor-grabbing
-                           shadow-md shadow-purple-500/40 border-2 border-white
-                           z-20"
-                aria-label="拖动排序"
-                role="button"
-              >
-                <svg className="w-4 h-4 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2.5}>
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M4 7h16M4 12h16M4 17h16" />
-                </svg>
-              </div>
-
-              <button
-                onClick={(e) => {
-                  e.preventDefault();
-                  e.stopPropagation();
-                  moveToZone(id, "hidden");
-                }}
-                onPointerDown={(e) => e.stopPropagation()}
-                className="absolute -top-2.5 -right-2.5 w-7 h-7 rounded-full
-                           flex items-center justify-center
-                           bg-rose-500 shadow-md shadow-rose-500/30 border border-white
-                           active:scale-90 z-20"
-              >
-                <svg className="w-3.5 h-3.5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={3}>
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
-                </svg>
-              </button>
-            </>
-          )}
-        </div>
-      );
-    })}
-  </div>
-)}
+        )}
 
         {/* ============ 管理全部模块按钮 ============ */}
         {!searchMode && !editMode && (
@@ -755,18 +899,19 @@ export default function Home() {
               {layout.tile.length + layout.card.length} 个已启用
             </span>
           </button>
-        )} 
-{!searchMode && !editMode && !customized && (
-  <div className="mt-2 text-center text-[10px] text-slate-400">
-    磁贴根据你的数据智能推荐 ·
-    <button
-      onClick={() => setEditMode(true)}
-      className="text-purple-500 font-medium ml-1"
-    >
-      自定义
-    </button>
-  </div>
-)}
+        )}
+
+        {!searchMode && !editMode && !customized && (
+          <div className="mt-2 text-center text-[10px] text-slate-400">
+            磁贴根据你的数据智能推荐 ·
+            <button
+              onClick={() => setEditMode(true)}
+              className="text-purple-500 font-medium ml-1"
+            >
+              自定义
+            </button>
+          </div>
+        )}
 
         {/* ============ 免责声明 ============ */}
         {!searchMode && !editMode && (
@@ -796,6 +941,17 @@ export default function Home() {
             <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
           </svg>
         </button>
+      )}
+
+      {/* ============ 对比日期弹窗 ============ */}
+      {snap.snapshots && (
+        <CompareDateModal
+          open={compareOpen}
+          current={compareDate}
+          getProfit={getPeriodProfit}
+          onSelect={setCompareDate}
+          onClose={() => setCompareOpen(false)}
+        />
       )}
 
       {/* ============ 抽屉 ============ */}
@@ -831,7 +987,8 @@ export default function Home() {
           setEditingGoal(null);
         }}
       />
-            {/* ============ 定投弹窗 ============ */}
+
+      {/* ============ 定投弹窗 ============ */}
       <DCAModal
         open={dcaModalOpen}
         editing={editingDca}

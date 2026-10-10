@@ -31,6 +31,62 @@ function writeAll(list: Snapshot[]) {
   } catch {}
 }
 
+/** ★ 清空指定日期之后的快照（删交易时调用） */
+export function clearSnapshotsAfter(date: string) {
+  if (typeof window === "undefined") return;
+  try {
+    const list = readAll();
+    const filtered = list.filter(s => s.date < date);
+    writeAll(filtered);
+  } catch {}
+}
+
+/** ★ 清空所有快照 */
+export function clearAllSnapshots() {
+  if (typeof window === "undefined") return;
+  try {
+    localStorage.removeItem(STORAGE_KEY);
+  } catch {}
+}
+
+/** ★ 手动补录某天的快照 */
+export function setSnapshotForDate(date: string, amount: number) {
+  if (typeof window === "undefined") return;
+  try {
+    const list = readAll();
+    const idx = list.findIndex(s => s.date === date);
+    const entry: Snapshot = {
+      date,
+      amount,
+      holding: amount,
+      inTransit: 0,
+    };
+    if (idx >= 0) {
+      list[idx] = entry;
+    } else {
+      list.push(entry);
+      list.sort((a, b) => a.date.localeCompare(b.date));
+    }
+    writeAll(list);
+  } catch {}
+}
+
+
+/** ★ 从指定日期起，所有快照资产统一加 delta（用于交易增删改自动修正） */
+export function adjustSnapshotsFrom(date: string, delta: number) {
+  if (typeof window === "undefined") return;
+  if (!delta) return;
+  try {
+    const list = readAll();
+    const adjusted = list.map(s =>
+      s.date >= date
+        ? { ...s, amount: s.amount + delta, holding: s.holding + delta }
+        : s
+    );
+    writeAll(adjusted);
+  } catch {}
+}
+
 export function useAssetSnapshots(input: {
   amount: number;
   holding: number;
@@ -102,8 +158,17 @@ export function useAssetSnapshots(input: {
     };
   })();
 
+  /** ★ 找指定日期或之前最近一天的快照 */
+  function getSnapshotNear(date: string): Snapshot | null {
+    for (let i = snapshots.length - 1; i >= 0; i--) {
+      if (snapshots[i].date <= date) return snapshots[i];
+    }
+    return null;
+  }
+
   return {
     snapshots,
+    getSnapshotNear,
     trend7d: trend.d7,
     trend30d: trend.d30,
     trend7dPercent: trend.p7,

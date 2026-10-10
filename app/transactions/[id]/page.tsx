@@ -4,6 +4,7 @@ import { useState, useEffect } from "react";
 import { useRouter, useParams } from "next/navigation";
 import Link from "next/link";
 import { supabase } from "../../../lib/supabase";
+import { adjustSnapshotsFrom } from "../../../lib/useAssetSnapshots";
 import { recalcHoldingFromTransactions } from "../../../lib/holdings";
 import PageHeader from "../../PageHeader";
 
@@ -50,7 +51,6 @@ export default function TransactionDetailPage() {
     setLoading(false);
   }
 
-
   async function handleSave() {
     if (!tx || !userId) return;
     setSubmitting(true);
@@ -62,6 +62,19 @@ export default function TransactionDetailPage() {
           note: note.trim() || null,
         })
         .eq("id", tx.id);
+
+      if (tradeDate !== tx.trade_date) {
+        if (tx.type === "buy") {
+          adjustSnapshotsFrom(tx.trade_date, -Number(tx.amount || 0));
+        } else if (tx.type === "sell" || tx.type === "close") {
+          adjustSnapshotsFrom(tx.trade_date, Number(tx.amount || 0));
+        }
+        if (tx.type === "buy") {
+          adjustSnapshotsFrom(tradeDate, Number(tx.amount || 0));
+        } else if (tx.type === "sell" || tx.type === "close") {
+          adjustSnapshotsFrom(tradeDate, -Number(tx.amount || 0));
+        }
+      }
 
       localStorage.removeItem("cache_home_cache_v3");
       localStorage.removeItem("cache_transactions");
@@ -83,7 +96,14 @@ export default function TransactionDetailPage() {
     setSubmitting(true);
     try {
       await supabase.from("transactions").delete().eq("id", tx.id);
-await recalcHoldingFromTransactions(userId, tx.products.id);
+      await recalcHoldingFromTransactions(userId, tx.products.id);
+
+      if (tx.type === "buy") {
+        adjustSnapshotsFrom(tx.trade_date, -Number(tx.amount || 0));
+      } else if (tx.type === "sell" || tx.type === "close") {
+        adjustSnapshotsFrom(tx.trade_date, Number(tx.amount || 0));
+      }
+
       localStorage.removeItem("cache_home_cache_v3");
       localStorage.removeItem("cache_transactions");
       localStorage.removeItem("cache_holdings");

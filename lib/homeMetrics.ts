@@ -1,7 +1,7 @@
 // lib/homeMetrics.ts
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { supabase } from "./supabase";
 
 /* ============================================================
@@ -15,6 +15,7 @@ export type Holding = {
   in_transit_amount: number;
   shares: number;
   hold_date: string | null;
+  purchase_amount?: number | null;
   products: {
     id: number;
     name: string;
@@ -46,24 +47,21 @@ export type AlertItem = {
   productId: number;
   name: string;
   bank: string;
-  value: number;   // 用于显示的主要数值
-  unit: string;    // 后缀 "%"、"天"、"元" 等
+  value: number;
+  unit: string;
   reason?: string;
 };
 
 export type HomeMetrics = {
-  // 基础汇总
   totalAssets: number;
   totalHolding: number;
   totalInTransit: number;
   todayProfit: number;
   count: number;
 
-  // 列表
   topHoldings: Holding[];
   topToday: (Holding & { todayProfit: number; rate: number })[];
 
-  // 提醒类
   pendingCount: number;
   abnormalDrops: AlertItem[];
   newHighs: AlertItem[];
@@ -73,7 +71,6 @@ export type HomeMetrics = {
   stopLosses: AlertItem[];
   navStaleCount: number;
 
-  // 分析类
   monthBuyAmount: number;
   monthSellAmount: number;
   monthProfit: number;
@@ -84,7 +81,6 @@ export type HomeMetrics = {
   holdDaysDist: { short: number; mid: number; long: number };
   maxDrawdown: number;
 
-  // 对比
   myAnnual: number;
   beatDeposit: { diff: number; positive: boolean };
   beatInflation: { diff: number; positive: boolean };
@@ -94,15 +90,15 @@ export type HomeMetrics = {
    常量
    ============================================================ */
 
-const DEPOSIT_RATE = 1.45;   // 3 年定存年化（%）
-const INFLATION_RATE = 0.3;  // 年化 CPI（%）
-const ABNORMAL_DROP_THRESHOLD = -0.5;   // 单日跌超 0.5%
-const TAKE_PROFIT_THRESHOLD = 5;         // 收益 >5%
-const STOP_LOSS_THRESHOLD = -3;          // 亏损 <-3%
-const IDLE_DAYS = 60;                     // 持有超 60 天
-const STALE_DAYS = 3;                     // 净值超 3 天未更新
-const NEW_HIGH_WINDOW = 90;               // 近 90 天
-const STREAK_DAYS = 7;                    // 连续 7 天
+const DEPOSIT_RATE = 1.45;
+const INFLATION_RATE = 0.3;
+const ABNORMAL_DROP_THRESHOLD = -0.5;
+const TAKE_PROFIT_THRESHOLD = 5;
+const STOP_LOSS_THRESHOLD = -3;
+const IDLE_DAYS = 60;
+const STALE_DAYS = 3;
+const NEW_HIGH_WINDOW = 90;
+const STREAK_DAYS = 7;
 
 /* ============================================================
    工具函数
@@ -116,6 +112,13 @@ function daysBetween(a: string, b: string): number {
   const d1 = new Date(a).getTime();
   const d2 = new Date(b).getTime();
   return Math.floor((d2 - d1) / 86400000);
+}
+
+function getMonthStart(): string {
+  const now = new Date();
+  const y = now.getFullYear();
+  const m = now.getMonth() + 1;
+  return `${y}-${String(m).padStart(2, "0")}-01`;
 }
 
 function getMonthRange(): { start: string; end: string } {
@@ -135,22 +138,130 @@ function daysAgo(n: number): string {
 }
 
 /* ============================================================
-   派生计算（纯函数）
+   ★ 单次遍历：holdings 所有派生
    ============================================================ */
 
-function computeBase(holdings: Holding[]) {
+function computeHoldingsDerived(
+  holdings: Holding[],
+  txByProduct: Map<number, TxRow[]>
+) {
   let totalHolding = 0;
   let totalInTransit = 0;
   let todayProfit = 0;
+  let navStaleCount = 0;
+  let short = 0, mid = 0, long = 0;
+  let weightedAnnual = 0;
+
+  const today = todayStr();
+
+  const abnormalDrops: AlertItem[] = [];
+  const takeProfits: AlertItem[] = [];
+  const stopLosses: AlertItem[] = [];
+  const idleLongs: AlertItem[] = [];
+  const bankMap = new Map<string, number>();
+
+  let best: { name: string; profit: number; rate: number } | null = null;
+  let worst: { name: string; profit: number; rate: number } | null = null;
+
+  const topToday: (Holding & { todayProfit: number; rate: number })[] = [];
 
   for (const h of holdings) {
     const hold = Number(h.holding_amount || 0);
     const transit = Number(h.in_transit_amount || 0);
     const daily = Number(h.products?.daily_return || 0);
+    const annual = Number(h.products?.annualized_1m || 0);
+    const purchase = Number(h.purchase_amount || 0);
+
     totalHolding += hold;
     totalInTransit += transit;
-    todayProfit += (hold * daily) / 10000;
+
+    const todayP = (hold * daily) / 10000;
+    todayProfit += todayP;
+    topToday.push({ ...h, todayProfit: todayP, rate: daily });
+
+    /* --- 异常波动 --- */
+    if (daily < ABNORMAL_DROP_THRESHOLD) {
+      abnormalDrops.push({
+        holdingId: h.id, productId: h.product_id,
+        name: h.products?.name || "", bank: h.products?.bank || "",
+        value: daily, unit: "%", reason: "单日下跌",
+      });
+    }
+
+    /* --- 止盈 / 止损 / 最佳最差 --- */
+    if (purchase > 0 && hold > 0) {
+      const rate = ((hold - purchase) / purchase) * 100;
+      if (rate > TAKE_PROFIT_THRESHOLD) {
+        takeProfits.push({
+          holdingId: h.id, productId: h.product_id,
+          name: h.products?.name || "", bank: h.products?.bank || "",
+          value: rate, unit: "%", reason: "考虑止盈",
+        });
+      }
+      if (rate < STOP_LOSS_THRESHOLD) {
+        stopLosses.push({
+          holdingId: h.id, productId: h.product_id,
+          name: h.products?.name || "", bank: h.products?.bank || "",
+          value: rate, unit: "%", reason: "建议止损",
+        });
+      }
+      const item = { name: h.products?.name || "", profit: hold - purchase, rate };
+      if (!best || item.rate > best.rate) best = item;
+      if (!worst || item.rate < worst.rate) worst = item;
+    }
+
+    /* --- 净值更新 --- */
+    const navDate = h.products?.nav_date;
+    if (!navDate || daysBetween(navDate, today) > STALE_DAYS) {
+      navStaleCount++;
+    }
+
+    /* --- 持有天数 + 长期未动 --- */
+    if (h.hold_date) {
+      const days = daysBetween(h.hold_date, today);
+      if (days < 30) short++;
+      else if (days < 180) mid++;
+      else long++;
+
+      if (days >= IDLE_DAYS) {
+        const txs = txByProduct.get(h.product_id) || [];
+        let buyCount = 0;
+        for (const t of txs) if (t.type === "buy") buyCount++;
+        if (buyCount <= 1) {
+          idleLongs.push({
+            holdingId: h.id, productId: h.product_id,
+            name: h.products?.name || "", bank: h.products?.bank || "",
+            value: days, unit: "天", reason: "从未加仓",
+          });
+        }
+      }
+    }
+
+    /* --- 资产分布 --- */
+    const bank = h.products?.bank || "其他";
+    bankMap.set(bank, (bankMap.get(bank) || 0) + hold);
+
+    /* --- 加权年化 --- */
+    weightedAnnual += hold * annual;
   }
+
+  /* --- 排序 --- */
+  const topHoldings = [...holdings].sort(
+    (a, b) => Number(b.holding_amount || 0) - Number(a.holding_amount || 0)
+  );
+  topToday.sort((a, b) => b.todayProfit - a.todayProfit);
+  abnormalDrops.sort((a, b) => a.value - b.value);
+  takeProfits.sort((a, b) => b.value - a.value);
+  stopLosses.sort((a, b) => a.value - b.value);
+  idleLongs.sort((a, b) => b.value - a.value);
+
+  /* --- 资产分布 --- */
+  const assetDistribution: BankSlice[] = Array.from(bankMap.entries())
+    .map(([bank, amount]) => ({
+      bank, amount,
+      percent: totalHolding > 0 ? (amount / totalHolding) * 100 : 0,
+    }))
+    .sort((a, b) => b.amount - a.amount);
 
   return {
     totalAssets: totalHolding + totalInTransit,
@@ -158,251 +269,127 @@ function computeBase(holdings: Holding[]) {
     totalInTransit,
     todayProfit,
     count: holdings.length,
+    topHoldings,
+    topToday,
+    abnormalDrops,
+    takeProfits,
+    stopLosses,
+    navStaleCount,
+    idleLongs,
+    assetDistribution,
+    topBank: assetDistribution[0] || null,
+    bestProduct: best,
+    worstProduct: worst,
+    holdDaysDist: { short, mid, long },
+    myAnnual: totalHolding > 0 ? weightedAnnual / totalHolding : 0,
   };
 }
 
-function computeTopHoldings(holdings: Holding[]): Holding[] {
-  return [...holdings].sort(
-    (a, b) => Number(b.holding_amount || 0) - Number(a.holding_amount || 0)
-  );
-}
+/* ============================================================
+   ★ 单次遍历：nav 相关派生
+   ============================================================ */
 
-function computeTopToday(holdings: Holding[]) {
-  const arr: (Holding & { todayProfit: number; rate: number })[] = [];
-  for (const h of holdings) {
-    const profit = (Number(h.holding_amount || 0) * Number(h.products?.daily_return || 0)) / 10000;
-    arr.push({ ...h, todayProfit: profit, rate: Number(h.products?.daily_return || 0) });
-  }
-  arr.sort((a, b) => b.todayProfit - a.todayProfit);
-  return arr;
-}
-
-function computeAbnormalDrops(holdings: Holding[]): AlertItem[] {
-  const out: AlertItem[] = [];
-  for (const h of holdings) {
-    const r = Number(h.products?.daily_return || 0);
-    if (r < ABNORMAL_DROP_THRESHOLD) {
-      out.push({
-        holdingId: h.id,
-        productId: h.product_id,
-        name: h.products?.name || "",
-        bank: h.products?.bank || "",
-        value: r,
-        unit: "%",
-        reason: "单日下跌",
-      });
-    }
-  }
-  return out.sort((a, b) => a.value - b.value);
-}
-
-function computeTakeProfits(holdings: Holding[]): AlertItem[] {
-  const out: AlertItem[] = [];
-  for (const h of holdings) {
-    const purchase = Number((h as any).purchase_amount || 0);
-    const hold = Number(h.holding_amount || 0);
-    if (purchase <= 0) continue;
-    const rate = ((hold - purchase) / purchase) * 100;
-    if (rate > TAKE_PROFIT_THRESHOLD) {
-      out.push({
-        holdingId: h.id,
-        productId: h.product_id,
-        name: h.products?.name || "",
-        bank: h.products?.bank || "",
-        value: rate,
-        unit: "%",
-        reason: "考虑止盈",
-      });
-    }
-  }
-  return out.sort((a, b) => b.value - a.value);
-}
-
-function computeStopLosses(holdings: Holding[]): AlertItem[] {
-  const out: AlertItem[] = [];
-  for (const h of holdings) {
-    const purchase = Number((h as any).purchase_amount || 0);
-    const hold = Number(h.holding_amount || 0);
-    if (purchase <= 0) continue;
-    const rate = ((hold - purchase) / purchase) * 100;
-    if (rate < STOP_LOSS_THRESHOLD) {
-      out.push({
-        holdingId: h.id,
-        productId: h.product_id,
-        name: h.products?.name || "",
-        bank: h.products?.bank || "",
-        value: rate,
-        unit: "%",
-        reason: "建议止损",
-      });
-    }
-  }
-  return out.sort((a, b) => a.value - b.value);
-}
-
-function computeIdleLongs(
-  holdings: Holding[],
-  txByProduct: Map<number, TxRow[]>
-): AlertItem[] {
-  const today = todayStr();
-  const out: AlertItem[] = [];
-  for (const h of holdings) {
-    if (!h.hold_date) continue;
-    const days = daysBetween(h.hold_date, today);
-    if (days < IDLE_DAYS) continue;
-    const txs = txByProduct.get(h.product_id) || [];
-    const buyCount = txs.filter(t => t.type === "buy").length;
-    if (buyCount > 1) continue;
-    out.push({
-      holdingId: h.id,
-      productId: h.product_id,
-      name: h.products?.name || "",
-      bank: h.products?.bank || "",
-      value: days,
-      unit: "天",
-      reason: "从未加仓",
-    });
-  }
-  return out.sort((a, b) => b.value - a.value);
-}
-
-function computeNavStale(holdings: Holding[]): number {
-  const today = todayStr();
-  let count = 0;
-  for (const h of holdings) {
-    const navDate = h.products?.nav_date;
-    if (!navDate) {
-      count++;
-      continue;
-    }
-    if (daysBetween(navDate, today) > STALE_DAYS) count++;
-  }
-  return count;
-}
-
-function computeNewHighs(
+function computeNavDerived(
   holdings: Holding[],
   navByProduct: Map<number, NavPoint[]>
-): AlertItem[] {
-  const out: AlertItem[] = [];
+) {
+  const newHighs: AlertItem[] = [];
+  const streakWins: AlertItem[] = [];
   const cutoff = daysAgo(NEW_HIGH_WINDOW);
-  for (const h of holdings) {
-    const navs = navByProduct.get(h.product_id);
-    if (!navs || navs.length < 5) continue;
-    const recent = navs.filter(n => n.date >= cutoff);
-    if (recent.length < 5) continue;
-    const latest = recent[recent.length - 1].nav;
-    const max = Math.max(...recent.map(n => n.nav));
-    if (latest >= max - 0.00005) {
-      out.push({
-        holdingId: h.id,
-        productId: h.product_id,
-        name: h.products?.name || "",
-        bank: h.products?.bank || "",
-        value: latest,
-        unit: "",
-        reason: "创新高",
-      });
-    }
-  }
-  return out;
-}
+  const mStart = getMonthStart();
 
-function computeStreakWins(
-  holdings: Holding[],
-  navByProduct: Map<number, NavPoint[]>
-): AlertItem[] {
-  const out: AlertItem[] = [];
-  for (const h of holdings) {
-    const navs = navByProduct.get(h.product_id);
-    if (!navs || navs.length < STREAK_DAYS + 1) continue;
-    let streak = 0;
-    for (let i = navs.length - 1; i > 0 && streak < STREAK_DAYS; i--) {
-      if (navs[i].nav > navs[i - 1].nav) streak++;
-      else break;
-    }
-    if (streak >= STREAK_DAYS) {
-      out.push({
-        holdingId: h.id,
-        productId: h.product_id,
-        name: h.products?.name || "",
-        bank: h.products?.bank || "",
-        value: streak,
-        unit: "天",
-        reason: "连续上涨",
-      });
-    }
-  }
-  return out.sort((a, b) => b.value - a.value);
-}
+  let maxDrawdown = 0;
 
-function computeAssetDistribution(holdings: Holding[], totalHolding: number): BankSlice[] {
-  if (totalHolding <= 0) return [];
-  const map = new Map<string, number>();
-  for (const h of holdings) {
-    const bank = h.products?.bank || "其他";
-    map.set(bank, (map.get(bank) || 0) + Number(h.holding_amount || 0));
-  }
-  return Array.from(map.entries())
-    .map(([bank, amount]) => ({
-      bank,
-      amount,
-      percent: (amount / totalHolding) * 100,
-    }))
-    .sort((a, b) => b.amount - a.amount);
-}
-
-function computeBestWorst(holdings: Holding[]) {
-  let best: any = null;
-  let worst: any = null;
-  for (const h of holdings) {
-    const purchase = Number((h as any).purchase_amount || 0);
-    const hold = Number(h.holding_amount || 0);
-    if (purchase <= 0) continue;
-    const profit = hold - purchase;
-    const rate = (profit / purchase) * 100;
-    const item = { name: h.products?.name || "", profit, rate };
-    if (!best || item.rate > best.rate) best = item;
-    if (!worst || item.rate < worst.rate) worst = item;
-  }
-  return { best, worst };
-}
-
-function computeHoldDaysDist(holdings: Holding[]) {
-  const today = todayStr();
-  let short = 0, mid = 0, long = 0;
-  for (const h of holdings) {
-    if (!h.hold_date) continue;
-    const days = daysBetween(h.hold_date, today);
-    if (days < 30) short++;
-    else if (days < 180) mid++;
-    else long++;
-  }
-  return { short, mid, long };
-}
-
-function computeMaxDrawdown(navByProduct: Map<number, NavPoint[]>): number {
-  let globalMax = 0;
+  /* 先遍历 navByProduct 算全局 maxDrawdown（无需 holdings） */
   for (const navs of navByProduct.values()) {
     if (navs.length < 2) continue;
     let peak = navs[0].nav;
-    let maxDD = 0;
     for (let i = 1; i < navs.length; i++) {
-      if (navs[i].nav > peak) peak = navs[i].nav;
-      const dd = ((peak - navs[i].nav) / peak) * 100;
-      if (dd > maxDD) maxDD = dd;
+      const v = navs[i].nav;
+      if (v > peak) peak = v;
+      else if (peak > 0) {
+        const dd = ((peak - v) / peak) * 100;
+        if (dd > maxDrawdown) maxDrawdown = dd;
+      }
     }
-    if (maxDD > globalMax) globalMax = maxDD;
   }
-  return globalMax;
+
+  let monthProfit = 0;
+
+  /* 再遍历 holdings：newHighs / streakWins / monthProfit */
+  for (const h of holdings) {
+    const navs = navByProduct.get(h.product_id);
+    if (!navs || navs.length < 2) continue;
+
+    /* --- 创新高 --- */
+    if (navs.length >= 5) {
+      let recentStartIdx = -1;
+      for (let i = navs.length - 1; i >= 0; i--) {
+        if (navs[i].date >= cutoff) recentStartIdx = i;
+        else break;
+      }
+      if (recentStartIdx >= 0 && navs.length - recentStartIdx >= 5) {
+        let mx = 0;
+        for (let i = recentStartIdx; i < navs.length; i++) {
+          if (navs[i].nav > mx) mx = navs[i].nav;
+        }
+        const latest = navs[navs.length - 1].nav;
+        if (latest >= mx - 0.00005) {
+          newHighs.push({
+            holdingId: h.id, productId: h.product_id,
+            name: h.products?.name || "", bank: h.products?.bank || "",
+            value: latest, unit: "", reason: "创新高",
+          });
+        }
+      }
+    }
+
+    /* --- 连续上涨 --- */
+    if (navs.length >= STREAK_DAYS + 1) {
+      let streak = 0;
+      for (let i = navs.length - 1; i > 0 && streak < STREAK_DAYS; i--) {
+        if (navs[i].nav > navs[i - 1].nav) streak++;
+        else break;
+      }
+      if (streak >= STREAK_DAYS) {
+        streakWins.push({
+          holdingId: h.id, productId: h.product_id,
+          name: h.products?.name || "", bank: h.products?.bank || "",
+          value: streak, unit: "天", reason: "连续上涨",
+        });
+      }
+    }
+
+    /* --- 本月收益 --- */
+    let firstThisMonth: number | null = null;
+    let lastThisMonth: number | null = null;
+    for (const n of navs) {
+      if (n.date >= mStart) {
+        if (firstThisMonth == null) firstThisMonth = n.nav;
+        lastThisMonth = n.nav;
+      }
+    }
+    if (firstThisMonth != null && lastThisMonth != null && firstThisMonth !== lastThisMonth) {
+      const shares = Number(h.shares || 0);
+      const amount = Number(h.holding_amount || 0);
+      if (shares > 0) monthProfit += shares * (lastThisMonth - firstThisMonth);
+      else if (amount > 0 && firstThisMonth > 0) {
+        monthProfit += amount * ((lastThisMonth - firstThisMonth) / firstThisMonth);
+      }
+    }
+  }
+
+  newHighs.sort((a, b) => b.value - a.value);
+  streakWins.sort((a, b) => b.value - a.value);
+
+  return { newHighs, streakWins, maxDrawdown, monthProfit };
 }
 
-function computeMonthStats(
-  txs: TxRow[],
-  navByProduct: Map<number, NavPoint[]>,
-  holdings: Holding[],
-  monthProfitFromNav: number
-) {
+/* ============================================================
+   单次遍历：transactions 月度统计
+   ============================================================ */
+
+function computeMonthTxStats(txs: TxRow[]) {
   const { start, end } = getMonthRange();
   let buyAmount = 0;
   let sellAmount = 0;
@@ -411,18 +398,7 @@ function computeMonthStats(
     if (tx.type === "buy") buyAmount += Number(tx.amount || 0);
     else if (tx.type === "sell" || tx.type === "close") sellAmount += Number(tx.amount || 0);
   }
-  return { buyAmount, sellAmount, monthProfit: monthProfitFromNav };
-}
-
-function computeMyAnnual(holdings: Holding[], totalHolding: number): number {
-  if (totalHolding <= 0) return 0;
-  let weightedSum = 0;
-  for (const h of holdings) {
-    const hold = Number(h.holding_amount || 0);
-    const annual = Number(h.products?.annualized_1m || 0);
-    weightedSum += (hold / totalHolding) * annual;
-  }
-  return weightedSum;
+  return { buyAmount, sellAmount };
 }
 
 /* ============================================================
@@ -467,7 +443,7 @@ export function useHomeMetrics(enabled = true) {
     return () => { cancelled = true; };
   }, [enabled]);
 
-  /* ---------- Stage 2：扩展数据延迟加载（不阻塞首屏） ---------- */
+  /* ---------- Stage 2：扩展数据延迟加载 ---------- */
   useEffect(() => {
     if (stage !== "extended") return;
     const userId = userIdRef.current;
@@ -495,7 +471,6 @@ export function useHomeMetrics(enabled = true) {
       setTransactions((txRes.data as any) || []);
       setPendingCount(rulesRes.data?.length || 0);
 
-      // nav 历史也延迟拉
       const productIds = holdings.map(h => h.product_id).filter(Boolean);
       if (productIds.length > 0) {
         const { data: navs } = await supabase
@@ -515,7 +490,7 @@ export function useHomeMetrics(enabled = true) {
       }
 
       setStage("done");
-    }, 260); // 延迟 260ms，让首屏渲染完成
+    }, 260);
 
     return () => {
       cancelled = true;
@@ -523,80 +498,55 @@ export function useHomeMetrics(enabled = true) {
     };
   }, [stage, holdings]);
 
-  /* ---------- 派生指标：单一 useMemo 缓存 ---------- */
+  /* ---------- 派生指标：单次遍历合并 ---------- */
   const metrics: HomeMetrics = useMemo(() => {
-    const base = computeBase(holdings);
-    const topHoldings = computeTopHoldings(holdings);
-    const topToday = computeTopToday(holdings);
-    const abnormalDrops = computeAbnormalDrops(holdings);
-    const takeProfits = computeTakeProfits(holdings);
-    const stopLosses = computeStopLosses(holdings);
-    const navStaleCount = computeNavStale(holdings);
-
+    /* 1. 构建 txByProduct */
     const txByProduct = new Map<number, TxRow[]>();
     for (const tx of transactions) {
-      if (!txByProduct.has(tx.product_id)) txByProduct.set(tx.product_id, []);
-      txByProduct.get(tx.product_id)!.push(tx);
+      let arr = txByProduct.get(tx.product_id);
+      if (!arr) { arr = []; txByProduct.set(tx.product_id, arr); }
+      arr.push(tx);
     }
 
-    const idleLongs = computeIdleLongs(holdings, txByProduct);
-    const newHighs = computeNewHighs(holdings, navByProduct);
-    const streakWins = computeStreakWins(holdings, navByProduct);
+    /* 2. 一次遍历 holdings */
+    const hd = computeHoldingsDerived(holdings, txByProduct);
 
-    const assetDistribution = computeAssetDistribution(holdings, base.totalHolding);
-    const topBank = assetDistribution[0] || null;
-    const { best, worst } = computeBestWorst(holdings);
-    const holdDaysDist = computeHoldDaysDist(holdings);
-    const maxDrawdown = computeMaxDrawdown(navByProduct);
+    /* 3. 一次遍历 nav */
+    const nd = computeNavDerived(holdings, navByProduct);
 
-    // 本月收益（用 nav 差算）
-    let monthProfit = 0;
-    const mStart = getMonthRange().start;
-    for (const h of holdings) {
-      const navs = navByProduct.get(h.product_id);
-      if (!navs || navs.length < 2) continue;
-      const recent = navs.filter(n => n.date >= mStart);
-      if (recent.length < 2) continue;
-      const shares = Number(h.shares || 0);
-      const amount = Number(h.holding_amount || 0);
-      const first = recent[0].nav;
-      const last = recent[recent.length - 1].nav;
-      if (shares > 0) monthProfit += shares * (last - first);
-      else if (amount > 0 && first > 0) monthProfit += amount * ((last - first) / first);
-    }
-
-    const { buyAmount, sellAmount } = computeMonthStats(
-      transactions, navByProduct, holdings, monthProfit
-    );
-
-    const myAnnual = computeMyAnnual(holdings, base.totalHolding);
+    /* 4. 月度交易统计 */
+    const { buyAmount, sellAmount } = computeMonthTxStats(transactions);
 
     return {
-      ...base,
-      topHoldings,
-      topToday,
+      ...hd,
       pendingCount,
-      abnormalDrops,
-      newHighs,
-      idleLongs,
-      streakWins,
-      takeProfits,
-      stopLosses,
-      navStaleCount,
+      newHighs: nd.newHighs,
+      streakWins: nd.streakWins,
+      maxDrawdown: nd.maxDrawdown,
+      monthProfit: nd.monthProfit,
       monthBuyAmount: buyAmount,
       monthSellAmount: sellAmount,
-      monthProfit,
-      assetDistribution,
-      topBank,
-      bestProduct: best,
-      worstProduct: worst,
-      holdDaysDist,
-      maxDrawdown,
-      myAnnual,
-      beatDeposit: { diff: myAnnual - DEPOSIT_RATE, positive: myAnnual > DEPOSIT_RATE },
-      beatInflation: { diff: myAnnual - INFLATION_RATE, positive: myAnnual > INFLATION_RATE },
+      beatDeposit: { diff: hd.myAnnual - DEPOSIT_RATE, positive: hd.myAnnual > DEPOSIT_RATE },
+      beatInflation: { diff: hd.myAnnual - INFLATION_RATE, positive: hd.myAnnual > INFLATION_RATE },
     };
   }, [holdings, transactions, navByProduct, pendingCount]);
 
-  return { metrics, loading, stage };
+    /* ★ 计算从 refDate 到今天的累计收益 */
+  const getPeriodProfit = useCallback((refDate: string): number => {
+    if (!refDate) return 0;
+    let total = 0;
+    for (const h of holdings) {
+      const navs = navByProduct.get(h.product_id);
+      if (!navs || navs.length < 2) continue;
+      const shares = Number(h.shares || 0);
+      if (shares <= 0) continue;
+      for (let i = 1; i < navs.length; i++) {
+        if (navs[i].date < refDate) continue;
+        total += shares * (navs[i].nav - navs[i - 1].nav);
+      }
+    }
+    return total;
+  }, [holdings, navByProduct]);
+
+  return { metrics, loading, stage, getPeriodProfit };
 }

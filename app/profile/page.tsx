@@ -11,7 +11,7 @@ export default function ProfilePage() {
   const [username, setUsername] = useState<string | null>(null);
   const [stats, setStats] = useState({ totalAssets: 0, totalProfit: 0, holdingsCount: 0 });
 
-  /* ★ 数据检查状态 */
+  /* 数据检查状态 */
   const [checkOpen, setCheckOpen] = useState(false);
   const [checking, setChecking] = useState(false);
   const [checkProgress, setCheckProgress] = useState({ done: 0, total: 0 });
@@ -21,6 +21,7 @@ export default function ProfilePage() {
     errors: string[];
   } | null>(null);
 
+  /* 补录快照 */
   useEffect(() => {
     const u = localStorage.getItem("username");
     const id = localStorage.getItem("user_id");
@@ -47,7 +48,8 @@ export default function ProfilePage() {
     router.push("/login");
   }
 
-  /* ★ 数据一致性检查：遍历所有持仓，重算 */
+
+  /* 数据一致性检查：遍历所有持仓，重算 */
   async function runDataCheck() {
     const userId = localStorage.getItem("user_id");
     if (!userId) return;
@@ -56,7 +58,6 @@ export default function ProfilePage() {
     setCheckResult(null);
     setCheckProgress({ done: 0, total: 0 });
 
-    // 1. 拉所有持仓（包括已清仓）
     const { data: holdings } = await supabase
       .from("user_holdings")
       .select("product_id, status")
@@ -73,7 +74,6 @@ export default function ProfilePage() {
     let fixed = 0;
     const errors: string[] = [];
 
-    // 2. 逐个重算
     for (let i = 0; i < holdings.length; i++) {
       const h = holdings[i];
       try {
@@ -85,7 +85,6 @@ export default function ProfilePage() {
       setCheckProgress({ done: i + 1, total: holdings.length });
     }
 
-    // 3. 清缓存
     localStorage.removeItem("cache_home_cache_v3");
     localStorage.removeItem("cache_home_cache_v4");
     localStorage.removeItem("cache_transactions");
@@ -96,7 +95,6 @@ export default function ProfilePage() {
     setCheckResult({ total: holdings.length, fixed, errors });
   }
 
-  /* 未登录 */
   if (!username) {
     return (
       <div className="min-h-screen pb-24">
@@ -131,8 +129,6 @@ export default function ProfilePage() {
   const MENU = [
     { key: "transactions", label: "交易记录", desc: "购买 / 赎回历史", href: "/transactions", icon: "📋", color: "bg-blue-50" },
     { key: "watchlist", label: "我的自选", desc: "关注的产品", href: "/watchlist", icon: "⭐", color: "bg-amber-50" },
-    { key: "analysis", label: "收益分析", desc: "收益趋势和图表", href: "/analysis", icon: "📊", color: "bg-emerald-50" },
-    { key: "compare", label: "产品对比", desc: "对比多个产品", href: "/compare", icon: "⚖️", color: "bg-purple-50" },
     { key: "export", label: "数据导出", desc: "导出持仓 / 交易备份", href: "/export", icon: "💾", color: "bg-indigo-50" },
     { key: "check", label: "数据检查", desc: "持仓不一致时一键修复", icon: "🛠️", color: "bg-cyan-50" },
     { key: "settings", label: "设置", desc: "账号和偏好", href: "/settings", icon: "⚙️", color: "bg-slate-50" },
@@ -148,7 +144,6 @@ export default function ProfilePage() {
     <div className="min-h-screen pb-24">
       <div className="container mx-auto px-5 pt-8 max-w-3xl">
 
-        {/* 顶部用户区 */}
         <div className="flex items-center gap-3 mb-6 animate-fade-in-up">
           <div className="w-12 h-12 rounded-2xl
                           bg-gradient-to-br from-indigo-500 via-purple-500 to-pink-500
@@ -167,7 +162,6 @@ export default function ProfilePage() {
           </div>
         </div>
 
-        {/* 资产统计卡 */}
         <div className="card-summary p-5 mb-5 animate-fade-in-up delay-1">
           <div className="grid grid-cols-3 divide-x divide-slate-100">
             <div className="text-center">
@@ -198,7 +192,6 @@ export default function ProfilePage() {
           </div>
         </div>
 
-        {/* 菜单（含数据检查） */}
         <div className="card overflow-hidden mb-5 animate-fade-in-up delay-2">
           {MENU.map((m) => {
             const isCheck = m.key === "check";
@@ -249,11 +242,8 @@ export default function ProfilePage() {
               </Link>
             );
           })}
-
-
         </div>
 
-        {/* 退出登录 */}
         <button
           onClick={handleLogout}
           className="w-full card py-4 text-[13px] text-rose-500 font-semibold
@@ -264,13 +254,12 @@ export default function ProfilePage() {
           退出登录
         </button>
 
-        {/* 版本信息 */}
         <div className="text-center text-[10px] text-slate-300 pb-4 animate-fade-in-up delay-4">
-          理财净值观察站 v1.0
+          理财净值观察站 v4.9.0
         </div>
       </div>
 
-      {/* ★ 数据检查弹窗 */}
+      {/* 数据检查弹窗 */}
       {checkOpen && (
         <>
           <div
@@ -305,10 +294,14 @@ export default function ProfilePage() {
                     </button>
                     <button
                       onClick={() => setCheckOpen(false)}
-                      className="btn-secondary w-full py-3 text-[13px] font-medium"
+                      className="btn-secondary w-full py-3 text-[13px] font-semibold"
                     >
                       取消
                     </button>
+                  </div>
+                  <div className="mt-4 text-[10px] text-slate-400 text-center leading-relaxed">
+                    删交易/改日期会自动修正快照。<br />
+                    「补录历史资产」用于兜底。
                   </div>
                 </>
               )}
@@ -394,6 +387,7 @@ export default function ProfilePage() {
           </div>
         </>
       )}
+
     </div>
   );
 }
