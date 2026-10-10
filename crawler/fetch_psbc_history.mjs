@@ -124,7 +124,18 @@ for (const p of prods) {
     const wpCode = hit.wp_code;
     console.log(`   命中: ${hit.wp_name}`);
 
-    // ② 抓第 1 页
+    // ② 读数据库里该产品的最新日期
+    const { data: latestRow } = await supabase
+      .from('nav_history')
+      .select('nav_date')
+      .eq('product_id', p.id)
+      .order('nav_date', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    const lastNavDate = latestRow?.nav_date || '1970-01-01';
+    console.log(`   数据库最新: ${lastNavDate}`);
+
+    // ③ 抓第 1 页（探针）
     const first = await nvlist(wpCode, 1);
     const totalPage = first.data?.totalPage || 0;
     const totalRow = first.data?.totalRow || 0;
@@ -132,25 +143,32 @@ for (const p of prods) {
 
     if (totalPage === 0) { console.log('   ⚠️ 无历史\n'); continue; }
 
-    // ③ 翻页抓全部
+    // ③ 翻页抓（增量：遇到旧数据就停）
     const allRows = [];
     for (let page = 1; page <= totalPage; page++) {
       const res = page === 1 ? first : await nvlist(wpCode, page);
       const list = res.data?.list || [];
       if (list.length === 0) break;
 
+      let hitOld = false;
       for (const x of list) {
+        const navDate = fmtDate(x.update_date);
+        if (navDate <= lastNavDate) { hitOld = true; break; }  // 遇到旧数据停
         const nav = parseFloat(x.nav);
         const accum = parseFloat(x.accumulative_nav);
         if (!isFinite(nav) || nav <= 0) continue;
         allRows.push({
           product_id: p.id,
-          nav_date: fmtDate(x.update_date),
+          nav_date: navDate,
           unit_nav: nav,
           accum_nav: isFinite(accum) ? accum : null,
         });
       }
 
+      if (hitOld) {
+        console.log(`     翻到已知区域（${list[0].update_date}），停止`);
+        break;
+      }
       if (page % 10 === 0 || page === totalPage) {
         console.log(`     页 ${page}/${totalPage} → 累计 ${allRows.length}`);
       }
