@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useMemo } from "react";
 import { supabase } from "../../lib/supabase";
 import { recalcHoldingFromTransactions, fetchNavByDate } from "../../lib/holdings";
 
@@ -15,6 +15,79 @@ function todayStr() {
   return new Date().toISOString().split("T")[0];
 }
 
+/** 在日期 d 基础上加 N 个工作日（跳过周末） */
+function addWorkDays(d: Date, days: number): Date {
+  const result = new Date(d);
+  let added = 0;
+  while (added < days) {
+    result.setDate(result.getDate() + 1);
+    const dow = result.getDay();
+    if (dow !== 0 && dow !== 6) added++;
+  }
+  return result;
+}
+
+/** 若日期是周末，则顺延到最近的工作日 */
+function skipWeekend(d: Date): Date {
+  const result = new Date(d);
+  while (result.getDay() === 0 || result.getDay() === 6) {
+    result.setDate(result.getDate() + 1);
+  }
+  return result;
+}
+
+/**
+ * 计算赎回关键日期
+ * @param dateStr 用户选择的赎回日期（YYYY-MM-DD）
+ * @param rules 产品规则
+ * @returns { t, confirmDate, arrivalDate, note }
+ */
+function calcRedemption(
+  dateStr: string,
+  rules: {
+    arrival_days?: number | null;
+    confirm_days?: number | null;
+    cutoff_time?: string | null;
+  }
+) {
+  const arrivalDays = rules.arrival_days ?? 1;
+  const confirmDays = rules.confirm_days ?? 1;
+  const cutoff = rules.cutoff_time;
+
+  // 从用户选择的日期开始（视为当天提交）
+  let t = new Date(dateStr + "T12:00:00");
+  let note = "";
+
+  // 如果用户选的是今天，且当前时间已过截止 → T 顺延到下个工作日
+  const today = todayStr();
+  if (dateStr === today && cutoff) {
+    const [h, m] = cutoff.split(":").map(Number);
+    const now = new Date();
+    if (now.getHours() > h || (now.getHours() === h && now.getMinutes() >= m)) {
+      t = addWorkDays(t, 1);
+      note = `已过 ${cutoff} 截止，顺延到下一个工作日`;
+    }
+  }
+
+  // T 本身若为周末，顺延
+  t = skipWeekend(t);
+
+  const confirmDate = addWorkDays(t, confirmDays);
+  const arrivalDate = addWorkDays(t, arrivalDays);
+
+  const fmt = (d: Date) =>
+    `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+
+  return {
+    t: fmt(t),
+    confirmDate: fmt(confirmDate),
+    arrivalDate: fmt(arrivalDate),
+    note,
+    arrivalDays,
+    confirmDays,
+  };
+}
+
 export default function QuickSellModal({ open, holding, onClose, onSuccess }: Props) {
   const [shares, setShares] = useState("");
   const [nav, setNav] = useState("");
@@ -24,12 +97,9 @@ export default function QuickSellModal({ open, holding, onClose, onSuccess }: Pr
   const [msg, setMsg] = useState("");
   const [navLoading, setNavLoading] = useState(false);
 
-  /* ★ 用户是否手动改过净值输入框 */
   const navTouchedRef = useRef(false);
-  /* ★ 上一次已处理的日期 */
   const prevDateRef = useRef("");
 
-  /* 打开时初始化 + 查一次当日净值 */
   useEffect(() => {
     if (!open) return;
     const t = todayStr();
@@ -54,14 +124,13 @@ export default function QuickSellModal({ open, holding, onClose, onSuccess }: Pr
     return () => { cancelled = true; };
   }, [open, holding]);
 
-  /* ★ 日期变化 → 自动查净值（仅当用户未手动编辑过） */
   useEffect(() => {
     if (!open || !date) return;
     const pid = holding?.products?.id;
     if (!pid) return;
-    if (prevDateRef.current === date) return;    // 已处理
+    if (prevDateRef.current === date) return;
     prevDateRef.current = date;
-    if (navTouchedRef.current) return;            // 用户手改过，不覆盖
+    if (navTouchedRef.current) return;
 
     let cancelled = false;
     setNavLoading(true);
@@ -73,19 +142,33 @@ export default function QuickSellModal({ open, holding, onClose, onSuccess }: Pr
     return () => { cancelled = true; };
   }, [open, date, holding?.products?.id]);
 
-  /* ★ 用户手动改净值 */
   function handleNavChange(v: string) {
     navTouchedRef.current = true;
     setNav(v);
   }
 
-  if (!open || !holding) return null;
-
-  const currentShares = Number(holding.shares || 0);
-  const currentAmount = Number(holding.holding_amount || 0);
+  const currentShares = Number(holding?.shares || 0);
+  const currentAmount = Number(holding?.holding_amount || 0);
   const sh = Number(shares);
   const navNum = Number(nav);
   const sellAmt = sh * navNum;
+
+  /** ★ 实时计算赎回关键日期 */
+  const redemption = useMemo(() => {
+    if (!date || !holding?.products) return null;
+    const p = holding.products;
+    // 只有产品有规则时才计算
+    if (p.redeem_arrival_days == null && p.redeem_confirm_days == null && !p.redeem_cutoff_time) {
+      return null;
+    }
+    return calcRedemption(date, {
+      arrival_days: p.redeem_arrival_days,
+      confirm_days: p.redeem_confirm_days,
+      cutoff_time: p.redeem_cutoff_time,
+    });
+  }, [date, holding?.products]);
+
+  if (!open || !holding) return null;
 
   async function handleSubmit() {
     if (!navNum || navNum <= 0) return setMsg("请填写净值");
@@ -194,9 +277,58 @@ export default function QuickSellModal({ open, holding, onClose, onSuccess }: Pr
                 </div>
               </div>
 
+              {/* 预计赎回金额 */}
               {sellAmt > 0 && (
                 <div className="bg-slate-50 rounded-xl px-3 py-2.5 text-[11px] text-slate-600 font-mono">
-                  预计到账：¥ {sellAmt.toLocaleString("zh-CN", { minimumFractionDigits: 2 })}
+                  预计赎回金额：¥ {sellAmt.toLocaleString("zh-CN", { minimumFractionDigits: 2 })}
+                </div>
+              )}
+
+              {/* ★ 赎回时间轴 */}
+              {redemption && (
+                <div className="bg-amber-50/60 border border-amber-100 rounded-xl p-3.5 space-y-2.5">
+                  <div className="flex items-center gap-1.5 mb-1">
+                    <svg className="w-3.5 h-3.5 text-amber-600" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
+                      <circle cx="12" cy="12" r="9" />
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M12 7v5l3 3" />
+                    </svg>
+                    <span className="text-[11px] font-semibold text-amber-700">赎回时间预估</span>
+                  </div>
+
+                  {/* 交易日 */}
+                  <div className="flex items-center justify-between text-[11px]">
+                    <span className="text-slate-500">交易日 T</span>
+                    <span className="font-mono font-semibold text-slate-700 tabular">{redemption.t}</span>
+                  </div>
+
+                  {/* 收益截止日 */}
+                  <div className="flex items-center justify-between text-[11px]">
+                    <span className="text-slate-500">
+                      收益截止日
+                      <span className="text-[9px] text-slate-400 ml-1">(T+{redemption.confirmDays})</span>
+                    </span>
+                    <span className="font-mono font-semibold text-rose-600 tabular">{redemption.confirmDate}</span>
+                  </div>
+
+                  {/* 资金到账日 */}
+                  <div className="flex items-center justify-between text-[11px]">
+                    <span className="text-slate-500">
+                      资金到账日
+                      <span className="text-[9px] text-slate-400 ml-1">(T+{redemption.arrivalDays})</span>
+                    </span>
+                    <span className="font-mono font-semibold text-emerald-600 tabular">{redemption.arrivalDate}</span>
+                  </div>
+
+                  {/* 提示 */}
+                  {redemption.note && (
+                    <div className="text-[10px] text-amber-700 bg-amber-100/60 rounded-lg px-2.5 py-1.5 leading-relaxed">
+                      ⚠️ {redemption.note}
+                    </div>
+                  )}
+
+                  <div className="text-[9px] text-amber-600/80 leading-relaxed pt-1 border-t border-amber-100">
+                    预估仅供参考，节假日顺延以银行为准
+                  </div>
                 </div>
               )}
 

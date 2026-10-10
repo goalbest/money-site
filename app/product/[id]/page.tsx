@@ -127,7 +127,7 @@ export default function ProductPage() {
       if (userId) {
         const { data: hd } = await supabase
           .from("user_holdings")
-          .select("id, holding_amount, in_transit_amount, shares, hold_date, status, products(id, name, unit_nav)")
+          .select("id, holding_amount, in_transit_amount, shares, hold_date, status, products(id, name, unit_nav, risk_level, redeem_arrival_days, redeem_confirm_days, redeem_cutoff_time)")
           .eq("user_id", userId)
           .eq("product_id", productId)
           .in("status", ["active", "closed"])
