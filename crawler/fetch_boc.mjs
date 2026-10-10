@@ -29,7 +29,7 @@ if (!SUPABASE_URL || !SUPABASE_KEY) { console.error('❌ env 缺失'); process.e
 const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
 
 console.log('═══════════════════════════════');
-console.log('中国银行净值更新（点击查看更多）');
+console.log('中国银行净值更新');
 console.log('═══════════════════════════════\n');
 
 const { data: sources, error: srcErr } = await supabase
@@ -61,7 +61,6 @@ const page = await context.newPage();
 
 let updated = 0, failed = 0;
 
-// 从文本解析 (日期, 单位净值, 累计净值)
 function parseNavList(text) {
   const lines = text.split('\n').map(s => s.trim()).filter(Boolean);
   const result = [];
@@ -73,7 +72,6 @@ function parseNavList(text) {
     const next = lines[i + 1];
     const nextNext = lines[i + 2];
 
-    // 日期后紧跟的两个数字 = 单位净值、累计净值
     let nav = null, accum = null;
     if (/^[0-9]+\.[0-9]+$/.test(next)) nav = parseFloat(next);
     if (/^[0-9]+\.[0-9]+$/.test(nextNext)) accum = parseFloat(nextNext);
@@ -103,6 +101,26 @@ for (const p of BOC_PRODUCTS) {
     const nameMatch = detailText.match(/（[^）]*）([^\n(（|]+?)\(([A-Z0-9]+)\)/);
     const productName = nameMatch?.[1]?.trim() || null;
 
+    // ── 解析交易规则（唯一一份，无重复）──
+    let riskLevel = null;
+    let arrivalDays = null;
+    let cutoffTime = null;
+
+    const riskM = detailText.match(/(?:P?R)(\d)/i);
+    if (riskM) riskLevel = `R${riskM[1]}`;
+
+    const arrM1 = detailText.match(/T\+?(\d+)\s*到账/);
+    if (arrM1) arrivalDays = parseInt(arrM1[1], 10);
+    const arrM2 = detailText.match(/预计[^\d]{0,5}T\+?(\d+)/);
+    if (!arrivalDays && arrM2) arrivalDays = parseInt(arrM2[1], 10);
+    const arrM3 = detailText.match(/(\d+)\s*个工作日[^\n]{0,10}到账/);
+    if (!arrivalDays && arrM3) arrivalDays = parseInt(arrM3[1], 10);
+
+    const cutM = detailText.match(/(\d{1,2}):(\d{2})\s*(?:前|之前)/);
+    if (cutM) cutoffTime = `${cutM[1].padStart(2, '0')}:${cutM[2]}`;
+
+    console.log(`   规则: 风险${riskLevel || '?'}, 到账T+${arrivalDays || '?'}, 截止${cutoffTime || '?'}`);
+
     // 点击"查看更多"
     try {
       const btn = await page.locator('text=查看更多').first();
@@ -116,21 +134,6 @@ for (const p of BOC_PRODUCTS) {
     }
 
     const listText = await page.evaluate(() => document.body.innerText);
-        // ── 解析交易规则 ──
-    const rules = {
-      redeem_arrival_days: null,
-      redeem_confirm_days: 1,
-      redeem_cutoff_time: null,
-      risk_level: null,
-    };
-    const riskM = detailText.match(/(?:P?R)(\d)/i);
-    if (riskM) rules.risk_level = `R${riskM[1]}`;
-    const arrM = detailText.match(/T\+?(\d+)\s*到账/);
-    if (arrM) rules.redeem_arrival_days = parseInt(arrM[1], 10);
-    const cutM = detailText.match(/(\d{1,2}):(\d{2})\s*前/);
-    if (cutM) rules.redeem_cutoff_time = `${cutM[1].padStart(2,'0')}:${cutM[2]}`;
-    console.log(`   规则: 到账T+${rules.redeem_arrival_days}, 截止${rules.redeem_cutoff_time}, 风险${rules.risk_level}`);
-
     const list = parseNavList(listText);
     console.log(`   解析到 ${list.length} 条`);
 
@@ -139,10 +142,6 @@ for (const p of BOC_PRODUCTS) {
       failed++;
       continue;
     }
-
-    // 打印前 3 条调试
-    console.log('   前 3 条:');
-    list.slice(0, 3).forEach(r => console.log(`     ${r.date} | nav=${r.nav} | accum=${r.accum}`));
 
     const navRows = list.map(r => ({
       product_id: p.dbId,
@@ -165,10 +164,10 @@ for (const p of BOC_PRODUCTS) {
       unit_nav: latestRow.nav,
       nav_date: latestRow.date,
       bank_code: p.productCode,
-      redeem_arrival_days: rules.redeem_arrival_days,
-      redeem_confirm_days: rules.redeem_confirm_days,
-      redeem_cutoff_time: rules.redeem_cutoff_time,
-      risk_level: rules.risk_level,
+      risk_level: riskLevel,
+      redeem_arrival_days: arrivalDays,
+      redeem_confirm_days: 1,
+      redeem_cutoff_time: cutoffTime,
     };
     if (productName && !productName.startsWith('中行产品')) updates.name = productName;
 
