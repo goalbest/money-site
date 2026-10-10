@@ -167,15 +167,6 @@ for (const p of CMB_PRODUCTS) {
 
       if (!latest) latest = list[0];
 
-      // ★ 只保留比数据库最新日期更新的数据
-      const newRows = list
-        .filter(x => x.date > lastNavDate)
-        .map(x => ({
-          product_id: p.dbId,
-          nav_date: x.date,
-          unit_nav: parseFloat(x.unitNetValue),
-          accum_nav: parseFloat(x.totalNetValue),
-        }));
 
       // 只保留比数据库新的数据
       const newRows = list
