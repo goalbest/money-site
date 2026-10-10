@@ -84,6 +84,26 @@ export async function POST(request: Request) {
       sourceType = 'boc';
       bank = '中国银行';
       params = { product_id: productId };
+          } else if (hostname.includes('abchina.com')) {
+      // 农银理财：解析链接，写 product_sources（净值交给 Actions）
+      const { parseAbcLink, ABC_DEFAULT_RULES } = await import('@/lib/abc-parse');
+      const info = parseAbcLink(url);
+      if (!info) {
+        return NextResponse.json({ error: '无法从农行链接提取产品代码' }, { status: 400 });
+      }
+
+      product = {
+        code: info.productCode,
+        name: `农行产品 ${info.productCode}`,
+        unitNav: null,
+        navDate: null,
+        sevenYield: null,
+        wfEarn: null,
+        riskLevel: ABC_DEFAULT_RULES.risk_level,
+      };
+      sourceType = 'abc';
+      bank = '农银理财';
+      params = { product_code: info.productCode, raw_code: info.rawCode };
     } else if (hostname.includes('cmbchina.com')) {
       // 招商银行：不立即抓，只提取参数（净值交给 Playwright workflow）
       const u = new URL(url);
