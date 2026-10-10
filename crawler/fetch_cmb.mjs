@@ -95,6 +95,48 @@ for (const p of CMB_PRODUCTS) {
       { waitUntil: 'domcontentloaded', timeout: 45000 }
     );
     await page.waitForTimeout(2000);
+    // ── 先拿产品真名 ──
+    let realName = null;
+    try {
+      const nameData = await page.evaluate(async ({ saaCode, ripInn }) => {
+        const r = await fetch('/ientrustfinance/product-statistics/get-history-performance', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json; charset=UTF-8',
+            'X-Requested-With': 'XMLHttpRequest',
+          },
+          body: JSON.stringify({ saaCode, ripInn, yDalCod: 'N' }),
+        });
+        return await r.json();
+      }, { saaCode: p.saaCode, ripInn: p.ripInn });
+
+      realName = nameData?.bizResult?.data?.ripSnm || null;
+      if (realName) console.log(`   真名: ${realName}`);
+    } catch (e) {
+      console.log(`   拿名字失败: ${e.message}`);
+    }
+
+    // ── 先拿产品真名 ──
+    let realName = null;
+    try {
+      const nameData = await page.evaluate(async ({ saaCode, ripInn }) => {
+        const r = await fetch('/ientrustfinance/product-statistics/get-history-performance', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json; charset=UTF-8',
+            'X-Requested-With': 'XMLHttpRequest',
+          },
+          body: JSON.stringify({ saaCode, ripInn, yDalCod: 'N' }),
+        });
+        return await r.json();
+      }, { saaCode: p.saaCode, ripInn: p.ripInn });
+
+      realName = nameData?.bizResult?.data?.ripSnm || null;
+      if (realName) console.log(`   真名: ${realName}`);
+    } catch (e) {
+      console.log(`   拿名字失败: ${e.message}`);
+    }
+
     // ── 翻页抓全部历史 ──
     let yNavDat = '0';
     let round = 0;
@@ -154,6 +196,16 @@ for (const p of CMB_PRODUCTS) {
     });
     if (error) { console.log(`   ❌ upsert 失败: ${error.message}\n`); continue; }
     totalUpserted += allRows.length;
+
+    // 如果有真名且当前是占位符 → 更新名字
+    if (realName) {
+      const { data: cur } = await supabase
+        .from('products').select('name').eq('id', p.dbId).single();
+      if (cur?.name?.startsWith('招行产品')) {
+        await supabase.from('products').update({ name: realName }).eq('id', p.dbId);
+        console.log(`   名字已更新: ${realName}`);
+      }
+    }
 
     // ── 更新 products 最新净值 ──
     const updates = {
