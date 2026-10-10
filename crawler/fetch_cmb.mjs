@@ -32,7 +32,7 @@ console.log('══════════════════════�
 console.log('招银/交银净值更新（Playwright + 翻页）');
 console.log('═══════════════════════════════\n');
 
-// ── 从 product_sources 读招行产品 ──
+// 从 product_sources 读招行产品
 const { data: sources, error: srcErr } = await supabase
   .from('product_sources')
   .select('id, product_id, params')
@@ -63,7 +63,7 @@ const context = await browser.newContext({
 });
 const page = await context.newPage();
 
-// 建会话：访问轻量首页拿 cookie（不访问慢的详情页）
+// 建会话
 console.log('→ 建立会话...');
 async function ensureSession(retries = 3) {
   for (let i = 0; i < retries; i++) {
@@ -84,20 +84,51 @@ async function ensureSession(retries = 3) {
 await ensureSession();
 console.log('   ✅ 会话已建立\n');
 
+// ── 规则解析工具函数 ──
+function parseRules(text) {
+  let riskLevel = null, arrivalDays = null, cutoffTime = null;
+
+  // 风险等级
+  const riskM = text.match(/(?:P?R)(\d)/i);
+  if (riskM) riskLevel = `R${riskM[1]}`;
+
+  // 到账：T+N / 最快T+N到账 / N个工作日到账
+  const arrPatterns = [
+    /T\+?(\d+)\s*(?:个?交易日?)?到账/,
+    /最快T\+?(\d+)/,
+    /(\d+)\s*个工作日[^\n]{0,15}到账/,
+    /T\+?(\d+)\s*个?工作日/,
+  ];
+  for (const re of arrPatterns) {
+    const m = text.match(re);
+    if (m) { arrivalDays = parseInt(m[1], 10); break; }
+  }
+
+  // 截止时间
+  const cutM = text.match(/(\d{1,2}):(\d{2})\s*(?:前|之前)/);
+  if (cutM) cutoffTime = `${cutM[1].padStart(2, '0')}:${cutM[2]}`;
+
+  return { riskLevel, arrivalDays, cutoffTime };
+}
+
 let totalUpserted = 0;
 
 for (const p of CMB_PRODUCTS) {
   console.log(`→ [${p.dbId}] ${p.ripInn} (${p.saaCode})`);
+
+  // ★ 每个产品的变量声明在 try 外面，避免作用域问题
+  let realName = null;
+  let rules = { riskLevel: null, arrivalDays: null, cutoffTime: null };
+
   try {
-        // 每个产品前先访问它的历史页，让会话绑定该产品
+    // ① 访问历史页（绑定 session）
     await page.goto(
       `https://mobile.cmbchina.com/IEntrustFinance/financeproduct/historynetvalue.html?XRIPINN=${p.ripInn}&Code=${p.ripInn}&XSAACOD=${p.saaCode}&offSal=Y`,
       { waitUntil: 'domcontentloaded', timeout: 45000 }
     );
     await page.waitForTimeout(2000);
-    
-    // ── 从详情页 title 拿产品真名 ──
-    let realName = null;
+
+    // ② 访问详情页，拿名字 + 规则
     try {
       await page.goto(
         `https://mobile.cmbchina.com/IEntrustFinance/subsidiaryproduct/financedetail.html?XRIPINN=${p.ripInn}&XSAACOD=${p.saaCode}`,
@@ -105,25 +136,13 @@ for (const p of CMB_PRODUCTS) {
       );
       await page.waitForTimeout(2500);
 
-      const title = await page.title();
-            // 解析交易规则（从详情页文本）
       const detailText = await page.evaluate(() => document.body.innerText);
-      let rules = { arrival_days: null, cutoff_time: null, risk: null };
-      const riskM = detailText.match(/(?:P?R)(\d)/i);
-      if (riskM) rules.risk = `R${riskM[1]}`;
-      const arrM = detailText.match(/T\+?(\d+)\s*(?:到账|日)/);
-      if (arrM) rules.arrival_days = parseInt(arrM[1], 10);
-      const cutM = detailText.match(/(\d{1,2}):(\d{2})\s*前/);
-      if (cutM) rules.cutoff_time = `${cutM[1].padStart(2,'0')}:${cutM[2]}`;
-      console.log(`   规则: 到账T+${rules.arrival_days}, 截止${rules.cutoff_time}, 风险${rules.risk}`);
-      // 保存到外层变量
-      p._rules = rules;
-      console.log(`   title: ${title}`);
+      const title = await page.title();
 
+      // 从 title 拿名字
       if (title && title.length > 4 && !title.includes('招商银行')) {
         realName = title.trim();
       } else {
-        // title 不行就从页面头部文本抓
         const head = await page.evaluate(() => {
           const el = document.querySelector('h1, [class*="title"], [class*="name"]');
           return el?.innerText?.trim() || '';
@@ -131,12 +150,17 @@ for (const p of CMB_PRODUCTS) {
         if (head && head.length > 4) realName = head;
       }
 
+      // 解析规则
+      rules = parseRules(detailText);
+
+      console.log(`   title: ${title}`);
       console.log(`   真名: ${realName || '(未拿到)'}`);
+      console.log(`   规则: 风险${rules.riskLevel || '?'}, 到账T+${rules.arrivalDays || '?'}, 截止${rules.cutoffTime || '?'}`);
     } catch (e) {
-      console.log(`   拿名字失败: ${e.message}`);
+      console.log(`   详情页失败: ${e.message}`);
     }
 
-    // 读数据库里该产品的最新净值日期
+    // ③ 读数据库最新净值日期
     const { data: latestRow } = await supabase
       .from('nav_history')
       .select('nav_date')
@@ -147,7 +171,7 @@ for (const p of CMB_PRODUCTS) {
     const lastNavDate = latestRow?.nav_date || '1970-01-01';
     console.log(`   数据库最新: ${lastNavDate}`);
 
-    // ── 翻页抓全部历史 ──
+    // ④ 翻页抓历史
     let yNavDat = '0';
     let round = 0;
     let allRows = [];
@@ -179,8 +203,6 @@ for (const p of CMB_PRODUCTS) {
 
       if (!latest) latest = list[0];
 
-
-      // 只保留比数据库新的数据
       const newRows = list
         .filter(x => x.date > lastNavDate)
         .map(x => ({
@@ -191,7 +213,6 @@ for (const p of CMB_PRODUCTS) {
         }));
       allRows.push(...newRows);
 
-      // 如果本页出现旧数据 → 已经翻到已知区域 → 停止翻页
       const hasOld = list.some(x => x.date <= lastNavDate);
       if (hasOld) {
         console.log(`   翻到已知区域，停止翻页`);
@@ -207,7 +228,7 @@ for (const p of CMB_PRODUCTS) {
       await page.waitForTimeout(800);
     }
 
-    // ── 名字更新（独立跑，不依赖有无新数据）──
+    // ⑤ 名字更新（独立跑，即使无新数据也更新）
     if (realName) {
       const { data: cur } = await supabase
         .from('products').select('name').eq('id', p.dbId).single();
@@ -217,45 +238,45 @@ for (const p of CMB_PRODUCTS) {
       }
     }
 
-    // ── 无新数据 → 不写 nav_history，只更新名字 ──
+    // ⑥ 规则更新（独立跑，即使无新数据也更新）
+    const ruleUpdates = {
+      redeem_arrival_days: rules.arrivalDays,
+      redeem_confirm_days: 1,
+      redeem_cutoff_time: rules.cutoffTime,
+      risk_level: rules.riskLevel,
+    };
+    await supabase.from('products').update(ruleUpdates).eq('id', p.dbId);
+
+    // ⑦ 无新数据 → 跳过 nav 写入
     if (allRows.length === 0) {
       console.log(`   ✅ 无新数据（已是最新 ${lastNavDate}）\n`);
+      await page.waitForTimeout(500);
       continue;
     }
 
     console.log(`   拿到 ${allRows.length} 条新净值（${round + 1} 页）`);
     console.log(`   最新: ${latest.unitNetValue} @ ${latest.date}`);
 
-    // ── 批量写入 nav_history ──
+    // ⑧ 批量写入 nav_history
     const { error } = await supabase.from('nav_history').upsert(allRows, {
       onConflict: 'product_id,nav_date',
     });
     if (error) { console.log(`   ❌ upsert 失败: ${error.message}\n`); continue; }
     totalUpserted += allRows.length;
 
-    // ── 更新 products 最新净值 ──
+    // ⑨ 更新 products 最新净值
     const updates = {
       unit_nav: parseFloat(latest.unitNetValue),
       nav_date: latest.date,
       bank_code: p.ripInn,
-      redeem_arrival_days: p._rules?.arrival_days || null,
-      redeem_confirm_days: 1,
-      redeem_cutoff_time: p._rules?.cutoff_time || null,
-      risk_level: p._rules?.risk || null,
     };
     const chg = parseFloat(latest.netValueChange);
     if (isFinite(chg)) updates.daily_return = chg;
 
-    const { error: updErr } = await supabase.from('products').update(updates).eq('id', p.dbId);
-    if (updErr) {
-      console.log(`   ⚠️ products 更新失败: ${updErr.message}`);
-    } else {
-      console.log(`   📝 daily_return = ${chg}`);
-    }
+    await supabase.from('products').update(updates).eq('id', p.dbId);
 
     console.log(`   ✅ 写入 ${allRows.length} 条\n`);
 
-    // 记录抓取时间
     await supabase.from('product_sources')
       .update({ last_fetch_at: new Date().toISOString(), last_error: null })
       .eq('product_id', p.dbId)
