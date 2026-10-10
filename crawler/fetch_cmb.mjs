@@ -96,20 +96,29 @@ for (const p of CMB_PRODUCTS) {
     );
     await page.waitForTimeout(2000);
     
-    // ── 先访问历史页，从 DOM 拿产品真名 ──
+    // ── 从详情页 title 拿产品真名 ──
     let realName = null;
     try {
       await page.goto(
-        `https://mobile.cmbchina.com/IEntrustFinance/financeproduct/historynetvalue.html?XRIPINN=${p.ripInn}&Code=${p.ripInn}&XSAACOD=${p.saaCode}&offSal=Y`,
+        `https://mobile.cmbchina.com/IEntrustFinance/subsidiaryproduct/financedetail.html?XRIPINN=${p.ripInn}&XSAACOD=${p.saaCode}`,
         { waitUntil: 'domcontentloaded', timeout: 45000 }
       );
-      await page.waitForTimeout(2000);
+      await page.waitForTimeout(2500);
 
-      // 从页面文本抓产品名
-      const pageText = await page.evaluate(() => document.body.innerText);
-      // 招行页面通常第一行是产品名，模式：中文 6-40 字，含"理财/持有/日开/天"等
-      const nameMatch = pageText.match(/^([^\n]{6,60}(?:理财|持有|日开|封闭|天|号)[^\n]{0,30})/m);
-      if (nameMatch) realName = nameMatch[1].trim();
+      const title = await page.title();
+      console.log(`   title: ${title}`);
+
+      if (title && title.length > 4 && !title.includes('招商银行')) {
+        realName = title.trim();
+      } else {
+        // title 不行就从页面头部文本抓
+        const head = await page.evaluate(() => {
+          const el = document.querySelector('h1, [class*="title"], [class*="name"]');
+          return el?.innerText?.trim() || '';
+        });
+        if (head && head.length > 4) realName = head;
+      }
+
       console.log(`   真名: ${realName || '(未拿到)'}`);
     } catch (e) {
       console.log(`   拿名字失败: ${e.message}`);
