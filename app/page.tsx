@@ -91,7 +91,6 @@ export default function Home() {
   /* ★ 资产对比 */
   const [compareDate, setCompareDate] = useState<string | null>(null);
   const [compareOpen, setCompareOpen] = useState(false);
-  const [compareRealProfit, setCompareRealProfit] = useState<number | null>(null);
 
   useEffect(() => {
     try {
@@ -155,11 +154,9 @@ export default function Home() {
 
   /* ============ 搜索 ============ */
   const [searchTerm, setSearchTerm] = useState("");
-  const [searchMode, setSearchMode] = useState("");
-  const [searchResults, setSearchResults] = useState<any[]>([]);
-  const [searchLoading, setSearchLoading] = useState(false);
   const [suggestions, setSuggestions] = useState<any[]>([]);
   const [showSuggest, setShowSuggest] = useState(false);
+  const [suggestLoading, setSuggestLoading] = useState(false);
   const searchBoxRef = useRef<HTMLDivElement>(null);
 
   /* ============ 数字滚动 ============ */
@@ -223,13 +220,15 @@ export default function Home() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  /* ★ 搜索实时下拉 */
   useEffect(() => {
     const term = searchTerm.trim();
-    if (!term || searchMode) {
+    if (!term) {
       setSuggestions([]);
       setShowSuggest(false);
       return;
     }
+    setSuggestLoading(true);
     const t = setTimeout(async () => {
       const { matchBanks } = await import("../lib/banks");
       const matchedBanks = matchBanks(term);
@@ -251,10 +250,12 @@ export default function Home() {
         .limit(8);
       setSuggestions(data || []);
       setShowSuggest(true);
+      setSuggestLoading(false);
     }, 250);
     return () => clearTimeout(t);
-  }, [searchTerm, searchMode]);
+  }, [searchTerm]);
 
+  /* 点外部关闭 */
   useEffect(() => {
     function handleClick(e: MouseEvent) {
       if (searchBoxRef.current && !searchBoxRef.current.contains(e.target as Node)) {
@@ -307,69 +308,15 @@ export default function Home() {
     });
   }
 
-  async function handleSearch() {
-    const term = searchTerm.trim();
-    if (!term) { setSearchMode(""); setSearchResults([]); return; }
-    async function handleSearch() {
-  const term = searchTerm.trim();
-  if (!term) { setSearchMode(""); setSearchResults([]); return; }
-
-  // ★ 银行名归一化：把"中国银行"→"中银理财"
-  const { matchBanks } = await import("../lib/banks");
-  const matchedBanks = matchBanks(term);
-  const bankNames = matchedBanks.slice(0, 3).map(b => b.name);
-
-  if (userId) {
-    // ... 原有的记录搜索日志代码保持不变
-  }
-
-  setSearchMode(term);
-  setSearchLoading(true);
-
-  // 组合查询：关键词 + 匹配到的银行标准名
-  let orParts = [
-    `name.ilike.%${term}%`,
-    `code.ilike.%${term}%`,
-    `bank.ilike.%${term}%`,
-  ];
-  // 加银行标准名精确匹配
-  for (const bn of bankNames) {
-    orParts.push(`bank.eq.${bn}`);
-  }
-
-  const { data } = await supabase
-    .from("products")
-    .select("id, name, bank, unit_nav, annualized_1m, nav_date, code")
-    .or(orParts.join(","))
-    .limit(30);
-
-  setSearchResults(data || []);
-  setSearchLoading(false);
-}
-    if (userId) {
-      fetch(`${process.env.NEXT_PUBLIC_SUPABASE_URL}/rest/v1/search_logs`, {
-        method: "POST",
-        headers: {
-          apikey: process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-          Authorization: `Bearer ${process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({ keyword: term, user_id: userId ? Number(userId) : null }),
-      }).catch(() => {});
-    }
-    setSearchMode(term);
-    setSearchLoading(true);
-    const { data } = await supabase
-      .from("products")
-      .select("id, name, bank, unit_nav, annualized_1m, nav_date, code")
-      .or(`name.ilike.%${term}%,bank.ilike.%${term}%,code.ilike.%${term}%`)
-      .limit(30);
-    setSearchResults(data || []);
-    setSearchLoading(false);
-  }
-
   function clearSearch() {
-    setSearchTerm(""); setSearchMode(""); setSearchResults([]);
+    setSearchTerm("");
+    setSuggestions([]);
+    setShowSuggest(false);
+  }
+
+  function closeSearch() {
+    clearSearch();
+    setSearchOpen(false);
   }
 
   function fmtMoney(n: number) {
@@ -451,17 +398,150 @@ export default function Home() {
     <div className="min-h-screen pb-24">
       <div className="container mx-auto px-5 pt-8 max-w-3xl">
 
-        {/* ============ 顶部账号 ============ */}
-        <div className="flex justify-between items-center mb-4 animate-fade-in-up">
-          <div className="flex items-center gap-3 flex-1 min-w-0">
-            <div className="w-11 h-11 rounded-2xl flex items-center justify-center flex-shrink-0
-                            bg-gradient-to-br from-violet-500 to-purple-600
-                            shadow-md shadow-purple-500/25">
-              <span className="text-white font-bold text-[15px]">
-                {username ? username.slice(-2) : "观"}
-              </span>
+        {/* ============ 顶部账号 / 搜索 ============ */}
+        <div className="flex justify-between items-center gap-2 mb-4 animate-fade-in-up relative z-[100]">
+          {/* 头像：收起和展开都显示 */}
+          <div className="w-11 h-11 rounded-2xl flex items-center justify-center flex-shrink-0
+                          bg-gradient-to-br from-violet-500 to-purple-600
+                          shadow-md shadow-purple-500/25">
+            <span className="text-white font-bold text-[15px]">
+              {username ? username.slice(-2) : "观"}
+            </span>
+          </div>
+
+          {searchOpen && !editMode ? (
+            /* ★ 展开：搜索框（不拉满，保留头像） */
+            <div ref={searchBoxRef} className="relative flex-1 min-w-0 mx-1 h-11">
+              <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none z-10">
+                <svg className="w-4 h-4 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                </svg>
+              </div>
+              <input
+                type="text"
+                autoFocus
+                placeholder="搜索产品、银行、代码"
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                onFocus={() => searchTerm.trim() && setShowSuggest(true)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" && searchTerm.trim()) {
+                    window.location.href = `/discover?q=${encodeURIComponent(searchTerm.trim())}`;
+                  }
+                  if (e.key === "Escape") closeSearch();
+                }}
+                className="input-field w-full pl-10 pr-10 py-2.5 text-sm relative z-[1]"
+              />
+              {searchTerm && (
+                <button
+                  onClick={clearSearch}
+                  className="absolute inset-y-0 right-3 pr-1 flex items-center z-10"
+                >
+                  <svg className="w-3.5 h-3.5 text-slate-400 hover:text-slate-600" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              )}
+
+              {/* ★ 下拉：不透明背景 */}
+              {showSuggest && searchTerm.trim() && (
+                <div
+                  className="absolute top-full left-0 right-0 mt-2 z-[110]
+                             rounded-2xl shadow-2xl border border-slate-200/80
+                             overflow-hidden max-h-[420px] overflow-y-auto"
+                  style={{
+                    background: "rgba(255,255,255,0.96)",
+                    backdropFilter: "blur(12px) saturate(140%)",
+                    WebkitBackdropFilter: "blur(12px) saturate(140%)",
+                  }}
+                >
+                  {suggestLoading ? (
+                    <div className="px-4 py-6 text-center text-[12px] text-slate-400">
+                      搜索中...
+                    </div>
+                  ) : suggestions.length === 0 ? (
+                    <div className="px-5 py-8 text-center">
+                      <div className="text-[13px] text-slate-600 mb-1.5">
+                        没有找到「{searchTerm}」
+                      </div>
+                      <div className="text-[11px] text-slate-400 mb-4 leading-relaxed px-4">
+                        请复制分享链接，我将自动添加产品
+                      </div>
+                      <Link
+                        href="/add"
+                        onClick={() => setShowSuggest(false)}
+                        className="btn-primary inline-block text-[12px] px-6 py-2"
+                      >
+                        去分享链接
+                      </Link>
+                    </div>
+                  ) : (
+                    <>
+                      {suggestions.map((p) => {
+                        const info = getBankInfo(p.bank);
+                        return (
+                          <Link
+                            key={p.id}
+                            href={`/product/${p.id}`}
+                            onClick={() => setShowSuggest(false)}
+                            className="flex items-center gap-2.5 px-4 py-2.5
+                                       hover:bg-slate-50 active:bg-slate-100
+                                       border-b divider last:border-b-0
+                                       transition-colors"
+                          >
+                            <span
+                              className="bank-avatar flex-shrink-0"
+                              style={{ background: info.bg, color: info.color }}
+                            >
+                              {info.label}
+                            </span>
+                            <div className="flex-1 min-w-0">
+                              <div className="text-[13px] text-slate-900 font-medium truncate">
+                                {p.name}
+                              </div>
+                              <div className="text-[10px] text-slate-400 mt-0.5 truncate">
+                                {p.bank}{p.code ? ` · ${p.code}` : ""}
+                              </div>
+                            </div>
+                            {p.annualized_1m != null && Number(p.annualized_1m) > 0 && (
+                              <span className="text-[11px] font-mono font-semibold text-rose-500 tabular flex-shrink-0">
+                                +{Number(p.annualized_1m).toFixed(2)}%
+                              </span>
+                            )}
+                          </Link>
+                        );
+                      })}
+
+                      {/* 底部两行：查看全部结果 / 去发现 */}
+                      <div className="border-t divider flex">
+                        <Link
+                          href={`/discover?q=${encodeURIComponent(searchTerm.trim())}`}
+                          onClick={() => setShowSuggest(false)}
+                          className="flex-1 py-3 text-center
+                                     text-[12px] text-purple-600 font-medium
+                                     hover:bg-purple-50/50 transition-colors"
+                        >
+                          查看全部结果 →
+                        </Link>
+                        <div className="w-px bg-slate-100" />
+                        <Link
+                          href="/discover"
+                          onClick={() => setShowSuggest(false)}
+                          className="flex-1 py-3 text-center
+                                     text-[12px] text-slate-500 font-medium
+                                     hover:bg-slate-50/50 transition-colors"
+                        >
+                          去发现
+                        </Link>
+                      </div>
+                    </>
+                  )}
+                </div>
+              )}
             </div>
-            <div className="flex-1 min-w-0">
+          ) : (
+            /* 收起：问候语 */
+            <div className="flex-1 min-w-0 h-11 flex flex-col justify-center">
               <div className="flex items-baseline gap-1.5">
                 <span className="text-[13px] text-slate-500">
                   {(() => {
@@ -482,18 +562,24 @@ export default function Home() {
                 数据已同步 · {lastUpdated}
               </div>
             </div>
-          </div>
+          )}
 
           <div className="flex items-center gap-2 flex-shrink-0">
             {!editMode && (
               <button
-                onClick={() => setSearchOpen(v => !v)}
+                onClick={() => {
+                  if (searchOpen) {
+                    closeSearch();
+                  } else {
+                    setSearchOpen(true);
+                  }
+                }}
                 className={`w-9 h-9 rounded-full border flex items-center justify-center
                            transition-all duration-300 active:scale-90
                            ${searchOpen
                              ? "bg-purple-50 border-purple-200"
                              : "bg-white border-slate-200 hover:border-slate-300 hover:bg-slate-50"}`}
-                aria-label="搜索"
+                aria-label={searchOpen ? "关闭搜索" : "搜索"}
               >
                 {searchOpen ? (
                   <svg className="w-4 h-4 text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2.5}>
@@ -526,7 +612,7 @@ export default function Home() {
         </div>
 
         {/* ============ 编辑模式提示 ============ */}
-        {editMode && !searchMode && (
+        {editMode && (
           <div className="card p-3 mb-4 bg-purple-50 border border-purple-100 animate-fade-in">
             <div className="text-[12px] text-purple-700 leading-relaxed px-1
                             flex items-center gap-2">
@@ -535,7 +621,7 @@ export default function Home() {
                 <path strokeLinecap="round" strokeLinejoin="round" d="M4 7h16M4 12h16M4 17h16" />
               </svg>
               <span>
-                <span className="font-semibold">编辑模式</span> · 按住<span className="font-semibold">紫色条</span>拖动换位，点 <span className="font-semibold">×</span> 隐藏；完成后点右上角"完成"
+                <span className="font-semibold">编辑模式</span> · 按住<span className="font-semibold">紫色条</span>拖动换位，点 <span className="font-semibold">×</span> 隐藏；完成后点右下角"完成"
               </span>
             </div>
           </div>
@@ -647,143 +733,8 @@ export default function Home() {
           </div>
         </div>
 
-        {/* ============ 搜索 + 发现 ============ */}
-        {searchOpen && (
-        <div className="flex gap-2 mb-4 animate-fade-in-up relative z-[100]">
-          <div ref={searchBoxRef} className="relative flex-1 min-w-0">
-            <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none z-10">
-              <svg className="w-4 h-4 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
-                <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-              </svg>
-            </div>
-            <input
-              type="text"
-              placeholder="搜索产品、银行、代码"
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              onFocus={() => searchTerm.trim() && setShowSuggest(true)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter" && searchTerm.trim()) {
-                  window.location.href = `/discover?q=${encodeURIComponent(searchTerm.trim())}`;
-                }
-              }}
-              className="input-field w-full pl-11 pr-10 py-3.5 text-sm relative z-[1]"
-            />
-            {searchTerm && (
-              <button
-                onClick={clearSearch}
-                className="absolute inset-y-0 right-3 pr-2 flex items-center z-10"
-              >
-                <svg className="w-4 h-4 text-slate-400 hover:text-slate-600" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
-                </svg>
-              </button>
-            )}
-
-            {showSuggest && suggestions.length > 0 && !searchMode && (
-              <div className="absolute top-full left-0 right-0 mt-2 z-[110]
-                              bg-white rounded-2xl shadow-xl border border-slate-100
-                              overflow-hidden max-h-80 overflow-y-auto">
-                {suggestions.map((p) => {
-                  const info = getBankInfo(p.bank);
-                  return (
-                    <Link
-                      key={p.id}
-                      href={`/product/${p.id}`}
-                      onClick={() => setShowSuggest(false)}
-                      className="flex items-center gap-2.5 px-4 py-2.5
-                                 hover:bg-slate-50 active:bg-slate-100
-                                 border-b divider last:border-b-0
-                                 transition-colors"
-                    >
-                      <span
-                        className="bank-avatar flex-shrink-0"
-                        style={{ background: info.bg, color: info.color }}
-                      >
-                        {info.label}
-                      </span>
-                      <div className="flex-1 min-w-0">
-                        <div className="text-[13px] text-slate-900 font-medium truncate">
-                          {p.name}
-                        </div>
-                        <div className="text-[10px] text-slate-400 mt-0.5 truncate">
-                          {p.bank}{p.code ? ` · ${p.code}` : ""}
-                        </div>
-                      </div>
-                      {p.annualized_1m != null && Number(p.annualized_1m) > 0 && (
-                        <span className="text-[11px] font-mono font-semibold text-rose-500 tabular flex-shrink-0">
-                          +{Number(p.annualized_1m).toFixed(2)}%
-                        </span>
-                      )}
-                    </Link>
-                  );
-                })}
-
-                <Link
-                  href={`/discover?q=${encodeURIComponent(searchTerm.trim())}`}
-                  onClick={() => setShowSuggest(false)}
-                  className="flex items-center justify-center gap-1
-                             px-4 py-3 border-t divider
-                             text-[12px] text-purple-600 font-medium
-                             hover:bg-purple-50/50 transition-colors"
-                >
-                  查看全部结果
-                  <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2.5}>
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
-                  </svg>
-                </Link>
-              </div>
-            )}
-          </div>
-
-          <Link
-            href="/discover"
-            className="flex-shrink-0 px-3.5 rounded-2xl
-                       bg-white border border-slate-200
-                       text-slate-700 text-[12px] font-medium
-                       flex items-center justify-center gap-1
-                       hover:border-purple-300 hover:bg-purple-50
-                       active:scale-95 transition-all duration-200"
-          >
-            <svg className="w-3.5 h-3.5 text-purple-500" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2.2}>
-              <path strokeLinecap="round" strokeLinejoin="round" d="M12 3v18M3 12h18" />
-              <circle cx="12" cy="12" r="4" opacity="0.35" />
-            </svg>
-            发现
-          </Link>
-        </div>
-        )}
-
-        {/* ============ 搜索结果 ============ */}
-        {searchMode && (
-          <div className="mb-4 animate-fade-in-up">
-            <div className="flex items-center justify-between mb-3 px-1">
-              <div className="text-[15px] font-bold text-slate-900">
-                搜索「{searchMode}」
-              </div>
-              <div className="text-[11px] text-slate-400">
-                {searchLoading ? "搜索中..." : `${searchResults.length} 个结果`}
-              </div>
-            </div>
-            <SearchResultList
-              items={searchResults}
-              loading={searchLoading}
-              onLinkClick={handleLinkClick}
-            />
-            <button
-              onClick={clearSearch}
-              className="w-full mt-3 py-2.5 rounded-2xl
-                         bg-slate-50 hover:bg-slate-100
-                         text-[12px] text-slate-600 font-medium
-                         transition-colors"
-            >
-              清空搜索
-            </button>
-          </div>
-        )}
-
         {/* ============ 磁贴区 ============ */}
-        {!searchMode && tileIds.length > 0 && (
+        {tileIds.length > 0 && (
           <HomeTiles
             ids={tileIds}
             metrics={metrics}
@@ -796,87 +747,85 @@ export default function Home() {
         )}
 
         {/* ============ 主模块区 ============ */}
-        {!searchMode && (
-          <div className="space-y-4">
-            {layout.card.map((id, idx) => {
-              const isDragging = cardDraggingIdx === idx;
-              const isOver = cardOverIdx === idx && cardDraggingIdx !== null && cardDraggingIdx !== idx;
+        <div className="space-y-4">
+          {layout.card.map((id, idx) => {
+            const isDragging = cardDraggingIdx === idx;
+            const isOver = cardOverIdx === idx && cardDraggingIdx !== null && cardDraggingIdx !== idx;
 
-              return (
-                <div
-                  key={id}
-                  data-card-index={idx}
-                  style={{ touchAction: editMode ? "none" : "auto" }}
-                  className={`animate-fade-in-up relative transition-all duration-200
-                              ${isDragging ? "scale-[0.94] opacity-40" : ""}
-                              ${isOver ? "ring-2 ring-purple-400 ring-offset-2" : ""}
-                              ${editMode && !isDragging ? "animate-wiggle rounded-[18px] shadow-lg shadow-purple-500/15" : ""}`}
-                >
-                  <div className={editMode ? "pointer-events-none" : ""}>
-                    <ModuleRenderer
-                      id={id}
-                      metrics={metrics}
-                      snap={snap}
-                      goals={goals}
-                      dca={dca}
-                      rankData={rankData}
-                      onLinkClick={handleLinkClick}
-                      onTitleLongPress={editMode ? undefined : () => {
-                        setEditMode(true);
-                        try { (navigator as any).vibrate?.(15); } catch {}
-                      }}
-                    />
-                  </div>
-
-                  {editMode && (
-                    <>
-                      <div
-                        onPointerDown={(e) => {
-                          e.preventDefault();
-                          e.stopPropagation();
-                          startCardDrag(e, idx);
-                        }}
-                        style={{ touchAction: "none" }}
-                        className="absolute -top-3.5 right-10 w-8 h-8 rounded-full
-                                   bg-gradient-to-br from-violet-500 to-purple-600
-                                   flex items-center justify-center
-                                   cursor-grab active:cursor-grabbing
-                                   shadow-md shadow-purple-500/40 border-2 border-white
-                                   z-20"
-                        aria-label="拖动排序"
-                        role="button"
-                      >
-                        <svg className="w-4 h-4 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2.5}>
-                          <path strokeLinecap="round" strokeLinejoin="round" d="M4 7h16M4 12h16M4 17h16" />
-                        </svg>
-                      </div>
-
-                      <button
-                        onClick={(e) => {
-                          e.preventDefault();
-                          e.stopPropagation();
-                          moveToZone(id, "hidden");
-                        }}
-                        onPointerDown={(e) => e.stopPropagation()}
-                        className="absolute -top-2.5 -right-2.5 w-7 h-7 rounded-full
-                                   flex items-center justify-center
-                                   bg-rose-500 shadow-md shadow-rose-500/30 border border-white
-                                   active:scale-90 z-20"
-                      >
-                        <svg className="w-3.5 h-3.5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={3}>
-                          <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
-                        </svg>
-                      </button>
-                    </>
-                  )}
+            return (
+              <div
+                key={id}
+                data-card-index={idx}
+                style={{ touchAction: editMode ? "none" : "auto" }}
+                className={`animate-fade-in-up relative transition-all duration-200
+                            ${isDragging ? "scale-[0.94] opacity-40" : ""}
+                            ${isOver ? "ring-2 ring-purple-400 ring-offset-2" : ""}
+                            ${editMode && !isDragging ? "animate-wiggle rounded-[18px] shadow-lg shadow-purple-500/15" : ""}`}
+              >
+                <div className={editMode ? "pointer-events-none" : ""}>
+                  <ModuleRenderer
+                    id={id}
+                    metrics={metrics}
+                    snap={snap}
+                    goals={goals}
+                    dca={dca}
+                    rankData={rankData}
+                    onLinkClick={handleLinkClick}
+                    onTitleLongPress={editMode ? undefined : () => {
+                      setEditMode(true);
+                      try { (navigator as any).vibrate?.(15); } catch {}
+                    }}
+                  />
                 </div>
-              );
-            })}
-          </div>
-        )}
+
+                {editMode && (
+                  <>
+                    <div
+                      onPointerDown={(e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        startCardDrag(e, idx);
+                      }}
+                      style={{ touchAction: "none" }}
+                      className="absolute -top-3.5 right-10 w-8 h-8 rounded-full
+                                 bg-gradient-to-br from-violet-500 to-purple-600
+                                 flex items-center justify-center
+                                 cursor-grab active:cursor-grabbing
+                                 shadow-md shadow-purple-500/40 border-2 border-white
+                                 z-20"
+                      aria-label="拖动排序"
+                      role="button"
+                    >
+                      <svg className="w-4 h-4 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2.5}>
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M4 7h16M4 12h16M4 17h16" />
+                      </svg>
+                    </div>
+
+                    <button
+                      onClick={(e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        moveToZone(id, "hidden");
+                      }}
+                      onPointerDown={(e) => e.stopPropagation()}
+                      className="absolute -top-2.5 -right-2.5 w-7 h-7 rounded-full
+                                 flex items-center justify-center
+                                 bg-rose-500 shadow-md shadow-rose-500/30 border border-white
+                                 active:scale-90 z-20"
+                    >
+                      <svg className="w-3.5 h-3.5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={3}>
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                      </svg>
+                    </button>
+                  </>
+                )}
+              </div>
+            );
+          })}
+        </div>
 
         {/* ============ 管理全部模块按钮 ============ */}
-        {!searchMode && !editMode && (
+        {!editMode && (
           <button
             onClick={() => setDrawerOpen(true)}
             className="w-full mt-5 py-3.5 rounded-2xl
@@ -901,7 +850,7 @@ export default function Home() {
           </button>
         )}
 
-        {!searchMode && !editMode && !customized && (
+        {!editMode && !customized && (
           <div className="mt-2 text-center text-[10px] text-slate-400">
             磁贴根据你的数据智能推荐 ·
             <button
@@ -914,7 +863,7 @@ export default function Home() {
         )}
 
         {/* ============ 免责声明 ============ */}
-        {!searchMode && !editMode && (
+        {!editMode && (
           <div className="card-tile p-4 mt-4 mb-8 animate-fade-in-up delay-5">
             <div className="text-[11px] text-slate-400 leading-relaxed">
               <span className="font-medium text-slate-500">免责声明 · </span>
@@ -1007,80 +956,6 @@ export default function Home() {
           setEditingDca(null);
         }}
       />
-    </div>
-  );
-}
-
-/* ============================================================
-   搜索结果列表
-   ============================================================ */
-function SearchResultList({
-  items,
-  loading,
-  onLinkClick,
-}: {
-  items: any[];
-  loading: boolean;
-  onLinkClick?: (e: React.MouseEvent) => void;
-}) {
-  if (loading) {
-    return (
-      <div className="space-y-2.5">
-        {[1, 2, 3].map((i) => (
-          <div key={i} className="card p-3.5 h-20 animate-pulse" />
-        ))}
-      </div>
-    );
-  }
-  if (items.length === 0) {
-    return (
-      <div className="card p-12 text-center">
-        <div className="text-slate-300 text-sm mb-2">没有找到匹配的产品</div>
-        <div className="text-[11px] text-slate-400">试试搜索银行名或产品代码</div>
-      </div>
-    );
-  }
-  return (
-    <div className="space-y-2.5">
-      {items.map((p) => {
-        const info = getBankInfo(p.bank);
-        return (
-          <Link
-            key={p.id}
-            href={`/product/${p.id}`}
-            onClick={onLinkClick}
-            className="card card-hover p-3.5 block group"
-          >
-            <div className="flex items-start gap-3">
-              <span
-                className="bank-avatar flex-shrink-0 mt-0.5"
-                style={{ background: info.bg, color: info.color }}
-              >
-                {info.label}
-              </span>
-              <div className="flex-1 min-w-0">
-                <div className="text-[13px] font-semibold text-slate-900 leading-snug truncate">
-                  {p.name}
-                </div>
-                <div className="flex items-center gap-1.5 mt-1">
-                  <span className="text-[10px] text-slate-400 truncate">{p.bank}</span>
-                  {p.code && (
-                    <span className="text-[10px] text-slate-300 font-mono">{p.code}</span>
-                  )}
-                </div>
-              </div>
-              <div className="text-right flex-shrink-0 ml-2">
-                <div className={`font-mono font-bold text-[14px] tabular ${
-                  Number(p.annualized_1m) > 0 ? "text-rose-500" : "text-slate-400"
-                }`}>
-                  {p.annualized_1m != null ? `+${Number(p.annualized_1m).toFixed(2)}%` : "—"}
-                </div>
-                <div className="text-[9px] text-slate-400 mt-0.5">近 1 月年化</div>
-              </div>
-            </div>
-          </Link>
-        );
-      })}
     </div>
   );
 }
