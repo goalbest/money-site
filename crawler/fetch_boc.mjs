@@ -67,25 +67,16 @@ function parseNavList(text) {
   for (let i = 0; i < lines.length - 2; i++) {
     const dateMatch = lines[i].match(/^(\d{4})[\/\-](\d{1,2})[\/\-](\d{1,2})$/);
     if (!dateMatch) continue;
-
     const date = `${dateMatch[1]}-${dateMatch[2].padStart(2,'0')}-${dateMatch[3].padStart(2,'0')}`;
     const next = lines[i + 1];
     const nextNext = lines[i + 2];
-
     let nav = null, accum = null;
     if (/^[0-9]+\.[0-9]+$/.test(next)) nav = parseFloat(next);
     if (/^[0-9]+\.[0-9]+$/.test(nextNext)) accum = parseFloat(nextNext);
-
-    if (nav !== null) {
-      result.push({ date, nav, accum });
-    }
+    if (nav !== null) result.push({ date, nav, accum });
   }
   const seen = new Set();
-  return result.filter(r => {
-    if (seen.has(r.date)) return false;
-    seen.add(r.date);
-    return true;
-  });
+  return result.filter(r => { if (seen.has(r.date)) return false; seen.add(r.date); return true; });
 }
 
 for (const p of BOC_PRODUCTS) {
@@ -93,33 +84,45 @@ for (const p of BOC_PRODUCTS) {
   try {
     const detailUrl = `https://ebsnew.boc.cn/bocphone/VueLocalCli4/bocFinanceDetail/index.html#/productDetail?functionCode=bocFinanceProductDetail&productId=${p.productCode}`;
     await page.goto(detailUrl, { waitUntil: 'domcontentloaded', timeout: 45000 });
-    await page.waitForTimeout(4000);
+    await page.waitForTimeout(5000);
 
-    const detailText = await page.evaluate(() => document.body.innerText);
+    let detailText = await page.evaluate(() => document.body.innerText);
     console.log('   详情页已加载');
 
     const nameMatch = detailText.match(/（[^）]*）([^\n(（|]+?)\(([A-Z0-9]+)\)/);
     const productName = nameMatch?.[1]?.trim() || null;
 
-    // ── 解析交易规则（唯一一份，无重复）──
+    // ── 解析规则（唯一一份）──
     let riskLevel = null;
     let arrivalDays = null;
     let cutoffTime = null;
 
+    // 风险等级
     const riskM = detailText.match(/(?:P?R)(\d)/i);
     if (riskM) riskLevel = `R${riskM[1]}`;
 
-    const arrM1 = detailText.match(/T\+?(\d+)\s*到账/);
-    if (arrM1) arrivalDays = parseInt(arrM1[1], 10);
-    const arrM2 = detailText.match(/预计[^\d]{0,5}T\+?(\d+)/);
-    if (!arrivalDays && arrM2) arrivalDays = parseInt(arrM2[1], 10);
-    const arrM3 = detailText.match(/(\d+)\s*个工作日[^\n]{0,10}到账/);
-    if (!arrivalDays && arrM3) arrivalDays = parseInt(arrM3[1], 10);
+    // 到账时间（多种模式）
+    const arrPatterns = [
+      /T\+?(\d+)\s*到账/,
+      /预计[^\d]{0,10}T\+?(\d+)/,
+      /(\d+)\s*个工作日[^\n]{0,15}到账/,
+      /T\+?(\d+)\s*个?工作日/,
+    ];
+    for (const re of arrPatterns) {
+      const m = detailText.match(re);
+      if (m) { arrivalDays = parseInt(m[1], 10); break; }
+    }
 
+    // 截止时间
     const cutM = detailText.match(/(\d{1,2}):(\d{2})\s*(?:前|之前)/);
     if (cutM) cutoffTime = `${cutM[1].padStart(2, '0')}:${cutM[2]}`;
 
     console.log(`   规则: 风险${riskLevel || '?'}, 到账T+${arrivalDays || '?'}, 截止${cutoffTime || '?'}`);
+
+    // 调试：打印所有含"到账"的行
+    const arrivalLines = detailText.split('\n').map(l => l.trim()).filter(l => l.includes('到账') || l.includes('赎回') && l.length < 100);
+    console.log('   相关行:');
+    arrivalLines.slice(0, 5).forEach(l => console.log(`     "${l}"`));
 
     // 点击"查看更多"
     try {
@@ -144,20 +147,13 @@ for (const p of BOC_PRODUCTS) {
     }
 
     const navRows = list.map(r => ({
-      product_id: p.dbId,
-      nav_date: r.date,
-      unit_nav: r.nav,
-      accum_nav: r.accum,
+      product_id: p.dbId, nav_date: r.date, unit_nav: r.nav, accum_nav: r.accum,
     }));
 
     const { error: upErr } = await supabase.from('nav_history').upsert(navRows, {
       onConflict: 'product_id,nav_date',
     });
-    if (upErr) {
-      console.log(`   ❌ nav_history 写入失败: ${upErr.message}\n`);
-      failed++;
-      continue;
-    }
+    if (upErr) { console.log(`   ❌ nav_history 失败: ${upErr.message}\n`); failed++; continue; }
 
     const latestRow = list[0];
     const updates = {
@@ -176,15 +172,11 @@ for (const p of BOC_PRODUCTS) {
       .update({ last_fetch_at: new Date().toISOString(), last_error: null })
       .eq('id', p.srcId);
 
-    console.log(`   ✅ 写入 ${list.length} 条，最新: ${latestRow.nav} @ ${latestRow.date}\n`);
+    console.log(`   ✅ 写入 ${list.length} 条\n`);
     updated++;
-    await page.waitForTimeout(1000);
   } catch (e) {
     console.log(`   ❌ 失败: ${e.message}\n`);
     failed++;
-    await supabase.from('product_sources')
-      .update({ last_error: e.message })
-      .eq('id', p.srcId);
   }
 }
 
