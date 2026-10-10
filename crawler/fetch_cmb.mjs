@@ -106,6 +106,18 @@ for (const p of CMB_PRODUCTS) {
       await page.waitForTimeout(2500);
 
       const title = await page.title();
+            // 解析交易规则（从详情页文本）
+      const detailText = await page.evaluate(() => document.body.innerText);
+      let rules = { arrival_days: null, cutoff_time: null, risk: null };
+      const riskM = detailText.match(/(?:P?R)(\d)/i);
+      if (riskM) rules.risk = `R${riskM[1]}`;
+      const arrM = detailText.match(/T\+?(\d+)\s*(?:到账|日)/);
+      if (arrM) rules.arrival_days = parseInt(arrM[1], 10);
+      const cutM = detailText.match(/(\d{1,2}):(\d{2})\s*前/);
+      if (cutM) rules.cutoff_time = `${cutM[1].padStart(2,'0')}:${cutM[2]}`;
+      console.log(`   规则: 到账T+${rules.arrival_days}, 截止${rules.cutoff_time}, 风险${rules.risk}`);
+      // 保存到外层变量
+      p._rules = rules;
       console.log(`   title: ${title}`);
 
       if (title && title.length > 4 && !title.includes('招商银行')) {
@@ -226,6 +238,10 @@ for (const p of CMB_PRODUCTS) {
       unit_nav: parseFloat(latest.unitNetValue),
       nav_date: latest.date,
       bank_code: p.ripInn,
+      redeem_arrival_days: p._rules?.arrival_days || null,
+      redeem_confirm_days: 1,
+      redeem_cutoff_time: p._rules?.cutoff_time || null,
+      risk_level: p._rules?.risk || null,
     };
     const chg = parseFloat(latest.netValueChange);
     if (isFinite(chg)) updates.daily_return = chg;

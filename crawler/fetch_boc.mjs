@@ -116,6 +116,21 @@ for (const p of BOC_PRODUCTS) {
     }
 
     const listText = await page.evaluate(() => document.body.innerText);
+        // ── 解析交易规则 ──
+    const rules = {
+      redeem_arrival_days: null,
+      redeem_confirm_days: 1,
+      redeem_cutoff_time: null,
+      risk_level: null,
+    };
+    const riskM = detailText.match(/(?:P?R)(\d)/i);
+    if (riskM) rules.risk_level = `R${riskM[1]}`;
+    const arrM = detailText.match(/T\+?(\d+)\s*到账/);
+    if (arrM) rules.redeem_arrival_days = parseInt(arrM[1], 10);
+    const cutM = detailText.match(/(\d{1,2}):(\d{2})\s*前/);
+    if (cutM) rules.redeem_cutoff_time = `${cutM[1].padStart(2,'0')}:${cutM[2]}`;
+    console.log(`   规则: 到账T+${rules.redeem_arrival_days}, 截止${rules.redeem_cutoff_time}, 风险${rules.risk_level}`);
+
     const list = parseNavList(listText);
     console.log(`   解析到 ${list.length} 条`);
 
@@ -150,6 +165,10 @@ for (const p of BOC_PRODUCTS) {
       unit_nav: latestRow.nav,
       nav_date: latestRow.date,
       bank_code: p.productCode,
+      redeem_arrival_days: rules.redeem_arrival_days,
+      redeem_confirm_days: rules.redeem_confirm_days,
+      redeem_cutoff_time: rules.redeem_cutoff_time,
+      risk_level: rules.risk_level,
     };
     if (productName && !productName.startsWith('中行产品')) updates.name = productName;
 

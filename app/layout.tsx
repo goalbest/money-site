@@ -1,6 +1,8 @@
 import type { Metadata, Viewport } from "next";
 import "./globals.css";
 import BottomNav from "./BottomNav";
+import PWAInstallPrompt from "./components/PWAInstallPrompt";
+import PWACapture from "./components/PWACapture";
 
 export const metadata: Metadata = {
   title: "理财净值观察站",
@@ -35,6 +37,8 @@ export default function RootLayout({
     <html lang="zh-CN">
       <body>
         <div className="pb-20">{children}</div>
+        <PWACapture />
+        <PWAInstallPrompt />
         <BottomNav />
       </body>
     </html>

@@ -30,9 +30,9 @@ jobs:
           SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
         run: node crawler/fetch_psbc_bank.mjs
 
-      - name: 邮储产品日常更新
+      - name: 邮储/中邮日常更新
         env:
           NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
-        run: node crawler/fetch_psbc_api.mjs
+        run: node crawler/fetch_psbc_history.mjs
 

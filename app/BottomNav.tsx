@@ -32,24 +32,30 @@ const TABS = [
   },
 ];
 
+/* ★ 外壳：只负责用 pathname 变化重置子组件 */
 export default function BottomNav() {
   const pathname = usePathname();
+
+  /* 隐藏页 */
+  if (
+    pathname?.startsWith("/product/") ||
+    pathname?.startsWith("/login") ||
+    pathname?.startsWith("/add") ||
+    (pathname?.startsWith("/holdings/") && pathname.length > "/holdings/".length)
+  ) return null;
+
+  /* ★ key=pathname → 切页时整个组件重挂，state 重置 */
+  return <BottomNavInner key={pathname} pathname={pathname || ""} />;
+}
+
+function BottomNavInner({ pathname }: { pathname: string }) {
+  /* ★ 初始就是 false，切页瞬间在正确位置，没有动画 */
   const [hidden, setHidden] = useState(false);
-  /* ★ 切页瞬间禁用动画，让导航条"瞬移"回原位 */
-  const [noAnim, setNoAnim] = useState(false);
   const lastYRef = useRef(0);
 
   useEffect(() => {
-    /* 切页：先无动画复位 */
-    setNoAnim(true);
-    setHidden(false);
-    lastYRef.current = typeof window !== "undefined" ? window.scrollY : 0;
-
-    /* 50ms 后恢复动画，让后续滚动隐藏/显示正常过渡 */
-    const resumeTimer = setTimeout(() => {
-      setNoAnim(false);
-      lastYRef.current = window.scrollY;
-    }, 50);
+    /* 记住初始 scrollY */
+    lastYRef.current = window.scrollY;
 
     function onScroll() {
       const y = window.scrollY;
@@ -66,40 +72,29 @@ export default function BottomNav() {
       lastYRef.current = y;
     }
 
-    /* 延迟绑定 scroll 监听，避免浏览器 scroll restoration 误触发 */
+    /* 延迟 500ms 才绑定 scroll，避免浏览器 scroll restoration 误触发 */
     let attached = false;
-    const attachTimer = setTimeout(() => {
+    const timer = setTimeout(() => {
       lastYRef.current = window.scrollY;
       window.addEventListener("scroll", onScroll, { passive: true });
       attached = true;
     }, 500);
 
     return () => {
-      clearTimeout(resumeTimer);
-      clearTimeout(attachTimer);
+      clearTimeout(timer);
       if (attached) window.removeEventListener("scroll", onScroll);
     };
-  }, [pathname]);
-
-  if (
-    pathname?.startsWith("/product/") ||
-    pathname?.startsWith("/login") ||
-    pathname?.startsWith("/add") ||
-    (pathname?.startsWith("/holdings/") && pathname.length > "/holdings/".length)
-  ) return null;
+  }, []);
 
   return (
     <div
       className="fixed left-0 right-0 z-50 pointer-events-none"
       style={{
-        bottom: "12px",
-        paddingBottom: "env(safe-area-inset-bottom)",
+        bottom: 0,
+        paddingBottom: "calc(12px + env(safe-area-inset-bottom))",
         transform: hidden ? "translateY(200%)" : "translateY(0)",
         opacity: hidden ? 0 : 1,
-        /* ★ 只过渡 transform 和 opacity，不碰 bottom */
-        transition: noAnim
-          ? "none"
-          : "transform 0.5s cubic-bezier(0.16, 1, 0.3, 1), opacity 0.5s ease-out",
+        transition: "transform 0.5s cubic-bezier(0.16, 1, 0.3, 1), opacity 0.5s ease-out",
       }}
     >
       <div className="max-w-3xl mx-auto px-4">
