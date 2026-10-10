@@ -3,6 +3,10 @@ import "./globals.css";
 import BottomNav from "./BottomNav";
 import PWAInstallPrompt from "./components/PWAInstallPrompt";
 import PWACapture from "./components/PWACapture";
+import { preloadHolidays } from "../lib/holidays";
+
+// 预热节假日数据（后台异步，不影响渲染）
+preloadHolidays().catch(() => {});
 
 export const metadata: Metadata = {
   title: "理财净值观察站",
