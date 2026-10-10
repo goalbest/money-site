@@ -71,20 +71,18 @@ function parseNavList(text) {
   return result.filter(r => { if (seen.has(r.date)) return false; seen.add(r.date); return true; });
 }
 
-// 规则解析
 function parseRules(text) {
   let riskLevel = null, arrivalDays = null, cutoffTime = null;
 
-  // 风险等级
   const riskM = text.match(/(?:P?R)(\d)/i);
   if (riskM) riskLevel = `R${riskM[1]}`;
 
-  // 到账：T+N / N个工作日
+  // 到账（"T日赎回，预计本金T+1到账" / "T+2到账" / "3个工作日内到账"）
   const arrPatterns = [
+    /预计本金T\+?(\d+)到账/,
     /T\+?(\d+)\s*(?:个?交易日?)?到账/,
     /预计[^\d]{0,10}T\+?(\d+)/,
     /(\d+)\s*个工作日[^\n]{0,15}到账/,
-    /本金T\+?(\d+)到账/,
   ];
   for (const re of arrPatterns) {
     const m = text.match(re);
@@ -105,41 +103,77 @@ for (const p of BOC_PRODUCTS) {
     await page.goto(detailUrl, { waitUntil: 'domcontentloaded', timeout: 45000 });
     await page.waitForTimeout(5000);
 
-    const detailText = await page.evaluate(() => document.body.innerText);
+    let detailText = await page.evaluate(() => document.body.innerText);
     console.log('   详情页已加载');
 
     const nameMatch = detailText.match(/（[^）]*）([^\n(（|]+?)\(([A-Z0-9]+)\)/);
     const productName = nameMatch?.[1]?.trim() || null;
 
-    // 点击"查看更多"
+    // ── ① 解析风险等级（详情页可见）──
+    let riskLevel = null;
+    const riskM = detailText.match(/(?:P?R)(\d)/i);
+    if (riskM) riskLevel = `R${riskM[1]}`;
+    console.log(`   风险: ${riskLevel || '?'}`);
+
+    // ── ② 点击"更多规则明细" ──
+    let arrivalDays = null, cutoffTime = null;
     try {
-      const btn = await page.locator('text=查看更多').first();
-      if (await btn.count() > 0) {
-        await btn.click();
-        console.log('   已点击"查看更多"');
+      const ruleBtn = page.locator('text=更多规则明细').first();
+      if (await ruleBtn.count() > 0) {
+        await ruleBtn.click();
+        console.log('   点击"更多规则明细"');
+        await page.waitForTimeout(4000);
+
+        // ── ③ 点"赎回规则" Tab ──
+        try {
+          const redeemTab = page.locator('text=赎回规则').first();
+          if (await redeemTab.count() > 0) {
+            await redeemTab.click();
+            console.log('   点击"赎回规则" Tab');
+            await page.waitForTimeout(2500);
+          }
+        } catch (e) {
+          console.log(`   点"赎回规则"失败: ${e.message}`);
+        }
+
+        // ── ④ 读规则页文本 ──
+        const ruleText = await page.evaluate(() => document.body.innerText);
+        const parsed = parseRules(ruleText);
+        arrivalDays = parsed.arrivalDays;
+        cutoffTime = parsed.cutoffTime;
+        console.log(`   到账T+${arrivalDays || '?'}, 截止${cutoffTime || '?'}`);
+
+        // 调试：打印含"到账"的行
+        const arrLines = ruleText.split('\n').map(l => l.trim())
+          .filter(l => l.includes('到账') && l.length < 150);
+        console.log('   含"到账"的行:');
+        arrLines.slice(0, 5).forEach(l => console.log(`     "${l}"`));
+
+        // ── ⑤ 返回到详情页 ──
+        await page.goBack();
+        await page.waitForTimeout(3000);
+      } else {
+        console.log('   未找到"更多规则明细"按钮');
+      }
+    } catch (e) {
+      console.log(`   规则流程失败: ${e.message}`);
+    }
+
+    // ── ⑥ 点击"查看更多"拿净值历史 ──
+    try {
+      const moreBtn = page.locator('text=查看更多').first();
+      if (await moreBtn.count() > 0) {
+        await moreBtn.click();
+        console.log('   点击"查看更多"');
         await page.waitForTimeout(5000);
       }
     } catch (e) {
       console.log(`   点"查看更多"失败: ${e.message}`);
     }
 
-    // ★ 在"查看更多"之后重新读页面文本（含规则）
-    const afterClickText = await page.evaluate(() => document.body.innerText);
-    console.log('   页面文本已更新（含规则）');
-
-    // 打印包含"到账"的行（调试）
-    const arrivalLines = afterClickText.split('\n').map(l => l.trim())
-      .filter(l => l.includes('到账') && l.length < 150);
-    console.log('   含"到账"的行:');
-    arrivalLines.slice(0, 5).forEach(l => console.log(`     "${l}"`));
-
-    // ★ 规则解析（用点击后的文本）
-    const { riskLevel, arrivalDays, cutoffTime } = parseRules(afterClickText);
-    console.log(`   规则: 风险${riskLevel || '?'}, 到账T+${arrivalDays || '?'}, 截止${cutoffTime || '?'}`);
-
-    // 净值列表
-    const list = parseNavList(afterClickText);
-    console.log(`   解析到 ${list.length} 条`);
+    const listText = await page.evaluate(() => document.body.innerText);
+    const list = parseNavList(listText);
+    console.log(`   解析到 ${list.length} 条净值`);
 
     if (list.length === 0) {
       console.log('   ⚠️ 没有净值数据\n');
@@ -147,6 +181,7 @@ for (const p of BOC_PRODUCTS) {
       continue;
     }
 
+    // 写 nav_history
     const navRows = list.map(r => ({
       product_id: p.dbId, nav_date: r.date, unit_nav: r.nav, accum_nav: r.accum,
     }));
@@ -155,6 +190,7 @@ for (const p of BOC_PRODUCTS) {
     });
     if (upErr) { console.log(`   ❌ nav_history 失败: ${upErr.message}\n`); failed++; continue; }
 
+    // 更新 products
     const latestRow = list[0];
     const updates = {
       unit_nav: latestRow.nav,
