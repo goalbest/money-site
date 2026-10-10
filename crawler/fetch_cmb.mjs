@@ -96,25 +96,35 @@ for (const p of CMB_PRODUCTS) {
     );
     await page.waitForTimeout(2000);
     
-    // ── 先拿产品真名 ──
+    // ── 先访问历史页，从 DOM 拿产品真名 ──
     let realName = null;
     try {
-      const nameData = await page.evaluate(async ({ saaCode, ripInn }) => {
-        const url = `/ientrustfinance/product-statistics/get-history-performance?saaCode=${encodeURIComponent(saaCode)}&ripInn=${encodeURIComponent(ripInn)}`;
-        const r = await fetch(url, {
-          method: 'GET',
-          headers: {
-            'X-Requested-With': 'XMLHttpRequest',
-          },
-        });
-        return await r.json();
-      }, { saaCode: p.saaCode, ripInn: p.ripInn });
+      await page.goto(
+        `https://mobile.cmbchina.com/IEntrustFinance/financeproduct/historynetvalue.html?XRIPINN=${p.ripInn}&Code=${p.ripInn}&XSAACOD=${p.saaCode}&offSal=Y`,
+        { waitUntil: 'domcontentloaded', timeout: 45000 }
+      );
+      await page.waitForTimeout(2000);
 
-      realName = nameData?.bizResult?.data?.ripSnm || null;
+      // 从页面文本抓产品名
+      const pageText = await page.evaluate(() => document.body.innerText);
+      // 招行页面通常第一行是产品名，模式：中文 6-40 字，含"理财/持有/日开/天"等
+      const nameMatch = pageText.match(/^([^\n]{6,60}(?:理财|持有|日开|封闭|天|号)[^\n]{0,30})/m);
+      if (nameMatch) realName = nameMatch[1].trim();
       console.log(`   真名: ${realName || '(未拿到)'}`);
     } catch (e) {
       console.log(`   拿名字失败: ${e.message}`);
     }
+
+    // 读数据库里该产品的最新净值日期
+    const { data: latestRow } = await supabase
+      .from('nav_history')
+      .select('nav_date')
+      .eq('product_id', p.dbId)
+      .order('nav_date', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    const lastNavDate = latestRow?.nav_date || '1970-01-01';
+    console.log(`   数据库最新: ${lastNavDate}`);
 
     // ── 翻页抓全部历史 ──
     let yNavDat = '0';
@@ -148,12 +158,25 @@ for (const p of CMB_PRODUCTS) {
 
       if (!latest) latest = list[0];
 
-      allRows.push(...list.map(x => ({
-        product_id: p.dbId,
-        nav_date: x.date,
-        unit_nav: parseFloat(x.unitNetValue),
-        accum_nav: parseFloat(x.totalNetValue),
-      })));
+      // ★ 只保留比数据库最新日期更新的数据
+      const newRows = list
+        .filter(x => x.date > lastNavDate)
+        .map(x => ({
+          product_id: p.dbId,
+          nav_date: x.date,
+          unit_nav: parseFloat(x.unitNetValue),
+          accum_nav: parseFloat(x.totalNetValue),
+        }));
+
+      // 如果本页最旧日期 <= 数据库最新 → 翻到已知区域，停止
+      const oldestInPage = list[list.length - 1]?.date;
+      if (oldestInPage && oldestInPage <= lastNavDate) {
+        allRows.push(...newRows);
+        console.log(`   翻到已知区域（${oldestInPage}），停止翻页`);
+        break;
+      }
+
+      allRows.push(...newRows);
 
       if (list.length < 30) break;
       const next = reqY1?.yNavDat;
