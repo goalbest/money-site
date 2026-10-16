@@ -53,7 +53,7 @@ export async function POST(request: Request) {
         wfEarn: psbcProd.wfEarn,
         riskLevel: psbcProd.riskLevel,
       };
-      sourceType = isZywm ? 'zywm' : 'psbc';
+      sourceType = 'zywm';
       bank = '中邮理财';
       params = { product_code: psbcProd.code };
     } else if (hostname.includes('boc.cn')) {
