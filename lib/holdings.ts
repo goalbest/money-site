@@ -108,3 +108,20 @@ export async function fetchNavByDate(
   if (data && data.length > 0) return Number(data[0].unit_nav);
   return null;
 }
+/**
+ * 计算持仓的实时市值
+ * 优先使用：份额 × 最新净值
+ * 兜底使用：数据库里的 holding_amount
+ */
+export function getHoldingMarketValue(holding: any): number {
+  if (!holding) return 0;
+  const shares = Number(holding.shares || 0);
+  const nav = Number(holding.products?.unit_nav || 0);
+  
+  // 如果有份额且有净值，动态计算
+  if (shares > 0 && nav > 0) {
+    return shares * nav;
+  }
+  // 否则回退到金额（比如刚买入还没确认份额）
+  return Number(holding.holding_amount || 0);
+}

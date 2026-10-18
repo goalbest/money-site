@@ -644,6 +644,64 @@ function InsightsContent({ m }: { m: HomeMetrics }) {
   );
 }
 
+/* ============================================================
+   产品库概况
+   ============================================================ */
+function ProductLibraryContent({
+  stats,
+}: {
+  stats: {
+    total: number;
+    bankCount: number;
+    bankDist: { bank: string; count: number }[];
+    loading: boolean;
+  };
+}) {
+  if (stats.loading) {
+    return (
+      <div className="px-5 py-8 text-center">
+        <div className="text-[12px] text-slate-400">加载中...</div>
+      </div>
+    );
+  }
+
+  const top3 = stats.bankDist.slice(0, 3);
+
+  return (
+    <div>
+      <div className="grid grid-cols-2 gap-4 px-5 py-5">
+        <div>
+          <div className="text-[10px] text-slate-400 mb-1">全站产品</div>
+          <div className="font-mono font-bold text-[28px] text-slate-900 tabular leading-none">
+            {stats.total.toLocaleString("zh-CN")}
+          </div>
+          <div className="text-[10px] text-slate-400 mt-1.5">个</div>
+        </div>
+        <div>
+          <div className="text-[10px] text-slate-400 mb-1">覆盖银行</div>
+          <div className="font-mono font-bold text-[28px] text-slate-900 tabular leading-none">
+            {stats.bankCount}
+          </div>
+          <div className="text-[10px] text-slate-400 mt-1.5">家</div>
+        </div>
+      </div>
+
+      {top3.length > 0 && (
+        <div className="px-5 pb-3 border-t divider pt-3">
+          <div className="text-[10px] text-slate-400 mb-2">Top 3 银行</div>
+          <div className="space-y-1.5">
+            {top3.map((b) => (
+              <div key={b.bank} className="flex items-center justify-between text-[12px]">
+                <span className="text-slate-700 truncate">{b.bank}</span>
+                <span className="font-mono text-slate-500 tabular">{b.count} 个</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
 
 /* ============================================================
    目标进度
@@ -1002,12 +1060,18 @@ type Props = {
     new: any[];
     loading: boolean;
   };
+    productStats?: {
+    total: number;
+    bankCount: number;
+    bankDist: { bank: string; count: number }[];
+    loading: boolean;
+  };
   onLinkClick?: (e: React.MouseEvent) => void;
   onTitleLongPress?: () => void;
 };
 
 export default function ModuleRenderer({
-  id, metrics: m, snap, goals, dca, rankData, onLinkClick, onTitleLongPress,
+  id, metrics: m, snap, goals, dca,   rankData, productStats, onLinkClick, onTitleLongPress,
 }: Props) {
   const meta = MODULE_MAP[id];
   if (!meta) return null;
@@ -1208,6 +1272,13 @@ export default function ModuleRenderer({
         "分析洞察",
         undefined,
         <InsightsContent m={m} />
+      );
+          case "productLibrary":
+      return wrapper(
+        "产品库概况",
+        undefined,
+        <ProductLibraryContent stats={productStats || { total: 0, bankCount: 0, bankDist: [], loading: true }} />,
+        <MoreLink href="/discover" text="全部" />
       );
 
 

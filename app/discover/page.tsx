@@ -16,7 +16,7 @@ const SORTS: { key: SortKey; label: string; field: string }[] = [
   { key: "steady",         label: "稳健",   field: "annualized_1m" },
 ];
 
-const PAGE_SIZE = 30;
+const PAGE_SIZE = 20;
 
 const LS_BANK = "discover_bank_v1";
 const LS_SORT = "discover_sort_v1";
@@ -118,8 +118,10 @@ function DiscoverInner() {
   const [sortKey, setSortKey] = useState<SortKey>("daily_return");
   const [items, setItems] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
-  const [loadingMore, setLoadingMore] = useState(false);
-  const [hasMore, setHasMore] = useState(true);
+  
+  /* ★ 翻页状态 */
+  const [page, setPage] = useState(1);
+  const [total, setTotal] = useState(0);
 
   const [searchTerm, setSearchTerm] = useState("");
   const [searchMode, setSearchMode] = useState("");
@@ -128,16 +130,8 @@ function DiscoverInner() {
 
   const reqIdRef = useRef(0);
 
-  /* ---------- 首帧：读 localStorage + URL 参数 ---------- */
+  /* ---------- 首帧：读 URL 参数（去掉了 localStorage 记忆） ---------- */
   useEffect(() => {
-    try {
-      const b = localStorage.getItem(LS_BANK);
-      const s = localStorage.getItem(LS_SORT) as SortKey | null;
-      if (b) setBank(b);
-      if (s && SORTS.some(x => x.key === s)) setSortKey(s);
-    } catch {}
-
-    /* ★ 读 URL ?q=xxx 自动搜索 */
     const q = searchParams?.get("q");
     if (q && q.trim()) {
       setSearchTerm(q);
@@ -146,63 +140,55 @@ function DiscoverInner() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  /* ---------- 数据加载 ---------- */
-  const loadProducts = useCallback(
-    async (reset: boolean) => {
-      const myReq = ++reqIdRef.current;
-      const offset = reset ? 0 : items.length;
+  /* ---------- 数据加载（严格分页） ---------- */
+  const loadProducts = useCallback(async () => {
+    const myReq = ++reqIdRef.current;
+    const offset = (page - 1) * PAGE_SIZE;
 
-      if (reset) setLoading(true);
-      else setLoadingMore(true);
+    setLoading(true);
 
-      const sort = SORTS.find(s => s.key === sortKey)!;
-      const field = sort.field;
+    const sort = SORTS.find(s => s.key === sortKey)!;
+    const field = sort.field;
 
-      let query = supabase
-        .from("products")
-        .select(
-          "id, name, bank, code, unit_nav, daily_return, annualized_1m, nav_date"
-        )
-        .not(field, "is", null);
+    let query = supabase
+      .from("products")
+      .select(
+        "id, name, bank, code, unit_nav, daily_return, annualized_1m, nav_date",
+        { count: "exact" }
+      );
 
-      if (sortKey === "steady") {
-        query = query.gt("annualized_1m", 0).gt("daily_return", 0);
-      } else if (sortKey !== "nav_date") {
-        query = query.gt(field, 0);
-      }
+    // 只对“稳健”加过滤，其他显示所有
+    if (sortKey === "steady") {
+      query = query.gt("annualized_1m", 0).gt("daily_return", 0);
+    }
 
-      if (bank !== "全部") {
-        query = query.eq("bank", bank);
-      }
+    if (bank !== "全部") {
+      query = query.eq("bank", bank);
+    }
 
-      const { data } = await query
-        .order(field, { ascending: false })
-        .range(offset, offset + PAGE_SIZE - 1);
+    const { data, count } = await query
+      .order(field, { ascending: false, nullsFirst: false })
+      .range(offset, offset + PAGE_SIZE - 1);
 
-      if (myReq !== reqIdRef.current) return;
+    if (myReq !== reqIdRef.current) return;
 
-      const list = data || [];
-      setItems(prev => (reset ? list : [...prev, ...list]));
-      setHasMore(list.length === PAGE_SIZE);
-      setLoading(false);
-      setLoadingMore(false);
-    },
-    [bank, sortKey, items.length]
-  );
+    setItems(data || []);
+    setTotal(count || 0);
+    setLoading(false);
+  }, [bank, sortKey, page]);
 
   useEffect(() => {
-    loadProducts(true);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [bank, sortKey]);
+    loadProducts();
+  }, [loadProducts]);
 
   function selectBank(b: string) {
     setBank(b);
-    try { localStorage.setItem(LS_BANK, b); } catch {}
+    setPage(1); // ★ 切银行重置页码
   }
 
   function selectSort(k: SortKey) {
     setSortKey(k);
-    try { localStorage.setItem(LS_SORT, k); } catch {}
+    setPage(1); // ★ 切排序重置页码
   }
 
   /* ---------- 搜索 ---------- */
@@ -240,7 +226,6 @@ function DiscoverInner() {
     setSearchTerm("");
     setSearchMode("");
     setSearchResults([]);
-    /* 清掉 URL 上的 ?q= */
     router.replace("/discover");
   }
 
@@ -256,7 +241,7 @@ function DiscoverInner() {
               发现好产品
             </div>
             <div className="text-[12px] text-slate-400 mt-0.5">
-              全库 {items.length > 0 ? `${items.length}+ ` : ""}产品 · 按维度排行
+              全库 {total} 个产品 · 按维度排行
             </div>
           </div>
         </div>
@@ -404,31 +389,46 @@ function DiscoverInner() {
                 <>
                   <div className="card overflow-hidden">
                     {items.map((p, i) => (
-                      <ProductRow key={p.id} product={p} index={i} rankBase={0} />
+                      <ProductRow key={p.id} product={p} index={i} rankBase={(page - 1) * PAGE_SIZE} />
                     ))}
                   </div>
 
-                  {hasMore && (
-                    <button
-                      onClick={() => loadProducts(false)}
-                      disabled={loadingMore}
-                      className="w-full mt-4 py-3 rounded-2xl
-                                 bg-white border border-slate-200
-                                 hover:bg-slate-50 hover:border-slate-300
-                                 active:scale-[0.99]
-                                 text-[13px] text-slate-600 font-medium
-                                 transition-all duration-200
-                                 disabled:opacity-50"
-                    >
-                      {loadingMore ? "加载中..." : "加载更多"}
-                    </button>
-                  )}
-
-                  {!hasMore && items.length > 0 && (
-                    <div className="text-center text-[11px] text-slate-300 mt-4 py-2">
-                      已经到底了 · 共 {items.length} 个
+                  {/* ★ 翻页按钮 */}
+                  {total > PAGE_SIZE && (
+                    <div className="flex items-center justify-center gap-3 mt-5 mb-3 animate-fade-in-up">
+                      <button
+                        onClick={() => setPage(p => Math.max(1, p - 1))}
+                        disabled={page === 1}
+                        className="w-10 h-10 rounded-full bg-white border border-slate-200
+                                   hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed
+                                   flex items-center justify-center transition-all active:scale-90 shadow-sm"
+                      >
+                        <svg className="w-4 h-4 text-slate-600" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2.5}>
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M15 19l-7-7 7-7" />
+                        </svg>
+                      </button>
+                      <div className="text-[13px] tabular text-slate-600">
+                        <span className="font-bold text-slate-900 text-[15px]">{page}</span>
+                        <span className="text-slate-400 mx-1">/</span>
+                        <span>{Math.ceil(total / PAGE_SIZE)}</span>
+                      </div>
+                      <button
+                        onClick={() => setPage(p => p + 1)}
+                        disabled={page * PAGE_SIZE >= total}
+                        className="w-10 h-10 rounded-full bg-white border border-slate-200
+                                   hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed
+                                   flex items-center justify-center transition-all active:scale-90 shadow-sm"
+                      >
+                        <svg className="w-4 h-4 text-slate-600" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2.5}>
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
+                        </svg>
+                      </button>
                     </div>
                   )}
+
+                  <div className="text-center text-[11px] text-slate-400 py-2">
+                    共 {total} 个产品
+                  </div>
                 </>
               )}
             </div>

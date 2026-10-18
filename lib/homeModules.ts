@@ -74,6 +74,16 @@ export const MODULE_META: ModuleMeta[] = [
     needs: ["transactions"],
   },
 
+  {
+    id: "productLibrary",
+    name: "产品库概况",
+    shortName: "产品库",
+    icon: "🌐",
+    desc: "全站产品总数与银行分布",
+    category: "data",
+    defaultZone: "card",
+  },
+
   // ============ 分析洞察（合并成一个） ============
   {
     id: "insights",
@@ -382,6 +392,7 @@ export const DEFAULT_LAYOUT = {
     "holdings",
     "topToday",
     "insights",
+    "productLibrary",
     "monthStats",
   ],
   hidden: [

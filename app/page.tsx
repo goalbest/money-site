@@ -31,7 +31,7 @@ export default function Home() {
   const [lastUpdated, setLastUpdated] = useState("");
 
   /* ============ 数据层 ============ */
-  const { metrics, loading: metricsLoading, getPeriodProfit } = useHomeMetrics();
+const { metrics, loading: metricsLoading, getPeriodProfit, productStats } = useHomeMetrics();
   const { layout, hydrated, customized, moveWithinZone, moveToZone, reset } = useHomeLayout();
 
   /* ============ 资产快照 ============ */
@@ -400,18 +400,10 @@ export default function Home() {
 
         {/* ============ 顶部账号 / 搜索 ============ */}
         <div className="flex justify-between items-center gap-2 mb-4 animate-fade-in-up relative z-[100]">
-          {/* 头像：收起和展开都显示 */}
-          <div className="w-11 h-11 rounded-2xl flex items-center justify-center flex-shrink-0
-                          bg-gradient-to-br from-violet-500 to-purple-600
-                          shadow-md shadow-purple-500/25">
-            <span className="text-white font-bold text-[15px]">
-              {username ? username.slice(-2) : "观"}
-            </span>
-          </div>
-
+          
           {searchOpen && !editMode ? (
-            /* ★ 展开：搜索框（不拉满，保留头像） */
-            <div ref={searchBoxRef} className="relative flex-1 min-w-0 mx-1 h-11">
+            /* ★ 展开：全屏搜索框（隐藏头像和右侧按钮） */
+            <div ref={searchBoxRef} className="relative w-full h-11 animate-fade-in">
               <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none z-10">
                 <svg className="w-4 h-4 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
                   <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
@@ -430,16 +422,26 @@ export default function Home() {
                   }
                   if (e.key === "Escape") closeSearch();
                 }}
-                className="input-field w-full pl-10 pr-10 py-2.5 text-sm relative z-[1]"
+                className="input-field w-full h-11 pl-10 pr-10 text-sm relative z-[1]"
               />
+              {/* 输入框内部的 X（只清空文字，不关闭搜索） */}
               {searchTerm && (
                 <button
                   onClick={clearSearch}
-                  className="absolute inset-y-0 right-3 pr-1 flex items-center z-10"
+                  className="absolute inset-y-0 right-0 pr-4 flex items-center z-10"
                 >
-                  <svg className="w-3.5 h-3.5 text-slate-400 hover:text-slate-600" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
+                  <svg className="w-4 h-4 text-slate-400 hover:text-slate-600" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
                     <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
                   </svg>
+                </button>
+              )}
+              {/* 如果没输入内容，右侧显示一个「取消」，方便关闭搜索 */}
+              {!searchTerm && (
+                <button
+                  onClick={closeSearch}
+                  className="absolute inset-y-0 right-0 pr-4 flex items-center z-10 text-[12px] text-slate-500 font-medium"
+                >
+                  取消
                 </button>
               )}
 
@@ -540,93 +542,75 @@ export default function Home() {
               )}
             </div>
           ) : (
-            /* 收起：问候语 */
-            <div className="flex-1 min-w-0 h-11 flex flex-col justify-center">
-              <div className="flex items-baseline gap-1.5">
-                <span className="text-[13px] text-slate-500">
-                  {(() => {
-                    const h = new Date().getHours();
-                    if (h < 6) return "夜深了";
-                    if (h < 12) return "早上好";
-                    if (h < 14) return "中午好";
-                    if (h < 18) return "下午好";
-                    return "晚上好";
-                  })()}
-                </span>
-                <span className="text-[16px] font-bold tracking-tight text-slate-900 truncate">
-                  {username || "访客"}
+            /* ★ 收起：头像 + 问候语 + 放大镜 + 我的 */
+            <>
+              <div className="w-11 h-11 rounded-2xl flex items-center justify-center flex-shrink-0
+                              bg-gradient-to-br from-violet-500 to-purple-600
+                              shadow-md shadow-purple-500/25">
+                <span className="text-white font-bold text-[15px]">
+                  {username ? username.slice(-2) : "观"}
                 </span>
               </div>
-              <div className="flex items-center gap-1.5 mt-1 text-[11px] text-slate-400">
-                <span className="w-1.5 h-1.5 bg-emerald-400 rounded-full" />
-                数据已同步 · {lastUpdated}
-              </div>
-            </div>
-          )}
 
-          <div className="flex items-center gap-2 flex-shrink-0">
-            {!editMode && (
-              <button
-                onClick={() => {
-                  if (searchOpen) {
-                    closeSearch();
-                  } else {
-                    setSearchOpen(true);
-                  }
-                }}
-                className={`w-9 h-9 rounded-full border flex items-center justify-center
-                           transition-all duration-300 active:scale-90
-                           ${searchOpen
-                             ? "bg-purple-50 border-purple-200"
-                             : "bg-white border-slate-200 hover:border-slate-300 hover:bg-slate-50"}`}
-                aria-label={searchOpen ? "关闭搜索" : "搜索"}
-              >
-                {searchOpen ? (
-                  <svg className="w-4 h-4 text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2.5}>
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
-                  </svg>
-                ) : (
-                  <svg className="w-4 h-4 text-slate-500" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-                  </svg>
+              <div className="flex-1 min-w-0 h-11 flex flex-col justify-center">
+                <div className="flex items-baseline gap-1.5">
+                  <span className="text-[13px] text-slate-500">
+                    {(() => {
+                      const h = new Date().getHours();
+                      if (h < 6) return "夜深了";
+                      if (h < 12) return "早上好";
+                      if (h < 14) return "中午好";
+                      if (h < 18) return "下午好";
+                      return "晚上好";
+                    })()}
+                  </span>
+                  <span className="text-[16px] font-bold tracking-tight text-slate-900 truncate">
+                    {username || "访客"}
+                  </span>
+                </div>
+                <div className="flex items-center gap-1.5 mt-1 text-[11px] text-slate-400">
+                  <span className="w-1.5 h-1.5 bg-emerald-400 rounded-full" />
+                  数据已同步 · {lastUpdated}
+                </div>
+              </div>
+
+              <div className="flex items-center gap-2 flex-shrink-0">
+                {!editMode && (
+                  <button
+                    onClick={() => setSearchOpen(true)}
+                    className="w-9 h-9 rounded-full bg-white border border-slate-200
+                               hover:border-slate-300 hover:bg-slate-50
+                               flex items-center justify-center
+                               transition-all duration-300 active:scale-90"
+                    aria-label="搜索"
+                  >
+                    <svg className="w-4 h-4 text-slate-500" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                    </svg>
+                  </button>
                 )}
-              </button>
-            )}
-            {editMode ? (
-              <div className="w-9 h-9 flex-shrink-0" />
-            ) : (
-              <Link
-                href="/profile"
-                className="w-9 h-9 rounded-full bg-white border border-slate-200
-                           hover:border-slate-300 hover:bg-slate-50
-                           flex items-center justify-center flex-shrink-0
-                           transition-all duration-300 active:scale-90"
-                aria-label="我的"
-              >
-                <svg className="w-4 h-4 text-slate-500" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
-                  <path d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" strokeLinecap="round" strokeLinejoin="round" />
-                </svg>
-              </Link>
-            )}
-          </div>
+                {editMode ? (
+                  <div className="w-9 h-9 flex-shrink-0" />
+                ) : (
+                  <Link
+                    href="/profile"
+                    className="w-9 h-9 rounded-full bg-white border border-slate-200
+                               hover:border-slate-300 hover:bg-slate-50
+                               flex items-center justify-center flex-shrink-0
+                               transition-all duration-300 active:scale-90"
+                    aria-label="我的"
+                  >
+                    <svg className="w-4 h-4 text-slate-500" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
+                      <path d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" strokeLinecap="round" strokeLinejoin="round" />
+                    </svg>
+                  </Link>
+                )}
+              </div>
+            </>
+          )}
         </div>
 
-        {/* ============ 编辑模式提示 ============ */}
-        {editMode && (
-          <div className="card p-3 mb-4 bg-purple-50 border border-purple-100 animate-fade-in">
-            <div className="text-[12px] text-purple-700 leading-relaxed px-1
-                            flex items-center gap-2">
-              <svg className="w-3.5 h-3.5 text-purple-500 flex-shrink-0"
-                   fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2.5}>
-                <path strokeLinecap="round" strokeLinejoin="round" d="M4 7h16M4 12h16M4 17h16" />
-              </svg>
-              <span>
-                <span className="font-semibold">编辑模式</span> · 按住<span className="font-semibold">紫色条</span>拖动换位，点 <span className="font-semibold">×</span> 隐藏；完成后点右下角"完成"
-              </span>
-            </div>
-          </div>
-        )}
-
+        
         {/* ============ Hero 卡 ============ */}
         <div
           className="card-hero p-6 mb-5 animate-fade-in-up delay-1"
@@ -770,6 +754,7 @@ export default function Home() {
                     goals={goals}
                     dca={dca}
                     rankData={rankData}
+                    productStats={productStats}
                     onLinkClick={handleLinkClick}
                     onTitleLongPress={editMode ? undefined : () => {
                       setEditMode(true);

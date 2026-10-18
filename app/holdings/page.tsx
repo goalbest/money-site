@@ -211,7 +211,13 @@ export default function HoldingsPage() {
   );
 
   /* ============ 汇总 ============ */
-  const totalHolding = holdings.reduce((s, h) => s + Number(h.holding_amount || 0), 0);
+const totalHolding = holdings.reduce((s, h) => {
+  // 动态计算：份额 × 最新净值。如果没净值，退回到 holding_amount
+  const nav = Number(h.products?.unit_nav || 0);
+  const shares = Number(h.shares || 0);
+  const dynamicAmount = nav > 0 && shares > 0 ? shares * nav : Number(h.holding_amount || 0);
+  return s + dynamicAmount;
+}, 0);
   const totalInTransit = holdings.reduce((s, h) => s + Number(h.in_transit_amount || 0), 0);
   const totalAssets = totalHolding + totalInTransit;
   const totalProfitToday = holdings.reduce((s, h) => {
@@ -1359,4 +1365,21 @@ export default function HoldingsPage() {
       )}
     </div>
   );
+}
+/**
+ * 计算持仓的实时市值
+ * 优先使用：份额 × 最新净值
+ * 兜底使用：数据库里的 holding_amount
+ */
+export function getHoldingMarketValue(holding: any): number {
+  if (!holding) return 0;
+  const shares = Number(holding.shares || 0);
+  const nav = Number(holding.products?.unit_nav || 0);
+  
+  // 如果有份额且有净值，动态计算
+  if (shares > 0 && nav > 0) {
+    return shares * nav;
+  }
+  // 否则回退到金额（比如刚买入还没确认份额）
+  return Number(holding.holding_amount || 0);
 }

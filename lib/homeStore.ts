@@ -4,7 +4,7 @@
 import { useCallback, useLayoutEffect, useRef, useState } from "react";
 import { DEFAULT_LAYOUT, ALL_MODULE_IDS } from "./homeModules";
 
-const STORAGE_KEY = "home_layout_v4";
+const STORAGE_KEY = "home_layout_v6";
 const CUSTOMIZED_KEY = "home_customized_v1";
 
 export type Zone = "tile" | "card" | "hidden";
