@@ -3,6 +3,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { supabase } from "./supabase";
+import { getHoldingMarketValue, calcTodayProfit } from "./holdings";
 
 /* ============================================================
    类型定义
@@ -133,7 +134,8 @@ function daysAgo(n: number): string {
 
 function computeHoldingsDerived(
   holdings: Holding[],
-  txByProduct: Map<number, TxRow[]>
+  txByProduct: Map<number, TxRow[]>,
+  navByProduct: Map<number, NavPoint[]>
 ) {
   let totalHolding = 0;
   let totalInTransit = 0;
@@ -156,7 +158,7 @@ function computeHoldingsDerived(
   const topToday: (Holding & { todayProfit: number; rate: number })[] = [];
 
   for (const h of holdings) {
-    const hold = Number(h.holding_amount || 0);
+    const hold = getHoldingMarketValue(h); // ★ 动态计算市值
     const transit = Number(h.in_transit_amount || 0);
     const daily = Number(h.products?.daily_return || 0);
     const annual = Number(h.products?.annualized_1m || 0);
@@ -165,9 +167,19 @@ function computeHoldingsDerived(
     totalHolding += hold;
     totalInTransit += transit;
 
-    const todayP = (hold * daily) / 10000;
+    // ★ 计算今日收益：优先用净值差
+    const navs = navByProduct.get(h.product_id) || [];
+    const todayP = calcTodayProfit(h, navs);
     todayProfit += todayP;
-    topToday.push({ ...h, todayProfit: todayP, rate: daily });
+
+    // 计算今日涨跌幅（优先用净值差算百分比，否则用万份收益）
+    let todayRate = daily;
+    if (navs.length >= 2) {
+      const last = navs[navs.length - 1].nav;
+      const prev = navs[navs.length - 2].nav;
+      if (prev > 0) todayRate = ((last - prev) / prev) * 100;
+    }
+    topToday.push({ ...h, todayProfit: todayP, rate: todayRate });
 
     /* 异常波动 */
     if (daily < ABNORMAL_DROP_THRESHOLD) {
@@ -237,7 +249,7 @@ function computeHoldingsDerived(
 
   /* 排序 */
   const topHoldings = [...holdings].sort(
-    (a, b) => Number(b.holding_amount || 0) - Number(a.holding_amount || 0)
+    (a, b) => getHoldingMarketValue(b) - getHoldingMarketValue(a) // ★ 按动态市值排序
   );
   topToday.sort((a, b) => b.todayProfit - a.todayProfit);
   abnormalDrops.sort((a, b) => a.value - b.value);
@@ -359,7 +371,7 @@ function computeNavDerived(
     }
     if (firstThisMonth != null && lastThisMonth != null && firstThisMonth !== lastThisMonth) {
       const shares = Number(h.shares || 0);
-      const amount = Number(h.holding_amount || 0);
+      const amount = getHoldingMarketValue(h); // ★ 动态市值
       if (shares > 0) monthProfit += shares * (lastThisMonth - firstThisMonth);
       else if (amount > 0 && firstThisMonth > 0) {
         monthProfit += amount * ((lastThisMonth - firstThisMonth) / firstThisMonth);
@@ -505,7 +517,7 @@ export function useHomeMetrics(enabled = true) {
       arr.push(tx);
     }
 
-    const hd = computeHoldingsDerived(holdings, txByProduct);
+    const hd = computeHoldingsDerived(holdings, txByProduct, navByProduct);
     const nd = computeNavDerived(holdings, navByProduct);
     const { buyAmount, sellAmount } = computeMonthTxStats(transactions);
 

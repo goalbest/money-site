@@ -13,7 +13,7 @@ import EditHoldingModal from "../../components/EditHoldingModal";
 import NavHistoryList from "../../components/NavHistoryList";
 import { useDragSort } from "../../components/home/useDragSort";
 import { useProductLayout, type ProductModuleKey } from "../../../lib/useProductLayout";
-
+import { getHoldingMarketValue, calcTodayProfit } from "../../../lib/holdings";
 
 type Range = "7d" | "30d" | "90d" | "1y" | "all";
 const RANGES: { key: Range; label: string; days: number }[] = [
@@ -243,7 +243,7 @@ export default function ProductPage() {
   }
 
   const hasHolding = myHolding && myHolding.status === "active";
-  const holdAmount = Number(myHolding?.holding_amount || 0);
+  const holdAmount = getHoldingMarketValue(myHolding); 
   const holdShares = (() => {
     const raw = Number(myHolding?.shares || 0);
     if (raw > 0) return raw;

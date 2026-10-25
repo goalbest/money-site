@@ -8,6 +8,7 @@ import { getBankInfo } from "../../lib/banks";
 import HoldingDistribution from "../components/HoldingDistribution";
 import MonitorPanel from "../components/MonitorPanel";
 import WatchlistPanel from "../components/WatchlistPanel";
+import { getHoldingMarketValue, calcTodayProfit } from "../../lib/holdings";
 
 function daysHeld(holdDate?: string | null, endDate?: string | null): number {
   if (!holdDate) return 0;
@@ -221,12 +222,14 @@ const totalHolding = holdings.reduce((s, h) => {
   const totalInTransit = holdings.reduce((s, h) => s + Number(h.in_transit_amount || 0), 0);
   const totalAssets = totalHolding + totalInTransit;
   const totalProfitToday = holdings.reduce((s, h) => {
-    const daily = Number(h.products?.daily_return || 0);
-    return s + (Number(h.holding_amount || 0) * daily) / 10000;
+    const navs = navHistory[h.products?.id || 0] || [];
+    const formattedNavs = navs.map((v: number) => ({ nav: v, date: "" }));
+    return s + calcTodayProfit(h, formattedNavs);
   }, 0);
+  
   const totalProfitCumulative = holdings.reduce((s, h) => {
     const purchase = Number(h.purchase_amount || 0);
-    const hold = Number(h.holding_amount || 0);
+    const hold = getHoldingMarketValue(h); // ★ 动态市值
     return s + (purchase > 0 ? hold - purchase : 0);
   }, 0);
   const todayRate = totalHolding > 0 ? (totalProfitToday / totalHolding) * 100 : 0;
@@ -295,7 +298,7 @@ const totalHolding = holdings.reduce((s, h) => {
         productId: h.products?.id,
         name: h.products?.name || "",
         bank: h.products?.bank || "",
-        profit: (Number(h.holding_amount || 0) * Number(h.products?.daily_return || 0)) / 10000,
+        profit: calcTodayProfit(h, (navHistory[h.products?.id || 0] || []).map((v: number) => ({nav: v, date: ""}))),
         rate: Number(h.products?.daily_return || 0),
       }))
       .filter(x => x.profit !== 0)
@@ -314,7 +317,7 @@ const totalHolding = holdings.reduce((s, h) => {
       const b = h.products?.bank || "其他";
       if (!counter[b]) counter[b] = { count: 0, total: 0 };
       counter[b].count += 1;
-      counter[b].total += Number(h.holding_amount || 0);
+      counter[b].total += getHoldingMarketValue(h);
     });
     const list = Object.entries(counter)
       .sort((a, b) => b[1].total - a[1].total)
@@ -345,21 +348,22 @@ const totalHolding = holdings.reduce((s, h) => {
 
     return Object.entries(grouped)
       .map(([bank, items]) => {
-        const total = items.reduce((s, h) => s + Number(h.holding_amount || 0), 0);
+        const total = items.reduce((s, h) => s + getHoldingMarketValue(h), 0);
         const inTransit = items.reduce((s, h) => s + Number(h.in_transit_amount || 0), 0);
         const todayProfit = items.reduce((s, h) => {
-          const daily = Number(h.products?.daily_return || 0);
-          return s + (Number(h.holding_amount || 0) * daily) / 10000;
+          const navs = navHistory[h.products?.id || 0] || [];
+          const formattedNavs = navs.map((v: number) => ({ nav: v, date: "" }));
+          return s + calcTodayProfit(h, formattedNavs);
         }, 0);
 
         const sortedItems = [...items].sort((a, b) => {
           let diff = 0;
           if (sortKey === "value") {
-            diff = Number(b.holding_amount || 0) - Number(a.holding_amount || 0);
+            diff = getHoldingMarketValue(b) - getHoldingMarketValue(a);
           } else if (sortKey === "today") {
-            const aP = Number(a.holding_amount || 0) * Number(a.products?.daily_return || 0);
-            const bP = Number(b.holding_amount || 0) * Number(b.products?.daily_return || 0);
-            diff = bP - aP;
+            const navsA = (navHistory[a.products?.id || 0] || []).map((v: number) => ({nav: v, date: ""}));
+            const navsB = (navHistory[b.products?.id || 0] || []).map((v: number) => ({nav: v, date: ""}));
+            diff = calcTodayProfit(b, navsB) - calcTodayProfit(a, navsA);
           } else if (sortKey === "dailyReturn") {
             diff = Number(b.products?.daily_return || 0) - Number(a.products?.daily_return || 0);
           } else if (sortKey === "annual") {
@@ -926,13 +930,15 @@ const totalHolding = holdings.reduce((s, h) => {
                             {group.items.map((h: any, hi: number) => {
                               const p = h.products;
                               if (!p) return null;
-                              const hold = Number(h.holding_amount || 0);
+                              const hold = getHoldingMarketValue(h); // ★ 动态市值
                               const transit = Number(h.in_transit_amount || 0);
                               const daily = Number(p.daily_return || 0);
-                              const today = (hold * daily) / 10000;
+                              const chartPoints = navHistory[p.id] || [];
+                              // ★ 用净值差计算今日真实收益
+                              const formattedNavs = chartPoints.map((v: number) => ({ nav: v, date: "" }));
+                              const today = calcTodayProfit(h, formattedNavs);
                               const annual = Number(p.annualized_1m || 0);
                               const days = daysHeld(h.hold_date);
-                              const chartPoints = navHistory[p.id] || [];
 
                               return (
                                 <Link
@@ -1005,13 +1011,35 @@ const totalHolding = holdings.reduce((s, h) => {
                                       </div>
                                     </div>
                                     <div className="text-right">
-                                      <div className="text-[10px] text-slate-400 mb-1">万收</div>
+                                      <div className="text-[10px] text-slate-400 mb-1">日涨幅</div>
                                       <div className={`font-mono font-semibold text-[14px] tabular ${
-                                        daily > 0 ? "text-rose-500"
-                                        : daily < 0 ? "text-emerald-500"
+                                        (() => {
+                                          // 动态计算这两天真实的日涨幅
+                                          if (chartPoints.length >= 2) {
+                                            const last = chartPoints[chartPoints.length - 1];
+                                            const prev = chartPoints[chartPoints.length - 2];
+                                            if (prev > 0) return ((last - prev) / prev) * 100;
+                                          }
+                                          return 0;
+                                        })() > 0 ? "text-rose-500"
+                                        : (() => {
+                                          if (chartPoints.length >= 2) {
+                                            const last = chartPoints[chartPoints.length - 1];
+                                            const prev = chartPoints[chartPoints.length - 2];
+                                            if (prev > 0) return ((last - prev) / prev) * 100;
+                                          }
+                                          return 0;
+                                        })() < 0 ? "text-emerald-500"
                                         : "text-slate-400"
                                       }`}>
-                                        {privacy ? "••" : daily.toFixed(2)}
+                                        {privacy ? "••" : (() => {
+                                          if (chartPoints.length >= 2) {
+                                            const last = chartPoints[chartPoints.length - 1];
+                                            const prev = chartPoints[chartPoints.length - 2];
+                                            if (prev > 0) return `${(((last - prev) / prev) * 100).toFixed(2)}%`;
+                                          }
+                                          return "0.00%";
+                                        })()}
                                       </div>
                                     </div>
                                     <div className="text-right flex items-end justify-end gap-1">
@@ -1365,21 +1393,4 @@ const totalHolding = holdings.reduce((s, h) => {
       )}
     </div>
   );
-}
-/**
- * 计算持仓的实时市值
- * 优先使用：份额 × 最新净值
- * 兜底使用：数据库里的 holding_amount
- */
-export function getHoldingMarketValue(holding: any): number {
-  if (!holding) return 0;
-  const shares = Number(holding.shares || 0);
-  const nav = Number(holding.products?.unit_nav || 0);
-  
-  // 如果有份额且有净值，动态计算
-  if (shares > 0 && nav > 0) {
-    return shares * nav;
-  }
-  // 否则回退到金额（比如刚买入还没确认份额）
-  return Number(holding.holding_amount || 0);
 }

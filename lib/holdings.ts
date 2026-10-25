@@ -125,3 +125,22 @@ export function getHoldingMarketValue(holding: any): number {
   // 否则回退到金额（比如刚买入还没确认份额）
   return Number(holding.holding_amount || 0);
 }
+/**
+ * 计算某天的今日收益（强制使用净值差，彻底废弃万份收益）
+ */
+export function calcTodayProfit(holding: any, navHistory: any[]): number {
+  if (!holding) return 0;
+  const shares = Number(holding.shares || 0);
+  
+  // 只要有两天以上的净值，就用 (今日净值 - 昨日净值) * 份额
+  if (navHistory && navHistory.length >= 2 && shares > 0) {
+    const last = navHistory[navHistory.length - 1].nav;
+    const prev = navHistory[navHistory.length - 2].nav;
+    if (last && prev) {
+      return shares * (last - prev);
+    }
+  }
+
+  // 如果没数据，直接返回 0（不再用万份收益兜底，防止假数据污染）
+  return 0;
+}
