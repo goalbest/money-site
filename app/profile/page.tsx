@@ -5,11 +5,13 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { supabase } from "../../lib/supabase";
 import { recalcHoldingFromTransactions } from "../../lib/holdings";
+import { useCountUp } from "../../lib/useCountUp"; // ★ 引入数字滚动动画
 
 export default function ProfilePage() {
   const router = useRouter();
   const [username, setUsername] = useState<string | null>(null);
   const [stats, setStats] = useState({ totalAssets: 0, totalProfit: 0, holdingsCount: 0 });
+  const [isAdmin, setIsAdmin] = useState(false);
 
   /* 数据检查状态 */
   const [checkOpen, setCheckOpen] = useState(false);
@@ -25,29 +27,70 @@ export default function ProfilePage() {
   useEffect(() => {
     const u = localStorage.getItem("username");
     const id = localStorage.getItem("user_id");
+    const role = localStorage.getItem("role");
+    
     setUsername(u);
+    if (role === "admin" || u === "18739478938") {
+      setIsAdmin(true);
+    }
     if (!id) return;
 
     async function fetchStats() {
-      const { data } = await supabase
+      // 1. 拉取持仓
+      const { data: holdings } = await supabase
         .from("user_holdings")
-        .select("holding_amount, in_transit_amount, products(daily_return)")
-        .eq("user_id", id);
-      if (data) {
-        const total = data.reduce((s, h) => s + Number(h.holding_amount || 0) + Number(h.in_transit_amount || 0), 0);
-        const profit = data.reduce((s, h) => s + (Number(h.holding_amount || 0) * Number(h.products?.daily_return || 0) / 10000), 0);
-        setStats({ totalAssets: total, totalProfit: profit, holdingsCount: data.length });
+        .select("id, product_id, holding_amount, in_transit_amount, shares")
+        .eq("user_id", id)
+        .eq("status", "active");
+
+      if (!holdings || holdings.length === 0) {
+        setStats({ totalAssets: 0, totalProfit: 0, holdingsCount: 0 });
+        return;
       }
+
+      let totalAssets = 0;
+      let totalProfit = 0;
+
+      // 2. 并发去查每个产品最新两天的净值，精准计算今日收益
+      await Promise.all(holdings.map(async (h) => {
+        totalAssets += Number(h.holding_amount || 0) + Number(h.in_transit_amount || 0);
+        
+        if (h.product_id && Number(h.shares) > 0) {
+          const { data: navs } = await supabase
+            .from("nav_history")
+            .select("unit_nav")
+            .eq("product_id", h.product_id)
+            .order("nav_date", { ascending: false })
+            .limit(2);
+          
+          if (navs && navs.length >= 2) {
+            const latest = Number(navs[0].unit_nav);
+            const prev = Number(navs[1].unit_nav);
+            // 今日收益 = 份额 × (今天净值 - 昨天净值)
+            totalProfit += (latest - prev) * Number(h.shares);
+          }
+        }
+      }));
+
+      setStats({ 
+        totalAssets, 
+        totalProfit, 
+        holdingsCount: holdings.length 
+      });
     }
     fetchStats();
   }, []);
 
+  // ★ 数字滚动动画
+  const animatedAssets = useCountUp(stats.totalAssets, 1000);
+  const animatedProfit = useCountUp(stats.totalProfit, 1000);
+
   function handleLogout() {
     localStorage.removeItem("username");
     localStorage.removeItem("user_id");
+    localStorage.removeItem("role");
     router.push("/login");
   }
-
 
   /* 数据一致性检查：遍历所有持仓，重算 */
   async function runDataCheck() {
@@ -166,8 +209,9 @@ export default function ProfilePage() {
           <div className="grid grid-cols-3 divide-x divide-slate-100">
             <div className="text-center">
               <div className="text-[10px] text-slate-400 mb-1.5">总资产</div>
+              {/* ★ 替换为 animatedAssets */}
               <div className="font-mono font-bold text-[15px] text-slate-900 tabular">
-                {stats.totalAssets.toLocaleString("zh-CN", {
+                {animatedAssets.toLocaleString("zh-CN", {
                   minimumFractionDigits: 2,
                   maximumFractionDigits: 2,
                 })}
@@ -175,12 +219,13 @@ export default function ProfilePage() {
             </div>
             <div className="text-center">
               <div className="text-[10px] text-slate-400 mb-1.5">今日收益</div>
+              {/* ★ 替换为 animatedProfit */}
               <div className={`font-mono font-bold text-[15px] tabular ${
-                stats.totalProfit > 0 ? "text-rose-500"
-                : stats.totalProfit < 0 ? "text-emerald-500"
+                animatedProfit > 0 ? "text-rose-500"
+                : animatedProfit < 0 ? "text-emerald-500"
                 : "text-slate-700"
               }`}>
-                {stats.totalProfit >= 0 ? "+" : ""}{stats.totalProfit.toFixed(2)}
+                {animatedProfit >= 0 ? "+" : ""}{animatedProfit.toFixed(2)}
               </div>
             </div>
             <div className="text-center">
@@ -195,9 +240,10 @@ export default function ProfilePage() {
         <div className="card overflow-hidden mb-5 animate-fade-in-up delay-2">
           {MENU.map((m) => {
             const isCheck = m.key === "check";
+            // ★ 优化动画：200ms 过渡 + active 缩放
             const cls = `flex items-center px-5 py-4 group
-                         hover:bg-slate-50 active:bg-slate-100
-                         transition-colors duration-150
+                         hover:bg-slate-50 active:bg-slate-100 active:scale-[0.98]
+                         transition-all duration-200 ease-out
                          border-b divider`;
             const inner = (
               <>
@@ -242,13 +288,32 @@ export default function ProfilePage() {
               </Link>
             );
           })}
+
+          {/* ★ 超级管理员专属入口 */}
+          {isAdmin && (
+            <Link 
+              href="/admin" 
+              className="flex items-center px-5 py-4 group bg-purple-50/50 hover:bg-purple-50 active:bg-purple-100 active:scale-[0.98] transition-all duration-200 ease-out"
+            >
+              <div className="w-9 h-9 rounded-xl bg-purple-100 flex items-center justify-center mr-3 flex-shrink-0">
+                <span className="text-[16px]">👑</span>
+              </div>
+              <div className="flex-1 min-w-0">
+                <div className="text-[13px] text-purple-700 font-bold">管理员后台</div>
+                <div className="text-[11px] text-purple-500 mt-0.5">上传微信群二维码 / 系统配置</div>
+              </div>
+              <svg className="w-4 h-4 text-purple-300 row-arrow flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2.5}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
+              </svg>
+            </Link>
+          )}
         </div>
 
         <button
           onClick={handleLogout}
           className="w-full card py-4 text-[13px] text-rose-500 font-semibold
-                     hover:bg-rose-50 active:scale-[0.99]
-                     transition-all duration-200 mb-5
+                     hover:bg-rose-50 active:scale-[0.97]
+                     transition-all duration-200 ease-out mb-5
                      animate-fade-in-up delay-4"
         >
           退出登录

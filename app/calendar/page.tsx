@@ -13,7 +13,8 @@ function monthEnd(month: string) {
 }
 function prevMonthLastDay(month: string) {
   const [y, m] = month.split("-").map(Number);
-  const d = new Date(y, m - 1, 0);
+  // 修改为：上个月的最后一天再往前推 7 天 (例如：11月的话就是 10月31日 - 7天 = 10月24日)
+  const d = new Date(y, m - 1, -6); 
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 }
 function daysInMonth(month: string) {
@@ -232,8 +233,14 @@ export default function CalendarPage() {
   }, [holdings]);
 
   function getTotalDayProfit(date: string): number | null {
-    if (!productDayMap[date]) return null;
-    if (bankFilter === "全部") return dayMap[date] ?? null;
+    // 只要 navRows 里有当天的记录，就算收益是 0 也要返回 0，而不是 null
+    if (!productDayMap[date]) {
+      // 检查当天是否有任何产品的净值更新
+      const hasNavOnDay = navRows.some(n => n.nav_date === date);
+      if (hasNavOnDay) return 0; 
+      return null;
+    }
+    if (bankFilter === "全部") return dayMap[date] ?? 0;
     let sum = 0;
     let has = false;
     Object.entries(productDayMap[date]).forEach(([pidStr, profit]) => {

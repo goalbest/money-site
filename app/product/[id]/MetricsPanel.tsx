@@ -15,66 +15,105 @@ const PERIODS: { key: Period; label: string; days: number; endOffset: number }[]
   { key: "1y", label: "近1年", days: 365, endOffset: 0 },
 ];
 
-function calcChange(navs: number[], days: number, endOffset: number): number | null {
-  const endIdx = navs.length - 1 - endOffset;
+// ★ 核心：根据自然日历推算起始数据索引
+function findStartIndex(navList: any[], endIdx: number, periodDays: number): number {
+  if (endIdx <= 0) return 0;
+  const endDate = new Date(navList[endIdx].nav_date);
+  let targetDate = new Date(endDate);
+  
+  if (periodDays === 30) targetDate.setMonth(targetDate.getMonth() - 1);
+  else if (periodDays === 90) targetDate.setMonth(targetDate.getMonth() - 3);
+  else if (periodDays === 180) targetDate.setMonth(targetDate.getMonth() - 6);
+  else if (periodDays === 365) targetDate.setFullYear(targetDate.getFullYear() - 1);
+  else targetDate.setDate(targetDate.getDate() - periodDays);
+
+  // 往前找最接近目标日期的那条数据
+  let closestIdx = 0;
+  let minDiff = Infinity;
+  for (let i = 0; i <= endIdx; i++) {
+    const curDate = new Date(navList[i].nav_date);
+    const diff = Math.abs(curDate.getTime() - targetDate.getTime());
+    if (diff < minDiff) {
+      minDiff = diff;
+      closestIdx = i;
+    }
+  }
+  return closestIdx;
+}
+
+// 涨跌幅：完全根据自然日算
+function calcChange(navList: any[], days: number, endOffset: number): number | null {
+  const endIdx = navList.length - 1 - endOffset;
   if (endIdx < 1) return null;
-  const startIdx = Math.max(0, endIdx - days);
-  const first = navs[startIdx];
-  const last = navs[endIdx];
+  
+  const startIdx = findStartIndex(navList, endIdx, days);
+  if (startIdx >= endIdx) return null;
+
+  const first = Number(navList[startIdx].unit_nav);
+  const last = Number(navList[endIdx].unit_nav);
   if (first <= 0) return null;
   return ((last - first) / first) * 100;
 }
 
-function calcAnnualized(navs: number[], days: number, endOffset: number): number | null {
-  const endIdx = navs.length - 1 - endOffset;
+// 年化：用真实自然天数做分母
+function calcAnnualized(navList: any[], days: number, endOffset: number): number | null {
+  const endIdx = navList.length - 1 - endOffset;
   if (endIdx < 1) return null;
-  const startIdx = Math.max(0, endIdx - days);
-  const actualDays = endIdx - startIdx;
-  if (actualDays <= 0) return null;
-  const first = navs[startIdx];
-  const last = navs[endIdx];
+  
+  const startIdx = findStartIndex(navList, endIdx, days);
+  if (startIdx >= endIdx) return null;
+
+  const first = Number(navList[startIdx].unit_nav);
+  const last = Number(navList[endIdx].unit_nav);
   if (first <= 0) return null;
+
+  const startDate = new Date(navList[startIdx].nav_date);
+  const endDate = new Date(navList[endIdx].nav_date);
+  const actualDays = Math.max(1, (endDate.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24));
+
   return ((last - first) / first) * (365 / actualDays) * 100;
 }
 
-function calcWanFenSum(navs: number[], days: number, endOffset: number): number | null {
-  const endIdx = navs.length - 1 - endOffset;
+// 万份收益：根据新的起始索引累加
+function calcWanFenSum(navList: any[], days: number, endOffset: number): number | null {
+  const endIdx = navList.length - 1 - endOffset;
   if (endIdx < 1) return null;
-  const startIdx = Math.max(0, endIdx - days);
+  const startIdx = findStartIndex(navList, endIdx, days);
   let sum = 0;
   let count = 0;
   for (let i = startIdx + 1; i <= endIdx; i++) {
-    if (navs[i - 1] > 0) {
-      sum += ((navs[i] - navs[i - 1]) / navs[i - 1]) * 10000;
+    const prev = Number(navList[i - 1].unit_nav);
+    const cur = Number(navList[i].unit_nav);
+    if (prev > 0) {
+      sum += ((cur - prev) / prev) * 10000;
       count++;
     }
   }
   return count > 0 ? sum : null;
 }
 
-function calcZeroDays(navs: number[], days: number, endOffset: number) {
-  const endIdx = navs.length - 1 - endOffset;
+// 挂0天数
+function calcZeroDays(navList: any[], days: number, endOffset: number) {
+  const endIdx = navList.length - 1 - endOffset;
   if (endIdx < 1) return { zero: 0, total: 0 };
-  const startIdx = Math.max(0, endIdx - days);
+  const startIdx = findStartIndex(navList, endIdx, days);
   let zero = 0;
   let total = 0;
   for (let i = startIdx + 1; i <= endIdx; i++) {
     total++;
-    if (navs[i] <= navs[i - 1]) zero++;
+    if (Number(navList[i].unit_nav) <= Number(navList[i - 1].unit_nav)) zero++;
   }
   return { zero, total };
 }
 
-/* ★ 最大回撤 */
-function calcMaxDrawdown(
-  navs: number[],
-  days: number,
-  endOffset: number
-): { percent: number; peak: number; trough: number } | null {
-  const endIdx = navs.length - 1 - endOffset;
+// 最大回撤
+function calcMaxDrawdown(navList: any[], days: number, endOffset: number) {
+  const endIdx = navList.length - 1 - endOffset;
   if (endIdx < 1) return null;
-  const startIdx = Math.max(0, endIdx - days);
+  const startIdx = findStartIndex(navList, endIdx, days);
   if (endIdx - startIdx < 2) return null;
+
+  const navs = navList.map((n: any) => Number(n.unit_nav));
 
   let peak = navs[startIdx];
   let maxDD = 0;
@@ -101,17 +140,18 @@ function calcMaxDrawdown(
 
 type ZeroItem = { date: string; diff: number };
 
-function collectZeroDays(navs: number[], dates: string[], days: number, endOffset: number): ZeroItem[] {
-  const endIdx = navs.length - 1 - endOffset;
+// 收集挂0明细
+function collectZeroDays(navList: any[], days: number, endOffset: number): ZeroItem[] {
+  const endIdx = navList.length - 1 - endOffset;
   if (endIdx < 1) return [];
-  const startIdx = Math.max(0, endIdx - days);
+  const startIdx = findStartIndex(navList, endIdx, days);
   const list: ZeroItem[] = [];
   for (let i = startIdx + 1; i <= endIdx; i++) {
-    const prev = navs[i - 1];
-    const cur = navs[i];
+    const prev = Number(navList[i - 1].unit_nav);
+    const cur = Number(navList[i].unit_nav);
     if (prev <= 0) continue;
     const diff = ((cur - prev) / prev) * 100;
-    if (diff <= 0) list.push({ date: dates[i] || "", diff });
+    if (diff <= 0) list.push({ date: navList[i].nav_date, diff });
   }
   return list.sort((a, b) => a.diff - b.diff);
 }
@@ -207,22 +247,17 @@ export default function MetricsPanel({ navList }: { navList: any[] }) {
   const { order, move } = useMetricsOrder();
   const { editMode, draggingIdx, overIdx, onPointerDownCell, startDrag, exit } = useHorizontalDrag(move);
 
-  const navs = useMemo(
-    () => navList.map((n: any) => Number(n.unit_nav)).filter((n) => !isNaN(n)),
-    [navList]
-  );
-  const dates = useMemo(() => navList.map((n: any) => String(n.nav_date)), [navList]);
-
-  const latestNav = navs[navs.length - 1];
-  const latestDate = dates[dates.length - 1] || "";
+  const latestNav = navList[navList.length - 1] ? Number(navList[navList.length - 1].unit_nav) : null;
+  const latestDate = navList[navList.length - 1]?.nav_date || "";
   const cfg = PERIODS.find(p => p.key === period)!;
   const periodLabel = cfg.label;
 
-  const change = calcChange(navs, cfg.days, cfg.endOffset);
-  const annualized = calcAnnualized(navs, cfg.days, cfg.endOffset);
-  const wanfen = calcWanFenSum(navs, cfg.days, cfg.endOffset);
-  const { zero: zeroDays, total: totalDays } = calcZeroDays(navs, cfg.days, cfg.endOffset);
-  const maxDrawdown = calcMaxDrawdown(navs, cfg.days, cfg.endOffset);
+  // ★ 全部改用 navList 配合自然日历推算
+  const change = calcChange(navList, cfg.days, cfg.endOffset);
+  const annualized = calcAnnualized(navList, cfg.days, cfg.endOffset);
+  const wanfen = calcWanFenSum(navList, cfg.days, cfg.endOffset);
+  const { zero: zeroDays, total: totalDays } = calcZeroDays(navList, cfg.days, cfg.endOffset);
+  const maxDrawdown = calcMaxDrawdown(navList, cfg.days, cfg.endOffset);
 
   const zeroRatio = totalDays > 0 ? zeroDays / totalDays : 0;
   const zeroWarn = zeroRatio >= 0.4;
@@ -232,8 +267,8 @@ export default function MetricsPanel({ navList }: { navList: any[] }) {
   const zeroTextColor = zeroCritical ? "text-rose-600" : zeroWarn ? "text-amber-600" : "text-slate-900";
 
   const zeroItems = useMemo(
-    () => collectZeroDays(navs, dates, cfg.days, cfg.endOffset),
-    [navs, dates, cfg.days, cfg.endOffset]
+    () => collectZeroDays(navList, cfg.days, cfg.endOffset),
+    [navList, cfg.days, cfg.endOffset]
   );
 
   const negatives = zeroItems.filter(i => i.diff < 0);

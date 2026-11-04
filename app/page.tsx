@@ -19,6 +19,8 @@ import { useDCAPlans } from "../lib/useDCAPlans";
 import { useRecommendedTiles } from "../lib/useRecommendedTiles";
 import { useRouter } from "next/navigation";
 import CompareDateModal from "./components/CompareDateModal";
+// ★ 引入微信加群悬浮框
+import WechatGroupButton from "./components/WechatGroupButton";
 
 const TILES_COLLAPSED_KEY = "home_tiles_collapsed_v1";
 
@@ -31,7 +33,7 @@ export default function Home() {
   const [lastUpdated, setLastUpdated] = useState("");
 
   /* ============ 数据层 ============ */
-const { metrics, loading: metricsLoading, getPeriodProfit, productStats } = useHomeMetrics();
+  const { metrics, loading: metricsLoading, getPeriodProfit, productStats } = useHomeMetrics();
   const { layout, hydrated, customized, moveWithinZone, moveToZone, reset } = useHomeLayout();
 
   /* ============ 资产快照 ============ */
@@ -941,6 +943,9 @@ const { metrics, loading: metricsLoading, getPeriodProfit, productStats } = useH
           setEditingDca(null);
         }}
       />
+
+      {/* ★ 全局微信悬浮框 */}
+      <WechatGroupButton />
     </div>
   );
 }

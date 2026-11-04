@@ -91,7 +91,6 @@ export default function AddPage() {
   const lastYRef = useRef(0);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const formRef = useRef<HTMLDivElement>(null);
-  /* ★ 用户是否手动改过净值输入框（手改后不再自动覆盖） */
   const navTouchedRef = useRef(false);
 
   useEffect(() => {
@@ -180,7 +179,6 @@ export default function AddPage() {
 
   const handleNavChange = useCallback(
     (v: string) => {
-      /* ★ 用户手动改净值 → 打标记，之后不再自动覆盖 */
       navTouchedRef.current = true;
       setNav(v);
       const n = Number(v);
@@ -212,7 +210,6 @@ export default function AddPage() {
     if (n > 0) setShares((v / n).toFixed(4));
   }
 
-  /* ★ 改日期 → 自动查当日净值（仅当用户未手动编辑过） */
   useEffect(() => {
     if (mode === "image") return;
     if (!buyDate || !selected?.id) return;
@@ -237,7 +234,6 @@ export default function AddPage() {
   }, [buyDate, selected]);
 
   function selectProduct(p: any) {
-    /* ★ 换产品 → 重置标记，恢复自动填 */
     navTouchedRef.current = false;
     setSelected(p);
     setSearchTerm(p.name);
@@ -248,7 +244,6 @@ export default function AddPage() {
   }
 
   function clearSelected() {
-    /* ★ 清空 → 重置标记 */
     navTouchedRef.current = false;
     setSelected(null);
     setSearchTerm("");
@@ -412,8 +407,8 @@ export default function AddPage() {
   }
 
   async function handleSubmit() {
-    if (!productName.trim()) {
-      setMsg("请填写产品名称");
+    if (!productName.trim() || productName.trim().length <= 1) {
+      setMsg("请填写规范的产品全名");
       formRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
       return;
     }
@@ -423,6 +418,14 @@ export default function AddPage() {
       return;
     }
     if (!userId) return;
+
+    // ★ 核心：强制确认银行
+    const finalBank = bank.trim() || guessBank(productName, productCode);
+    if (finalBank === "其他") {
+      setMsg("请点击『所属银行』，手动确认该产品属于哪家理财公司");
+      setBankSelectOpen(true);
+      return;
+    }
 
     setSubmitting(true);
     setMsg("");
@@ -451,8 +454,6 @@ export default function AddPage() {
       }
 
       if (!productId) {
-        const finalBank = bank.trim() || guessBank(productName, productCode);
-
         let finalBankCode = productCode.trim() || null;
         let finalName = productName.trim();
         let extraFields: any = {};
@@ -507,9 +508,16 @@ export default function AddPage() {
           }
           productId = newProduct.id;
         }
-      }
+      } else {
+        // ★ 已有产品：如果用户改了名字或银行，就同步更新到数据库，彻底消灭“中行产品xxx”
+        const updates: any = {};
+        if (productName.trim() !== selected?.name) updates.name = productName.trim();
+        if (finalBank !== selected?.bank) updates.bank = finalBank;
 
-      /* ★ 先写交易记录，再按交易重算持仓 */
+        if (Object.keys(updates).length > 0) {
+          await supabase.from("products").update(updates).eq("id", productId);
+        }
+      }
 
       await supabase.from("transactions").insert({
         user_id: userId,
@@ -537,7 +545,6 @@ export default function AddPage() {
   }
 
   function resetForm() {
-    /* ★ 重置标记 */
     navTouchedRef.current = false;
     setSelected(null);
     setSearchTerm("");
@@ -587,6 +594,7 @@ export default function AddPage() {
 
   const navWarning = nav && (Number(nav) < 0.5 || Number(nav) > 2.0);
   const dateWarning = buyDate > todayStr();
+  const nameWarning = productName.trim().length <= 1 || /^中行产品|^建信产品|^中邮产品/.test(productName);
 
   return (
     <div className="min-h-screen pb-32">
@@ -647,7 +655,6 @@ export default function AddPage() {
           </button>
         </div>
 
-        {/* 搜索模式 */}
         {mode === "search" && (
           <div className="card p-5 mb-4 animate-fade-in-up delay-1">
             <div ref={searchBoxRef} className="relative">
@@ -792,7 +799,6 @@ export default function AddPage() {
           </div>
         )}
 
-        {/* 搜不到产品时：粘贴分享链接 */}
         {mode === "search" && !selected && (
           <div className="mb-4 animate-fade-in-up delay-2">
             <div className="flex items-start gap-2.5 mb-2.5 px-1">
@@ -813,46 +819,9 @@ export default function AddPage() {
             </div>
 
             <ParseLinkInput />
-
-            <details className="mt-2.5 rounded-2xl bg-white border border-slate-100 overflow-hidden">
-              <summary className="px-4 py-3 text-[12px] font-medium text-slate-700
-                                  cursor-pointer flex items-center gap-1.5 select-none
-                                  list-none hover:bg-slate-50/60 transition-colors">
-                <svg className="w-3.5 h-3.5 text-purple-500 flex-shrink-0"
-                     fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
-                  <path strokeLinecap="round" strokeLinejoin="round"
-                        d="M8.228 9c.549-1.165 2.03-2 3.772-2 2.21 0 4 1.343 4 3 0 1.4-1.278 2.575-3.006 2.907-.542.104-.994.54-.994 1.093m0 3h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                </svg>
-                怎么复制分享链接？
-                <svg className="w-3 h-3 text-slate-400 ml-auto flex-shrink-0"
-                     fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2.5}>
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
-                </svg>
-              </summary>
-
-              <div className="px-4 pb-4 pt-1 text-[11px] text-slate-500 leading-relaxed space-y-3
-                              border-t border-slate-100">
-                <div>
-                  <div className="font-semibold text-slate-700 mb-1">① 打开产品页</div>
-                  <div>在手机银行 App 里进到该产品详情页，点右上角<b className="text-slate-700">「分享」</b>。</div>
-                </div>
-                <div>
-                  <div className="font-semibold text-slate-700 mb-1">② 有「复制链接」按钮</div>
-                  <div>直接点 <b className="text-slate-700">「复制链接」</b>，回到本页粘贴到输入框。</div>
-                </div>
-                <div>
-                  <div className="font-semibold text-slate-700 mb-1">③ 只有「分享到微信」</div>
-                  <div>先分享到微信（可以发给自己或文件传输助手），在微信里打开这条链接 → 点右上角 <b className="text-slate-700">「...」</b> → 点 <b className="text-slate-700">「复制链接」</b> → 回到本页粘贴。</div>
-                </div>
-                <div className="pt-2.5 border-t border-slate-100 text-[10px] text-slate-400 leading-relaxed">
-                  <b className="text-slate-500">举例：</b>招银 App 的产品页只有"分享到微信"，需要先分享到微信，再在微信里点右上角复制链接。
-                </div>
-              </div>
-            </details>
           </div>
         )}
 
-        {/* 截图模式 */}
         {mode === "image" && (
           <div className="card p-5 mb-4 animate-fade-in-up delay-1" onPaste={handlePaste}>
             <div className="text-[11px] text-slate-500 mb-3 leading-relaxed">
@@ -956,7 +925,6 @@ export default function AddPage() {
           </div>
         )}
 
-        {/* 表单区 */}
         {showForm && (
           <div ref={formRef} className="card p-5 mb-4 animate-fade-in-up delay-2">
             <div className="flex items-center justify-between mb-4">
@@ -1028,10 +996,18 @@ export default function AddPage() {
                     type="text"
                     value={productName}
                     onChange={(e) => setProductName(e.target.value)}
-                    placeholder="输入产品名，自动推断银行"
-                    className="input-field w-full pl-14 pr-4 py-3 text-[13px]"
+                    placeholder="输入产品全名（如：招银理财睿和稳健...）"
+                    className={`input-field w-full pl-14 pr-4 py-3 text-[13px] ${
+                      nameWarning ? "border-rose-300" : ""
+                    }`}
                   />
                 </div>
+                {nameWarning && (
+                  <div className="text-[10px] text-amber-500 mt-1 flex items-center gap-1">
+                    <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2.5}><path strokeLinecap="round" strokeLinejoin="round" d="M12 9v2m0 4h.01M5 19h14a2 2 0 001.84-2.75L13.74 4a2 2 0 00-3.5 0L3.16 16.25A2 2 0 005 19z" /></svg>
+                    系统抓取名为简写，请手动修改为易读的产品全名
+                  </div>
+                )}
               </div>
 
               <div className="grid grid-cols-2 gap-3">
@@ -1050,20 +1026,27 @@ export default function AddPage() {
                   <button
                     type="button"
                     onClick={() => setBankSelectOpen(true)}
-                    className="input-field w-full px-3 py-3 text-[12px]
-                               flex items-center justify-between text-left"
+                    className={`input-field w-full px-3 py-3 text-[12px]
+                               flex items-center justify-between text-left ${
+                                 inferredBank === "其他" ? "border-rose-300 bg-rose-50/20" : ""
+                               }`}
                   >
                     <span className="flex items-center gap-1.5 min-w-0">
                       <span className="bank-avatar flex-shrink-0"
                             style={{ background: bankInfo.bg, color: bankInfo.color }}>
                         {bankInfo.label}
                       </span>
-                      <span className="truncate">{inferredBank}</span>
+                      <span className="truncate">{inferredBank === "其他" ? <span className="text-rose-500 font-medium">请选择银行</span> : inferredBank}</span>
                     </span>
                     <svg className="w-3 h-3 text-slate-400 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
                       <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
                     </svg>
                   </button>
+                  {inferredBank === "其他" && (
+                    <div className="text-[10px] text-rose-500 mt-1">
+                      ⚠️ 系统未能识别银行，请手动点击选择
+                    </div>
+                  )}
                 </div>
               </div>
 
@@ -1205,7 +1188,6 @@ export default function AddPage() {
         <div className="h-8" />
       </div>
 
-      {/* 底部固定提交栏 */}
       {showForm && (
         <div
           className="fixed bottom-0 left-0 right-0 z-40"

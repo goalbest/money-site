@@ -106,8 +106,21 @@ for (const p of BOC_PRODUCTS) {
     let detailText = await page.evaluate(() => document.body.innerText);
     console.log('   详情页已加载');
 
+    // ★ 强化版：多重正则匹配，甚至尝试抓页面大标题
+    let productName = null;
     const nameMatch = detailText.match(/（[^）]*）([^\n(（|]+?)\(([A-Z0-9]+)\)/);
-    const productName = nameMatch?.[1]?.trim() || null;
+    if (nameMatch && nameMatch[1]) {
+      productName = nameMatch[1].trim();
+    } else {
+      // 如果正则没抓到大名，就去抓页面里的第一个大字标题（通常是产品名）
+      const lines = detailText.split('\n').map(s => s.trim()).filter(Boolean);
+      for (const line of lines) {
+        if (line.length > 6 && line.length < 30 && !line.includes('产品代码') && !line.includes('净值') && !line.includes('风险')) {
+          productName = line;
+          break;
+        }
+      }
+    }
 
     // ── ① 解析风险等级（详情页可见）──
     let riskLevel = null;
@@ -201,7 +214,10 @@ for (const p of BOC_PRODUCTS) {
       redeem_confirm_days: 1,
       redeem_cutoff_time: cutoffTime,
     };
-    if (productName && !productName.startsWith('中行产品')) updates.name = productName;
+    // ★ 强制覆盖：只要抓到了真名，一律覆盖数据库
+    if (productName && productName.length > 4) {
+      updates.name = productName;
+    }
 
     await supabase.from('products').update(updates).eq('id', p.dbId);
     await supabase.from('product_sources')

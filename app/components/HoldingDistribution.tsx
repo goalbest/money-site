@@ -1,112 +1,100 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useState, useMemo } from "react";
 import { getBankInfo } from "../../lib/banks";
 
-type Props = {
+export default function HoldingDistribution({
+  holdings,
+  privacy,
+}: {
   holdings: any[];
   privacy: boolean;
-};
+}) {
+  const [expanded, setExpanded] = useState(false);
 
-export default function HoldingDistribution({ holdings, privacy }: Props) {
-  const [expanded, setExpanded] = useState(true);
-
-  /* 按银行分布 */
-  const bankDist = useMemo(() => {
-    const total = holdings.reduce((s, h) => s + Number(h.holding_amount || 0), 0);
-    if (total === 0) return [];
-    const map: Record<string, number> = {};
-    holdings.forEach(h => {
-      const b = h.products?.bank || "其他";
-      map[b] = (map[b] || 0) + Number(h.holding_amount || 0);
+  // 1. 按银行统计
+  const bankStats = useMemo(() => {
+    const map = new Map<string, number>();
+    let total = 0;
+    holdings.forEach((h) => {
+      const amount = Number(h.holding_amount || 0);
+      const bank = h.products?.bank || "其他";
+      map.set(bank, (map.get(bank) || 0) + amount);
+      total += amount;
     });
-    return Object.entries(map)
+    return Array.from(map.entries())
       .map(([bank, amount]) => ({
         bank,
         amount,
-        percent: (amount / total) * 100,
-        info: getBankInfo(bank),
+        percent: total > 0 ? (amount / total) * 100 : 0,
       }))
       .sort((a, b) => b.amount - a.amount);
   }, [holdings]);
 
-  /* 按今日收益表现 */
-  const profitDist = useMemo(() => {
-    let positive = 0, negative = 0, neutral = 0;
-    holdings.forEach(h => {
-      const amount = Number(h.holding_amount || 0);
-      const daily = Number(h.products?.daily_return || 0);
-      if (daily > 0) positive += amount;
-      else if (daily < 0) negative += amount;
-      else neutral += amount;
+  // 2. 按今日收益表现统计
+  const profitStats = useMemo(() => {
+    let pos = 0, neu = 0, neg = 0;
+    holdings.forEach((h) => {
+      // 这里简化用 daily_return 或动态计算，若未传入直接用金额代替权重
+      const rate = Number(h.products?.daily_return || 0);
+      if (rate > 0) pos++;
+      else if (rate < 0) neg++;
+      else neu++;
     });
-    const total = positive + negative + neutral;
+    const total = holdings.length || 1;
     return {
-      total,
-      positivePct: total > 0 ? (positive / total) * 100 : 0,
-      negativePct: total > 0 ? (negative / total) * 100 : 0,
-      neutralPct: total > 0 ? (neutral / total) * 100 : 0,
+      pos: (pos / total) * 100,
+      neu: (neu / total) * 100,
+      neg: (neg / total) * 100,
     };
   }, [holdings]);
 
-  /* 按持仓状态 */
-  const transitDist = useMemo(() => {
-    const holding = holdings.reduce((s, h) => s + Number(h.holding_amount || 0), 0);
-    const transit = holdings.reduce((s, h) => s + Number(h.in_transit_amount || 0), 0);
-    const total = holding + transit;
+  // 3. 按持仓状态
+  const statusStats = useMemo(() => {
+    let active = 0, transit = 0;
+    holdings.forEach((h) => {
+      if (h.status === "pending_buy" || h.status === "pending_sell") transit++;
+      else active++;
+    });
+    const total = holdings.length || 1;
     return {
-      total,
-      holdingPct: total > 0 ? (holding / total) * 100 : 0,
-      transitPct: total > 0 ? (transit / total) * 100 : 0,
+      active: (active / total) * 100,
+      transit: (transit / total) * 100,
     };
   }, [holdings]);
 
-  /* 按年化区间 */
-  const annualDist = useMemo(() => {
-    const buckets: Record<string, { count: number; amount: number; color: string }> = {
-      "≥5%": { count: 0, amount: 0, color: "#f43f5e" },
-      "3-5%": { count: 0, amount: 0, color: "#fb923c" },
-      "2-3%": { count: 0, amount: 0, color: "#a78bfa" },
-      "<2%": { count: 0, amount: 0, color: "#94a3b8" },
-    };
-    holdings.forEach(h => {
-      const annual = Number(h.products?.annualized_1m || 0);
-      const amount = Number(h.holding_amount || 0);
-      if (annual >= 5) { buckets["≥5%"].count++; buckets["≥5%"].amount += amount; }
-      else if (annual >= 3) { buckets["3-5%"].count++; buckets["3-5%"].amount += amount; }
-      else if (annual >= 2) { buckets["2-3%"].count++; buckets["2-3%"].amount += amount; }
-      else { buckets["<2%"].count++; buckets["<2%"].amount += amount; }
+  // 4. 按持仓年化
+  const annualStats = useMemo(() => {
+    let gt5 = 0, p3to5 = 0, p2to3 = 0, lt2 = 0;
+    holdings.forEach((h) => {
+      const y = Number(h.products?.annualized_1m || 0);
+      if (y >= 5) gt5++;
+      else if (y >= 3) p3to5++;
+      else if (y >= 2) p2to3++;
+      else lt2++;
     });
-    const total = Object.values(buckets).reduce((s, b) => s + b.amount, 0);
-    return Object.entries(buckets).map(([label, b]) => ({
-      label,
-      count: b.count,
-      percent: total > 0 ? (b.amount / total) * 100 : 0,
-      color: b.color,
-    }));
+    const total = holdings.length || 1;
+    return {
+      gt5: (gt5 / total) * 100,
+      p3to5: (p3to5 / total) * 100,
+      p2to3: (p2to3 / total) * 100,
+      lt2: (lt2 / total) * 100,
+    };
   }, [holdings]);
 
   if (holdings.length === 0) return null;
 
-  function fmtAmount(n: number) {
-    if (privacy) return "••••";
-    return n.toLocaleString("zh-CN", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-  }
-
   return (
     <div className="card p-5 mb-5 animate-fade-in-up delay-2">
-      {/* 标题 + 折叠按钮 */}
       <div className="flex items-center justify-between mb-4">
         <div className="text-[15px] font-bold text-slate-900">持仓分布</div>
         <button
-          onClick={() => setExpanded(e => !e)}
-          className="text-[11px] text-slate-400 font-medium
-                     flex items-center gap-1
-                     hover:text-slate-600 transition-colors"
+          onClick={() => setExpanded(!expanded)}
+          className="text-[12px] text-slate-400 font-medium hover:text-slate-600 flex items-center gap-0.5 transition-colors"
         >
           {expanded ? "收起" : "展开"}
           <svg
-            className={`w-3 h-3 transition-transform duration-300 ${expanded ? "rotate-180" : ""}`}
+            className={`w-3 h-3 transition-transform ${expanded ? "rotate-180" : ""}`}
             fill="none"
             stroke="currentColor"
             viewBox="0 0 24 24"
@@ -117,149 +105,88 @@ export default function HoldingDistribution({ holdings, privacy }: Props) {
         </button>
       </div>
 
-      <div
-        className={`overflow-hidden transition-all duration-500 ${
-          expanded ? "max-h-[900px] opacity-100" : "max-h-0 opacity-0"
-        }`}
-      >
-        {/* ============ 按银行 ============ */}
-        {bankDist.length > 0 && (
-          <div className="mb-5">
-            <div className="text-[11px] text-slate-400 mb-2 tracking-wider">按银行</div>
-            <div className="h-2 rounded-full overflow-hidden flex mb-3">
-              {bankDist.map(b => (
-                <div
-                  key={b.bank}
-                  className="h-full transition-all duration-500"
-                  style={{ width: `${b.percent}%`, background: b.info.bar }}
-                  title={`${b.bank} ${b.percent.toFixed(1)}%`}
-                />
-              ))}
-            </div>
-            <div className="space-y-1.5">
-              {bankDist.map(b => (
-                <div key={b.bank} className="flex items-center gap-2 text-[11px]">
-                  <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ background: b.info.bar }} />
-                  <span className="text-slate-500 flex-1 truncate">{b.bank}</span>
-                  <span className="text-slate-400 tabular">{b.percent.toFixed(1)}%</span>
-                  <span className="text-slate-900 font-medium font-mono tabular w-24 text-right">
-                    {fmtAmount(b.amount)}
+      {/* 默认显示的：按银行 */}
+      <div className="mb-2">
+        <div className="text-[11px] text-slate-400 mb-2">按银行</div>
+        <div className="flex h-2.5 rounded-full overflow-hidden mb-3">
+          {bankStats.map((b, i) => (
+            <div
+              key={b.bank}
+              style={{ width: `${b.percent}%`, background: getBankInfo(b.bank).bar }}
+              className="h-full"
+            />
+          ))}
+        </div>
+        <div className="space-y-1.5">
+          {bankStats.map((b) => {
+            const info = getBankInfo(b.bank);
+            return (
+              <div key={b.bank} className="flex items-center justify-between text-[11px]">
+                <div className="flex items-center gap-1.5 text-slate-600">
+                  <span className="w-1.5 h-1.5 rounded-full" style={{ background: info.color }} />
+                  {b.bank}
+                </div>
+                <div className="flex items-center gap-4 tabular">
+                  <span className="text-slate-400">{b.percent.toFixed(1)}%</span>
+                  <span className="font-mono font-medium text-slate-700 w-20 text-right">
+                    {privacy ? "••••" : b.amount.toLocaleString("zh-CN", { minimumFractionDigits: 2 })}
                   </span>
                 </div>
-              ))}
-            </div>
-          </div>
-        )}
-
-        {/* ============ 按今日收益表现 ============ */}
-        {profitDist.total > 0 && (
-          <div className="pt-4 border-t divider mb-5">
-            <div className="text-[11px] text-slate-400 mb-2 tracking-wider">按今日收益表现</div>
-            <div className="h-2 rounded-full overflow-hidden flex mb-3">
-              {profitDist.positivePct > 0 && (
-                <div className="h-full bg-gradient-to-r from-rose-400 to-rose-500"
-                     style={{ width: `${profitDist.positivePct}%` }} />
-              )}
-              {profitDist.neutralPct > 0 && (
-                <div className="h-full bg-slate-300" style={{ width: `${profitDist.neutralPct}%` }} />
-              )}
-              {profitDist.negativePct > 0 && (
-                <div className="h-full bg-gradient-to-r from-emerald-400 to-emerald-500"
-                     style={{ width: `${profitDist.negativePct}%` }} />
-              )}
-            </div>
-            <div className="grid grid-cols-3 gap-2">
-              <div className="text-[11px]">
-                <div className="flex items-center gap-1.5 mb-1">
-                  <span className="w-2 h-2 rounded-full bg-rose-500" />
-                  <span className="text-slate-500">正收益</span>
-                </div>
-                <div className="text-slate-900 font-mono font-semibold tabular">
-                  {profitDist.positivePct.toFixed(0)}%
-                </div>
               </div>
-              <div className="text-[11px]">
-                <div className="flex items-center gap-1.5 mb-1">
-                  <span className="w-2 h-2 rounded-full bg-slate-300" />
-                  <span className="text-slate-500">持平</span>
-                </div>
-                <div className="text-slate-900 font-mono font-semibold tabular">
-                  {profitDist.neutralPct.toFixed(0)}%
-                </div>
-              </div>
-              <div className="text-[11px]">
-                <div className="flex items-center gap-1.5 mb-1">
-                  <span className="w-2 h-2 rounded-full bg-emerald-500" />
-                  <span className="text-slate-500">负收益</span>
-                </div>
-                <div className="text-slate-900 font-mono font-semibold tabular">
-                  {profitDist.negativePct.toFixed(0)}%
-                </div>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* ============ 按持仓状态 ============ */}
-        {transitDist.total > 0 && (
-          <div className="pt-4 border-t divider mb-5">
-            <div className="text-[11px] text-slate-400 mb-2 tracking-wider">按持仓状态</div>
-            <div className="h-2 rounded-full overflow-hidden flex mb-3">
-              {transitDist.holdingPct > 0 && (
-                <div className="h-full bg-gradient-to-r from-violet-500 to-purple-600"
-                     style={{ width: `${transitDist.holdingPct}%` }} />
-              )}
-              {transitDist.transitPct > 0 && (
-                <div className="h-full bg-amber-400" style={{ width: `${transitDist.transitPct}%` }} />
-              )}
-            </div>
-            <div className="flex justify-between text-[11px]">
-              <div className="flex items-center gap-1.5">
-                <span className="w-2 h-2 rounded-full bg-violet-500" />
-                <span className="text-slate-500">持仓</span>
-                <span className="text-slate-900 font-mono font-semibold tabular ml-1">
-                  {transitDist.holdingPct.toFixed(1)}%
-                </span>
-              </div>
-              {transitDist.transitPct > 0 && (
-                <div className="flex items-center gap-1.5">
-                  <span className="w-2 h-2 rounded-full bg-amber-400" />
-                  <span className="text-slate-500">在途</span>
-                  <span className="text-slate-900 font-mono font-semibold tabular ml-1">
-                    {transitDist.transitPct.toFixed(1)}%
-                  </span>
-                </div>
-              )}
-            </div>
-          </div>
-        )}
-
-        {/* ============ 按年化区间 ============ */}
-        {annualDist.some(b => b.count > 0) && (
-          <div className="pt-4 border-t divider">
-            <div className="text-[11px] text-slate-400 mb-2 tracking-wider">按持仓年化</div>
-            <div className="h-2 rounded-full overflow-hidden flex mb-3">
-              {annualDist.map(b => b.percent > 0 ? (
-                <div key={b.label} className="h-full"
-                     style={{ width: `${b.percent}%`, background: b.color }} />
-              ) : null)}
-            </div>
-            <div className="grid grid-cols-4 gap-2">
-              {annualDist.map(b => (
-                <div key={b.label} className="text-[11px]">
-                  <div className="flex items-center gap-1.5 mb-1">
-                    <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ background: b.color }} />
-                    <span className="text-slate-500 truncate">{b.label}</span>
-                  </div>
-                  <div className="text-slate-900 font-mono font-semibold tabular">
-                    {b.percent.toFixed(0)}%
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
+            );
+          })}
+        </div>
       </div>
+
+      {/* 展开后显示的：其他维度 */}
+      {expanded && (
+        <div className="animate-fade-in border-t divider pt-4 mt-4 space-y-5">
+          {/* 按今日收益表现 */}
+          <div>
+            <div className="text-[11px] text-slate-400 mb-2">按今日收益表现</div>
+            <div className="flex h-2.5 rounded-full overflow-hidden mb-3">
+              <div style={{ width: `${profitStats.pos}%` }} className="bg-rose-500" />
+              <div style={{ width: `${profitStats.neu}%` }} className="bg-slate-300" />
+              <div style={{ width: `${profitStats.neg}%` }} className="bg-emerald-500" />
+            </div>
+            <div className="flex justify-between text-[11px] text-slate-500">
+              <span className="flex items-center gap-1"><span className="w-1.5 h-1.5 rounded-full bg-rose-500" />正收益 {profitStats.pos.toFixed(0)}%</span>
+              <span className="flex items-center gap-1"><span className="w-1.5 h-1.5 rounded-full bg-slate-300" />持平 {profitStats.neu.toFixed(0)}%</span>
+              <span className="flex items-center gap-1"><span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />负收益 {profitStats.neg.toFixed(0)}%</span>
+            </div>
+          </div>
+
+          {/* 按持仓状态 */}
+          <div>
+            <div className="text-[11px] text-slate-400 mb-2">按持仓状态</div>
+            <div className="flex h-2.5 rounded-full overflow-hidden mb-3">
+              <div style={{ width: `${statusStats.active}%` }} className="bg-violet-500" />
+              <div style={{ width: `${statusStats.transit}%` }} className="bg-amber-400" />
+            </div>
+            <div className="flex justify-between text-[11px] text-slate-500">
+              <span className="flex items-center gap-1"><span className="w-1.5 h-1.5 rounded-full bg-violet-500" />持仓 {statusStats.active.toFixed(0)}%</span>
+              <span className="flex items-center gap-1"><span className="w-1.5 h-1.5 rounded-full bg-amber-400" />在途 {statusStats.transit.toFixed(0)}%</span>
+            </div>
+          </div>
+
+          {/* 按持仓年化 */}
+          <div>
+            <div className="text-[11px] text-slate-400 mb-2">按持仓年化</div>
+            <div className="flex h-2.5 rounded-full overflow-hidden mb-3">
+              <div style={{ width: `${annualStats.gt5}%` }} className="bg-rose-500" />
+              <div style={{ width: `${annualStats.p3to5}%` }} className="bg-amber-400" />
+              <div style={{ width: `${annualStats.p2to3}%` }} className="bg-violet-400" />
+              <div style={{ width: `${annualStats.lt2}%` }} className="bg-slate-300" />
+            </div>
+            <div className="flex justify-between text-[11px] text-slate-500">
+              <span className="flex items-center gap-1"><span className="w-1.5 h-1.5 rounded-full bg-rose-500" />≥5% {annualStats.gt5.toFixed(0)}%</span>
+              <span className="flex items-center gap-1"><span className="w-1.5 h-1.5 rounded-full bg-amber-400" />3-5% {annualStats.p3to5.toFixed(0)}%</span>
+              <span className="flex items-center gap-1"><span className="w-1.5 h-1.5 rounded-full bg-violet-400" />2-3% {annualStats.p2to3.toFixed(0)}%</span>
+              <span className="flex items-center gap-1"><span className="w-1.5 h-1.5 rounded-full bg-slate-300" />&lt;2% {annualStats.lt2.toFixed(0)}%</span>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

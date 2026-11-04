@@ -232,14 +232,10 @@ for (const p of CMB_PRODUCTS) {
       await page.waitForTimeout(800);
     }
 
-    // ⑤ 名字更新（独立跑，即使无新数据也更新）
-    if (realName) {
-      const { data: cur } = await supabase
-        .from('products').select('name').eq('id', p.dbId).single();
-      if (cur?.name?.startsWith('招行产品')) {
-        await supabase.from('products').update({ name: realName }).eq('id', p.dbId);
-        console.log(`   名字已更新: ${realName}`);
-      }
+    // ★ 强制覆盖：放弃只针对"招行产品"的判断，只要抓到了就用最新的
+    if (realName && realName.length > 4) {
+      await supabase.from('products').update({ name: realName }).eq('id', p.dbId);
+      console.log(`   名字已更新: ${realName}`);
     }
 
     // ⑥ 规则更新（独立跑，即使无新数据也更新）

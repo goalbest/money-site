@@ -16,7 +16,7 @@ const SORTS: { key: SortKey; label: string; field: string }[] = [
   { key: "steady",         label: "稳健",   field: "annualized_1m" },
 ];
 
-const PAGE_SIZE = 20;
+const PAGE_SIZE = 15;
 
 const LS_BANK = "discover_bank_v1";
 const LS_SORT = "discover_sort_v1";
@@ -46,6 +46,12 @@ function ProductRow({
   const annual = Number(product.annualized_1m || 0);
   const nav = product.unit_nav != null ? Number(product.unit_nav) : null;
 
+  // ★ 过滤脏数据：如果是单字母或者"中行产品xxx"
+  const displayName = 
+    product.name === "A" || product.name.startsWith("中行产品")
+      ? `中银理财 ${product.code || product.name.replace('中行产品 ', '')}`
+      : product.name;
+
   return (
     <Link
       href={`/product/${product.id}`}
@@ -70,7 +76,7 @@ function ProductRow({
             {info.label}
           </span>
           <span className="text-[13px] text-slate-900 font-medium truncate">
-            {product.name}
+            {displayName}
           </span>
         </div>
         <div className="flex items-center gap-2 mt-1 text-[10px] text-slate-400">
@@ -122,6 +128,7 @@ function DiscoverInner() {
   /* ★ 翻页状态 */
   const [page, setPage] = useState(1);
   const [total, setTotal] = useState(0);
+  const [isEditingPage, setIsEditingPage] = useState(false); // ★ 新增：分页输入框状态
 
   const [searchTerm, setSearchTerm] = useState("");
   const [searchMode, setSearchMode] = useState("");
@@ -393,31 +400,69 @@ function DiscoverInner() {
                     ))}
                   </div>
 
-                  {/* ★ 翻页按钮 */}
+                  {/* ★ 现代化胶囊分页器 */}
                   {total > PAGE_SIZE && (
-                    <div className="flex items-center justify-center gap-3 mt-5 mb-3 animate-fade-in-up">
+                    <div className="flex items-center justify-center gap-3 mt-6 mb-4 animate-fade-in-up">
                       <button
                         onClick={() => setPage(p => Math.max(1, p - 1))}
                         disabled={page === 1}
-                        className="w-10 h-10 rounded-full bg-white border border-slate-200
-                                   hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed
-                                   flex items-center justify-center transition-all active:scale-90 shadow-sm"
+                        className="w-10 h-10 rounded-full bg-white border border-slate-200/80 shadow-sm
+                                   hover:bg-slate-50 hover:text-purple-600 hover:border-purple-200
+                                   active:scale-90 disabled:opacity-40 disabled:pointer-events-none
+                                   flex items-center justify-center transition-all duration-200"
                       >
                         <svg className="w-4 h-4 text-slate-600" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2.5}>
                           <path strokeLinecap="round" strokeLinejoin="round" d="M15 19l-7-7 7-7" />
                         </svg>
                       </button>
-                      <div className="text-[13px] tabular text-slate-600">
-                        <span className="font-bold text-slate-900 text-[15px]">{page}</span>
-                        <span className="text-slate-400 mx-1">/</span>
-                        <span>{Math.ceil(total / PAGE_SIZE)}</span>
+
+                      {/* 中间可点击的胶囊 */}
+                      <div className="h-10 px-4 rounded-full bg-white border border-slate-200/80 shadow-sm flex items-center justify-center min-w-[90px] transition-all duration-200 hover:border-purple-200">
+                        {isEditingPage ? (
+                          <input
+                            type="number"
+                            min={1}
+                            max={Math.ceil(total / PAGE_SIZE)}
+                            defaultValue={page}
+                            autoFocus
+                            onBlur={(e) => {
+                              const val = Number(e.target.value);
+                              const maxPage = Math.ceil(total / PAGE_SIZE);
+                              if (val >= 1 && val <= maxPage) setPage(val);
+                              setIsEditingPage(false);
+                            }}
+                            onKeyDown={(e) => {
+                              if (e.key === "Enter") {
+                                const val = Number((e.target as HTMLInputElement).value);
+                                const maxPage = Math.ceil(total / PAGE_SIZE);
+                                if (val >= 1 && val <= maxPage) setPage(val);
+                                setIsEditingPage(false);
+                              } else if (e.key === "Escape") {
+                                setIsEditingPage(false);
+                              }
+                            }}
+                            className="w-16 text-center font-bold text-purple-600 text-[14px] outline-none bg-transparent
+                                       [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                          />
+                        ) : (
+                          <button
+                            onClick={() => setIsEditingPage(true)}
+                            className="text-[14px] font-medium text-slate-500 flex items-center gap-1.5 w-full justify-center group"
+                          >
+                            <span className="font-bold text-purple-600 text-[15px] group-hover:scale-110 transition-transform">{page}</span>
+                            <span className="text-slate-300">/</span>
+                            <span>{Math.ceil(total / PAGE_SIZE)}</span>
+                          </button>
+                        )}
                       </div>
+
                       <button
                         onClick={() => setPage(p => p + 1)}
-                        disabled={page * PAGE_SIZE >= total}
-                        className="w-10 h-10 rounded-full bg-white border border-slate-200
-                                   hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed
-                                   flex items-center justify-center transition-all active:scale-90 shadow-sm"
+                        disabled={page >= Math.ceil(total / PAGE_SIZE)}
+                        className="w-10 h-10 rounded-full bg-white border border-slate-200/80 shadow-sm
+                                   hover:bg-slate-50 hover:text-purple-600 hover:border-purple-200
+                                   active:scale-90 disabled:opacity-40 disabled:pointer-events-none
+                                   flex items-center justify-center transition-all duration-200"
                       >
                         <svg className="w-4 h-4 text-slate-600" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2.5}>
                           <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
