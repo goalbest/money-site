@@ -3,7 +3,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { supabase } from "./supabase";
-import { getHoldingMarketValue, calcTodayProfit } from "./holdings";
+import { getHoldingMarketValue } from "./holdings";
 
 /* ============================================================
    类型定义
@@ -157,6 +157,15 @@ function computeHoldingsDerived(
 
   const topToday: (Holding & { todayProfit: number; rate: number })[] = [];
 
+  // ★ 新增：先找出所有产品里，最新的净值日期
+  let maxNavDate = "";
+  for (const navs of navByProduct.values()) {
+    if (navs.length > 0) {
+      const d = navs[navs.length - 1].date;
+      if (d > maxNavDate) maxNavDate = d;
+    }
+  }
+
   for (const h of holdings) {
     const hold = getHoldingMarketValue(h); // ★ 动态计算市值
     const transit = Number(h.in_transit_amount || 0);
@@ -167,9 +176,17 @@ function computeHoldingsDerived(
     totalHolding += hold;
     totalInTransit += transit;
 
-    // ★ 计算今日收益：优先用净值差
+    // ★ 核心修复：严格按日期对齐，只有更新到最新日期的产品，才算今日收益
     const navs = navByProduct.get(h.product_id) || [];
-    const todayP = calcTodayProfit(h, navs);
+    let todayP = 0;
+    if (navs.length >= 2) {
+      const latest = navs[navs.length - 1];
+      // 只有当该产品的净值日期 = 全站最新日期，才计入
+      if (latest.date === maxNavDate) {
+        const prev = navs[navs.length - 2];
+        todayP = Number(h.shares || 0) * (latest.nav - prev.nav);
+      }
+    }
     todayProfit += todayP;
 
     // 计算今日涨跌幅（优先用净值差算百分比，否则用万份收益）

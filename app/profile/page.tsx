@@ -5,12 +5,10 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { supabase } from "../../lib/supabase";
 import { recalcHoldingFromTransactions } from "../../lib/holdings";
-import { useCountUp } from "../../lib/useCountUp"; // ★ 引入数字滚动动画
 
 export default function ProfilePage() {
   const router = useRouter();
   const [username, setUsername] = useState<string | null>(null);
-  const [stats, setStats] = useState({ totalAssets: 0, totalProfit: 0, holdingsCount: 0 });
   const [isAdmin, setIsAdmin] = useState(false);
 
   /* 数据检查状态 */
@@ -23,67 +21,15 @@ export default function ProfilePage() {
     errors: string[];
   } | null>(null);
 
-  /* 补录快照 */
   useEffect(() => {
     const u = localStorage.getItem("username");
-    const id = localStorage.getItem("user_id");
     const role = localStorage.getItem("role");
     
     setUsername(u);
     if (role === "admin" || u === "18739478938") {
       setIsAdmin(true);
     }
-    if (!id) return;
-
-    async function fetchStats() {
-      // 1. 拉取持仓
-      const { data: holdings } = await supabase
-        .from("user_holdings")
-        .select("id, product_id, holding_amount, in_transit_amount, shares")
-        .eq("user_id", id)
-        .eq("status", "active");
-
-      if (!holdings || holdings.length === 0) {
-        setStats({ totalAssets: 0, totalProfit: 0, holdingsCount: 0 });
-        return;
-      }
-
-      let totalAssets = 0;
-      let totalProfit = 0;
-
-      // 2. 并发去查每个产品最新两天的净值，精准计算今日收益
-      await Promise.all(holdings.map(async (h) => {
-        totalAssets += Number(h.holding_amount || 0) + Number(h.in_transit_amount || 0);
-        
-        if (h.product_id && Number(h.shares) > 0) {
-          const { data: navs } = await supabase
-            .from("nav_history")
-            .select("unit_nav")
-            .eq("product_id", h.product_id)
-            .order("nav_date", { ascending: false })
-            .limit(2);
-          
-          if (navs && navs.length >= 2) {
-            const latest = Number(navs[0].unit_nav);
-            const prev = Number(navs[1].unit_nav);
-            // 今日收益 = 份额 × (今天净值 - 昨天净值)
-            totalProfit += (latest - prev) * Number(h.shares);
-          }
-        }
-      }));
-
-      setStats({ 
-        totalAssets, 
-        totalProfit, 
-        holdingsCount: holdings.length 
-      });
-    }
-    fetchStats();
   }, []);
-
-  // ★ 数字滚动动画
-  const animatedAssets = useCountUp(stats.totalAssets, 1000);
-  const animatedProfit = useCountUp(stats.totalProfit, 1000);
 
   function handleLogout() {
     localStorage.removeItem("username");
@@ -161,7 +107,7 @@ export default function ProfilePage() {
               登录后管理你的个人资产
             </div>
             <Link href="/login" className="btn-primary inline-block text-sm px-8 py-3">
-              登录 / 注册
+              登录
             </Link>
           </div>
         </div>
@@ -171,7 +117,6 @@ export default function ProfilePage() {
 
   const MENU = [
     { key: "transactions", label: "交易记录", desc: "购买 / 赎回历史", href: "/transactions", icon: "📋", color: "bg-blue-50" },
-    { key: "watchlist", label: "我的自选", desc: "关注的产品", href: "/watchlist", icon: "⭐", color: "bg-amber-50" },
     { key: "export", label: "数据导出", desc: "导出持仓 / 交易备份", href: "/export", icon: "💾", color: "bg-indigo-50" },
     { key: "check", label: "数据检查", desc: "持仓不一致时一键修复", icon: "🛠️", color: "bg-cyan-50" },
     { key: "settings", label: "设置", desc: "账号和偏好", href: "/settings", icon: "⚙️", color: "bg-slate-50" },
@@ -187,52 +132,20 @@ export default function ProfilePage() {
     <div className="min-h-screen pb-24">
       <div className="container mx-auto px-5 pt-8 max-w-3xl">
 
-        <div className="flex items-center gap-3 mb-6 animate-fade-in-up">
-          <div className="w-12 h-12 rounded-2xl
+        <div className="flex items-center gap-3 mb-8 animate-fade-in-up">
+          <div className="w-14 h-14 rounded-2xl
                           bg-gradient-to-br from-indigo-500 via-purple-500 to-pink-500
                           flex items-center justify-center flex-shrink-0
-                          text-white text-[15px] font-bold
+                          text-white text-[18px] font-bold
                           shadow-lg shadow-purple-500/25">
             {avatarChar}
           </div>
           <div className="flex-1 min-w-0">
-            <div className="text-[16px] font-bold tracking-tight text-slate-900 truncate">
+            <div className="text-[18px] font-bold tracking-tight text-slate-900 truncate">
               {username}
             </div>
             <div className="text-[12px] text-slate-400 mt-0.5">
-              已管理 {stats.holdingsCount} 个产品
-            </div>
-          </div>
-        </div>
-
-        <div className="card-summary p-5 mb-5 animate-fade-in-up delay-1">
-          <div className="grid grid-cols-3 divide-x divide-slate-100">
-            <div className="text-center">
-              <div className="text-[10px] text-slate-400 mb-1.5">总资产</div>
-              {/* ★ 替换为 animatedAssets */}
-              <div className="font-mono font-bold text-[15px] text-slate-900 tabular">
-                {animatedAssets.toLocaleString("zh-CN", {
-                  minimumFractionDigits: 2,
-                  maximumFractionDigits: 2,
-                })}
-              </div>
-            </div>
-            <div className="text-center">
-              <div className="text-[10px] text-slate-400 mb-1.5">今日收益</div>
-              {/* ★ 替换为 animatedProfit */}
-              <div className={`font-mono font-bold text-[15px] tabular ${
-                animatedProfit > 0 ? "text-rose-500"
-                : animatedProfit < 0 ? "text-emerald-500"
-                : "text-slate-700"
-              }`}>
-                {animatedProfit >= 0 ? "+" : ""}{animatedProfit.toFixed(2)}
-              </div>
-            </div>
-            <div className="text-center">
-              <div className="text-[10px] text-slate-400 mb-1.5">持仓数</div>
-              <div className="font-mono font-bold text-[15px] text-slate-900 tabular">
-                {stats.holdingsCount}
-              </div>
+              个人中心
             </div>
           </div>
         </div>
@@ -240,7 +153,6 @@ export default function ProfilePage() {
         <div className="card overflow-hidden mb-5 animate-fade-in-up delay-2">
           {MENU.map((m) => {
             const isCheck = m.key === "check";
-            // ★ 优化动画：200ms 过渡 + active 缩放
             const cls = `flex items-center px-5 py-4 group
                          hover:bg-slate-50 active:bg-slate-100 active:scale-[0.98]
                          transition-all duration-200 ease-out
@@ -289,7 +201,7 @@ export default function ProfilePage() {
             );
           })}
 
-          {/* ★ 超级管理员专属入口 */}
+          {/* 超级管理员专属入口 */}
           {isAdmin && (
             <Link 
               href="/admin" 
@@ -300,7 +212,7 @@ export default function ProfilePage() {
               </div>
               <div className="flex-1 min-w-0">
                 <div className="text-[13px] text-purple-700 font-bold">管理员后台</div>
-                <div className="text-[11px] text-purple-500 mt-0.5">上传微信群二维码 / 系统配置</div>
+                <div className="text-[11px] text-purple-500 mt-0.5">系统配置与数据管理</div>
               </div>
               <svg className="w-4 h-4 text-purple-300 row-arrow flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2.5}>
                 <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
@@ -320,7 +232,7 @@ export default function ProfilePage() {
         </button>
 
         <div className="text-center text-[10px] text-slate-300 pb-4 animate-fade-in-up delay-4">
-          理财净值观察站 v4.9.0
+          理财净值观察站 v5.0.0
         </div>
       </div>
 
@@ -336,8 +248,7 @@ export default function ProfilePage() {
             <div className="bg-white rounded-3xl p-6 max-w-sm w-full animate-scale-in pointer-events-auto">
               {!checking && !checkResult && (
                 <>
-                  <div className="w-16 h-16 mx-auto mb-4 rounded-full
-                                  bg-cyan-50 flex items-center justify-center">
+                  <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-cyan-50 flex items-center justify-center">
                     <span className="text-[28px]">🛠️</span>
                   </div>
                   <div className="text-center mb-6">
@@ -345,28 +256,16 @@ export default function ProfilePage() {
                       数据检查
                     </div>
                     <div className="text-[12px] text-slate-400 leading-relaxed px-4">
-                      会遍历所有持仓产品，按交易记录重算持仓金额、份额、成本。
-                      <br />
-                      用于修复数据不一致。
+                      会遍历所有持仓产品，按交易记录重算持仓金额、份额、成本。<br />用于修复数据不一致。
                     </div>
                   </div>
                   <div className="space-y-2">
-                    <button
-                      onClick={runDataCheck}
-                      className="btn-primary w-full py-3 text-[14px] font-semibold"
-                    >
+                    <button onClick={runDataCheck} className="btn-primary w-full py-3 text-[14px] font-semibold">
                       开始检查
                     </button>
-                    <button
-                      onClick={() => setCheckOpen(false)}
-                      className="btn-secondary w-full py-3 text-[13px] font-semibold"
-                    >
+                    <button onClick={() => setCheckOpen(false)} className="btn-secondary w-full py-3 text-[13px] font-semibold">
                       取消
                     </button>
-                  </div>
-                  <div className="mt-4 text-[10px] text-slate-400 text-center leading-relaxed">
-                    删交易/改日期会自动修正快照。<br />
-                    「补录历史资产」用于兜底。
                   </div>
                 </>
               )}
@@ -378,81 +277,38 @@ export default function ProfilePage() {
                     <div className="absolute inset-0 rounded-full border-4 border-transparent border-t-cyan-500 animate-spin" />
                   </div>
                   <div className="text-center mb-4">
-                    <div className="text-[17px] font-bold text-slate-900 mb-1">
-                      检查中...
-                    </div>
-                    <div className="text-[12px] text-slate-400">
-                      {checkProgress.done} / {checkProgress.total}
-                    </div>
+                    <div className="text-[17px] font-bold text-slate-900 mb-1">检查中...</div>
+                    <div className="text-[12px] text-slate-400">{checkProgress.done} / {checkProgress.total}</div>
                   </div>
                   <div className="h-2 bg-slate-100 rounded-full overflow-hidden mb-2">
-                    <div
-                      className="h-full bg-gradient-to-r from-cyan-400 to-blue-500 rounded-full
-                                 transition-all duration-300"
-                      style={{
-                        width: `${
-                          checkProgress.total > 0
-                            ? (checkProgress.done / checkProgress.total) * 100
-                            : 0
-                        }%`,
-                      }}
-                    />
-                  </div>
-                  <div className="text-center text-[10px] text-slate-400">
-                    请勿关闭页面
+                    <div className="h-full bg-gradient-to-r from-cyan-400 to-blue-500 rounded-full transition-all duration-300" style={{ width: `${checkProgress.total > 0 ? (checkProgress.done / checkProgress.total) * 100 : 0}%` }} />
                   </div>
                 </>
               )}
 
               {!checking && checkResult && (
                 <>
-                  <div className={`w-16 h-16 mx-auto mb-4 rounded-full
-                                  flex items-center justify-center
-                                  ${checkResult.errors.length > 0 ? "bg-amber-50" : "bg-emerald-50"}`}>
-                    <span className="text-[28px]">
-                      {checkResult.errors.length > 0 ? "⚠️" : "✅"}
-                    </span>
+                  <div className={`w-16 h-16 mx-auto mb-4 rounded-full flex items-center justify-center ${checkResult.errors.length > 0 ? "bg-amber-50" : "bg-emerald-50"}`}>
+                    <span className="text-[28px]">{checkResult.errors.length > 0 ? "⚠️" : "✅"}</span>
                   </div>
                   <div className="text-center mb-6">
                     <div className="text-[17px] font-bold text-slate-900 mb-1">
                       {checkResult.errors.length > 0 ? "部分完成" : "检查完成"}
                     </div>
                     <div className="text-[12px] text-slate-400 leading-relaxed px-4">
-                      {checkResult.total === 0
-                        ? "没有需要检查的持仓"
-                        : (
-                          <>
-                            共检查 <span className="font-mono font-semibold text-slate-700">{checkResult.total}</span> 个产品
-                            {checkResult.errors.length > 0 && (
-                              <>
-                                <br />
-                                <span className="text-amber-600">
-                                  {checkResult.errors.length} 个出错
-                                </span>
-                              </>
-                            )}
-                          </>
-                        )}
+                      共检查 <span className="font-mono font-semibold text-slate-700">{checkResult.total}</span> 个产品
+                      {checkResult.errors.length > 0 && <><br /><span className="text-amber-600">{checkResult.errors.length} 个出错</span></>}
                     </div>
                   </div>
-                  <div className="space-y-2">
-                    <button
-                      onClick={() => {
-                        setCheckOpen(false);
-                        window.location.reload();
-                      }}
-                      className="btn-primary w-full py-3 text-[14px] font-semibold"
-                    >
-                      完成并刷新
-                    </button>
-                  </div>
+                  <button onClick={() => { setCheckOpen(false); window.location.reload(); }} className="btn-primary w-full py-3 text-[14px] font-semibold">
+                    完成并刷新
+                  </button>
                 </>
               )}
             </div>
           </div>
         </>
       )}
-
     </div>
   );
 }

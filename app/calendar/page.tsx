@@ -13,7 +13,6 @@ function monthEnd(month: string) {
 }
 function prevMonthLastDay(month: string) {
   const [y, m] = month.split("-").map(Number);
-  // 修改为：上个月的最后一天再往前推 7 天 (例如：11月的话就是 10月31日 - 7天 = 10月24日)
   const d = new Date(y, m - 1, -6); 
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 }
@@ -52,13 +51,11 @@ export default function CalendarPage() {
   const [privacy, setPrivacy] = useState(false);
   const [holdings, setHoldings] = useState<any[]>([]);
   const [navRows, setNavRows] = useState<any[]>([]);
+  const [transactions, setTransactions] = useState<any[]>([]); // ★ 新增：交易记录
   const [bankFilter, setBankFilter] = useState("全部");
   const [selectedDate, setSelectedDate] = useState<string | null>(null);
   const [viewMode, setViewMode] = useState<ViewMode>("calendar");
   const [selectedProduct, setSelectedProduct] = useState<number | null>(null);
-
-  const [monthBuyTotal, setMonthBuyTotal] = useState<number | null>(null);
-  const [monthSellTotal, setMonthSellTotal] = useState<number | null>(null);
 
   const [holdingsLoaded, setHoldingsLoaded] = useState(false);
   const [navCache, setNavCache] = useState<Record<string, any[]>>({});
@@ -67,6 +64,7 @@ export default function CalendarPage() {
 
   const isCurrentMonth = month === currentMonth;
 
+  // 1. 拉取持仓和所有交易记录
   useEffect(() => {
     const userId = localStorage.getItem("user_id");
     if (!userId) {
@@ -80,13 +78,22 @@ export default function CalendarPage() {
         .select("id, product_id, shares, holding_amount, hold_date, products(id, name, bank, daily_return)")
         .eq("user_id", userId)
         .eq("status", "active");
+      
+      const { data: txs } = await supabase
+        .from("transactions")
+        .select("product_id, type, shares, trade_date")
+        .eq("user_id", userId)
+        .order("trade_date", { ascending: true });
+
       const rows = hd || [];
       setHoldings(rows);
+      setTransactions(txs || []);
       setHoldingsLoaded(true);
       if (rows.length === 0) setLoading(false);
     })();
   }, []);
 
+  // 2. 拉取历史净值
   useEffect(() => {
     if (!holdingsLoaded) return;
     if (holdings.length === 0) {
@@ -125,34 +132,7 @@ export default function CalendarPage() {
     })();
   }, [month, holdingsLoaded, holdings.length]);
 
-  useEffect(() => {
-    const userId = localStorage.getItem("user_id");
-    if (!userId) {
-      setMonthBuyTotal(0);
-      setMonthSellTotal(0);
-      return;
-    }
-    setMonthBuyTotal(null);
-    setMonthSellTotal(null);
-    (async () => {
-      const start = `${month}-01`;
-      const end = monthEnd(month);
-      const { data } = await supabase
-        .from("transactions")
-        .select("type, amount, trade_date")
-        .eq("user_id", userId)
-        .gte("trade_date", start)
-        .lte("trade_date", end);
-      let buy = 0, sell = 0;
-      for (const t of (data || []) as any[]) {
-        if (t.type === "buy") buy += Number(t.amount || 0);
-        else if (t.type === "sell" || t.type === "close") sell += Number(t.amount || 0);
-      }
-      setMonthBuyTotal(buy);
-      setMonthSellTotal(sell);
-    })();
-  }, [month]);
-
+  // ★ 核心重写：按天推演真实份额并计算收益
   const {
     dayMap,
     productDayMap,
@@ -161,19 +141,39 @@ export default function CalendarPage() {
     totalProfit,
     tradedDays,
   } = useMemo(() => {
-    const sharesMap: Record<number, number> = {};
-    const amountMap: Record<number, number> = {};
-    const holdDateMap: Record<number, string | null> = {};
-    holdings.forEach((h: any) => {
-      sharesMap[h.product_id] = Number(h.shares) || 0;
-      amountMap[h.product_id] = Number(h.holding_amount) || 0;
-      holdDateMap[h.product_id] = h.hold_date || null;
-    });
-
     const navByProduct: Record<number, { date: string; nav: number }[]> = {};
     navRows.forEach((r: any) => {
       if (!navByProduct[r.product_id]) navByProduct[r.product_id] = [];
       navByProduct[r.product_id].push({ date: r.nav_date, nav: Number(r.unit_nav) });
+    });
+
+    // 按天推演每个产品的历史份额
+    // 结构: sharesByDay[product_id][date] = 份额
+    const sharesByDay: Record<number, Record<string, number>> = {};
+    
+    holdings.forEach(h => {
+      const pid = h.product_id;
+      sharesByDay[pid] = {};
+      
+      let currentShares = 0;
+      // 找出该产品所有相关的交易
+      const pTxs = transactions.filter(t => t.product_id === pid);
+      
+      const navList = navByProduct[pid] || [];
+      if (navList.length === 0) return;
+
+      // 从最早的一天开始推演
+      let txIdx = 0;
+      for (const n of navList) {
+        // 把所有发生在该日期及之前的交易加进去
+        while (txIdx < pTxs.length && pTxs[txIdx].trade_date <= n.date) {
+          const tx = pTxs[txIdx];
+          if (tx.type === "buy") currentShares += Number(tx.shares);
+          else if (tx.type === "sell" || tx.type === "close") currentShares -= Number(tx.shares);
+          txIdx++;
+        }
+        sharesByDay[pid][n.date] = currentShares;
+      }
     });
 
     const dayMap: Record<string, number> = {};
@@ -185,22 +185,18 @@ export default function CalendarPage() {
 
     Object.entries(navByProduct).forEach(([pidStr, list]) => {
       const pid = Number(pidStr);
-      const shares = sharesMap[pid] || 0;
-      const amount = amountMap[pid] || 0;
-      const holdDate = holdDateMap[pid];
-      if (shares <= 0 && amount <= 0) return;
-
+      
       for (let i = 1; i < list.length; i++) {
         const t = list[i];
         const p = list[i - 1];
         if (t.date < mStart || t.date > mEnd) continue;
-        if (holdDate && t.date < holdDate) continue;
 
+        // ★ 核心修改：取交易推演出的当天真实份额，而不是直接用当前份额
+        const realShares = sharesByDay[pid]?.[t.date] ?? 0;
+        
         let profit = 0;
-        if (shares > 0) {
-          profit = shares * (t.nav - p.nav);
-        } else if (amount > 0 && p.nav > 0) {
-          profit = amount * ((t.nav - p.nav) / p.nav);
+        if (realShares > 0) {
+          profit = realShares * (t.nav - p.nav);
         }
 
         dayMap[t.date] = (dayMap[t.date] || 0) + profit;
@@ -222,7 +218,13 @@ export default function CalendarPage() {
       totalProfit: values.reduce((a, b) => a + b, 0),
       tradedDays: values.length,
     };
-  }, [holdings, navRows, month, today]);
+  }, [holdings, navRows, transactions, month]); // ★ 依赖里加入 transactions
+
+  // ★ 更新：只保留每日实时市值统计，不再使用复杂的买卖反推
+  const currentHoldingTotal = useMemo(
+    () => holdings.reduce((s: number, h: any) => s + Number(h.holding_amount || 0), 0),
+    [holdings]
+  );
 
   const availableBanks = useMemo(() => {
     const set = new Set<string>();
@@ -232,10 +234,10 @@ export default function CalendarPage() {
     return ["全部", ...Array.from(set)];
   }, [holdings]);
 
+  // ... 后续的 getTotalDayProfit 等渲染逻辑保持原样不变 ...
+  
   function getTotalDayProfit(date: string): number | null {
-    // 只要 navRows 里有当天的记录，就算收益是 0 也要返回 0，而不是 null
     if (!productDayMap[date]) {
-      // 检查当天是否有任何产品的净值更新
       const hasNavOnDay = navRows.some(n => n.nav_date === date);
       if (hasNavOnDay) return 0; 
       return null;
@@ -322,7 +324,6 @@ export default function CalendarPage() {
       return rows.sort((a, b) => b.date.localeCompare(a.date));
     }
 
-    // ★ 按 bankFilter 过滤 + 只统计符合筛选的产品
     const rows: { date: string; profit: number; count: number }[] = [];
     Object.entries(productDayMap).forEach(([date, map]) => {
       let sum = 0;
@@ -360,29 +361,20 @@ export default function CalendarPage() {
     return sum;
   }, [viewMode, selectedProduct, selectedProductMonthly, bankFilter, productMonthlyMap, totalProfit, holdings]);
 
-  const endHolding = useMemo(
-    () => holdings.reduce((s: number, h: any) => s + Number(h.holding_amount || 0), 0),
-    [holdings]
-  );
-
-  const beginHolding = useMemo(() => {
-    if (monthBuyTotal == null || monthSellTotal == null) return null;
-    return endHolding - monthBuyTotal + monthSellTotal;
-  }, [endHolding, monthBuyTotal, monthSellTotal]);
-
   const monthAnnual = useMemo(() => {
-    if (beginHolding == null) return null;
     const totalDays = daysInMonth(month);
     const isCur = month === currentMonth;
     const daysPassed = isCur ? Math.min(now.getDate(), totalDays) : totalDays;
     if (daysPassed <= 0) return null;
-    const avg = (beginHolding + endHolding) / 2;
+    const avg = currentHoldingTotal;
     if (avg <= 0) return null;
     const rate = displayTotalProfit / avg;
     return rate * (365 / daysPassed) * 100;
-  }, [beginHolding, endHolding, month, currentMonth, displayTotalProfit]);
+  }, [currentHoldingTotal, month, currentMonth, displayTotalProfit]);
 
   const animatedTotal = useCountUp(displayTotalProfit, 1200);
+
+  // ... 后续的渲染代码（同你原文件完全一样）...
 
   const displayTradedDays = useMemo(() => {
     if (viewMode === "byProduct" && selectedProduct != null) {
@@ -506,19 +498,9 @@ export default function CalendarPage() {
 
   const isProductDetailMode = viewMode === "byProduct" && selectedProductMeta;
 
-  /* 有效持仓区间展示：月初=月末只显示一个数 */
-  const holdingRangeText = (() => {
-    if (beginHolding == null) return "—";
-    const lo = Math.min(beginHolding, endHolding);
-    const hi = Math.max(beginHolding, endHolding);
-    if (Math.abs(hi - lo) < 1) return `¥${fmtCompact(hi)}`;
-    return `¥${fmtCompact(lo)} ~ ¥${fmtCompact(hi)}`;
-  })();
-
   return (
     <div className="min-h-screen pb-24">
       <div className="container mx-auto px-5 pt-8 max-w-3xl">
-
         {/* 顶部标题 */}
         <div className="flex items-center gap-3 mb-4 animate-fade-in-up">
           <div className="flex-1 min-w-0">
@@ -618,9 +600,9 @@ export default function CalendarPage() {
                 </div>
 
                 <div className="chip px-3 py-2.5">
-                  <div className="text-[10px] text-white/65 mb-1">有效持仓</div>
+                  <div className="text-[10px] text-white/65 mb-1">当前总市值</div>
                   <div className="font-semibold text-[12px] text-white tabular">
-                    {holdingRangeText}
+                    ¥{fmtCompact(currentHoldingTotal)}
                   </div>
                 </div>
               </div>
@@ -702,7 +684,7 @@ export default function CalendarPage() {
             </button>
           </div>
 
-          {/* ★ 月度概览 */}
+          {/* 月度概览 */}
           {(() => {
             const days = Object.entries(dayMap)
               .filter(([d]) => d >= `${month}-01` && d <= monthEnd(month))
@@ -712,30 +694,19 @@ export default function CalendarPage() {
             const min = days.reduce((a, b) => a.profit < b.profit ? a : b);
             if (max.profit <= 0 && min.profit >= 0) return null;
             return (
-              <div className="flex items-center justify-center gap-3 mb-3 px-1
-                              text-[11px]">
+              <div className="flex items-center justify-center gap-3 mb-3 px-1 text-[11px]">
                 {max.profit > 0 && (
                   <div className="flex items-center gap-1">
-                    <span className="text-rose-500 font-semibold">
-                      {max.date.slice(5)}
-                    </span>
-                    <span className="font-mono text-rose-500 tabular">
-                      +{max.profit.toFixed(2)}
-                    </span>
+                    <span className="text-rose-500 font-semibold">{max.date.slice(5)}</span>
+                    <span className="font-mono text-rose-500 tabular">+{max.profit.toFixed(2)}</span>
                     <span className="text-slate-400">最强</span>
                   </div>
                 )}
-                {max.profit > 0 && min.profit < 0 && (
-                  <span className="text-slate-300">·</span>
-                )}
+                {max.profit > 0 && min.profit < 0 && <span className="text-slate-300">·</span>}
                 {min.profit < 0 && (
                   <div className="flex items-center gap-1">
-                    <span className="text-emerald-500 font-semibold">
-                      {min.date.slice(5)}
-                    </span>
-                    <span className="font-mono text-emerald-500 tabular">
-                      {min.profit.toFixed(2)}
-                    </span>
+                    <span className="text-emerald-500 font-semibold">{min.date.slice(5)}</span>
+                    <span className="font-mono text-emerald-500 tabular">{min.profit.toFixed(2)}</span>
                     <span className="text-slate-400">最弱</span>
                   </div>
                 )}
@@ -768,7 +739,7 @@ export default function CalendarPage() {
               let bgStyle: React.CSSProperties = {};
               if (!isSelected && profit !== null && profit !== 0) {
                 const intensity = Math.min(Math.abs(profit) / maxAbs, 1);
-                const alpha = 0.06 + intensity * 0.22;   // 0.06 ~ 0.28
+                const alpha = 0.06 + intensity * 0.22;
                 if (profit > 0) {
                   bgStyle.background = `rgba(244, 63, 94, ${alpha})`;
                 } else {
@@ -814,9 +785,7 @@ export default function CalendarPage() {
                 setSelectedProduct(null);
                 setSelectedDate(null);
               }}
-              className={`flex-1 py-2.5 text-[13px] segment-item
-                          flex items-center justify-center gap-1.5
-                          ${viewMode === "calendar" ? "segment-item-active" : "hover:text-slate-700"}`}
+              className={`flex-1 py-2.5 text-[13px] segment-item flex items-center justify-center gap-1.5 ${viewMode === "calendar" ? "segment-item-active" : "hover:text-slate-700"}`}
             >
               <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
                 <rect x="3" y="5" width="18" height="16" rx="2.5" />
@@ -829,9 +798,7 @@ export default function CalendarPage() {
                 setViewMode("byProduct");
                 setSelectedDate(null);
               }}
-              className={`flex-1 py-2.5 text-[13px] segment-item
-                          flex items-center justify-center gap-1.5
-                          ${viewMode === "byProduct" ? "segment-item-active" : "hover:text-slate-700"}`}
+              className={`flex-1 py-2.5 text-[13px] segment-item flex items-center justify-center gap-1.5 ${viewMode === "byProduct" ? "segment-item-active" : "hover:text-slate-700"}`}
             >
               <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
                 <path d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" strokeLinecap="round" strokeLinejoin="round" />
@@ -847,16 +814,10 @@ export default function CalendarPage() {
             <div className="card overflow-hidden">
               <div className="px-5 py-4 border-b divider flex items-center justify-between">
                 <div>
-                  <div className="text-[14px] font-semibold text-slate-900">
-                    {fmtMonthCN(month)} · 产品收益
-                  </div>
-                  <div className="text-[11px] text-slate-400 mt-0.5">
-                    点击产品查看其每日收益
-                  </div>
+                  <div className="text-[14px] font-semibold text-slate-900">{fmtMonthCN(month)} · 产品收益</div>
+                  <div className="text-[11px] text-slate-400 mt-0.5">点击产品查看其每日收益</div>
                 </div>
-                <div className="text-[11px] text-slate-400 tabular">
-                  {productMonthlyList.length} 个
-                </div>
+                <div className="text-[11px] text-slate-400 tabular">{productMonthlyList.length} 个</div>
               </div>
 
               {productMonthlyList.length === 0 ? (
@@ -876,13 +837,9 @@ export default function CalendarPage() {
                           setSelectedProduct(row.productId);
                           setSelectedDate(null);
                         }}
-                        className="w-full flex items-center gap-3 px-5 py-3.5
-                                   hover:bg-slate-50
-                                   border-b divider last:border-b-0
-                                   transition-colors duration-200 text-left"
+                        className="w-full flex items-center gap-3 px-5 py-3.5 hover:bg-slate-50 border-b divider last:border-b-0 transition-colors duration-200 text-left"
                       >
-                        <span className={`w-6 h-6 rounded-lg flex items-center justify-center
-                                          text-[10px] font-bold flex-shrink-0 ${
+                        <span className={`w-6 h-6 rounded-lg flex items-center justify-center text-[10px] font-bold flex-shrink-0 ${
                           i === 0 ? "bg-gradient-to-br from-rose-500 to-pink-600 text-white"
                           : i === 1 ? "bg-gradient-to-br from-orange-400 to-amber-500 text-white"
                           : i === 2 ? "bg-gradient-to-br from-yellow-400 to-amber-400 text-white"
@@ -890,14 +847,11 @@ export default function CalendarPage() {
                         }`}>
                           {i + 1}
                         </span>
-                        <span className="bank-avatar flex-shrink-0"
-                              style={{ background: info.bg, color: info.color }}>
+                        <span className="bank-avatar flex-shrink-0" style={{ background: info.bg, color: info.color }}>
                           {info.label}
                         </span>
                         <div className="flex-1 min-w-0">
-                          <div className="text-[12px] text-slate-900 font-medium truncate">
-                            {row.name}
-                          </div>
+                          <div className="text-[12px] text-slate-900 font-medium truncate">{row.name}</div>
                           <div className="text-[10px] text-slate-400 mt-0.5 flex items-center gap-1 flex-wrap">
                             <span>{row.bank}</span>
                             <span className="text-slate-300">·</span>
@@ -905,24 +859,19 @@ export default function CalendarPage() {
                             {row.zeroDays > 0 && (
                               <>
                                 <span className="text-slate-300">·</span>
-                                <span className={zeroColor}>
-                                  挂 0 {row.zeroDays} 天
-                                </span>
+                                <span className={zeroColor}>挂 0 {row.zeroDays} 天</span>
                               </>
                             )}
                           </div>
                         </div>
                         <div className="text-right flex-shrink-0">
                           <div className={`font-mono font-bold text-[14px] tabular ${
-                            row.profit > 0 ? "text-rose-500"
-                            : row.profit < 0 ? "text-emerald-500"
-                            : "text-slate-400"
+                            row.profit > 0 ? "text-rose-500" : row.profit < 0 ? "text-emerald-500" : "text-slate-400"
                           }`}>
                             {fmtProfit(row.profit)}
                           </div>
                         </div>
-                        <svg className="w-3.5 h-3.5 text-slate-300 flex-shrink-0"
-                             fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2.5}>
+                        <svg className="w-3.5 h-3.5 text-slate-300 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2.5}>
                           <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
                         </svg>
                       </button>
@@ -936,30 +885,20 @@ export default function CalendarPage() {
               <div className="px-5 py-4 bg-slate-50/60 border-b divider flex items-center gap-3">
                 <button
                   onClick={() => setSelectedDate(null)}
-                  className="w-9 h-9 rounded-full bg-white border border-slate-200
-                             hover:border-slate-300 hover:bg-slate-50
-                             flex items-center justify-center flex-shrink-0
-                             transition-all active:scale-90"
+                  className="w-9 h-9 rounded-full bg-white border border-slate-200 hover:border-slate-300 hover:bg-slate-50 flex items-center justify-center flex-shrink-0 transition-all active:scale-90"
                   aria-label="返回"
                 >
                   <svg className="w-4 h-4 text-slate-600" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2.5}>
                     <path strokeLinecap="round" strokeLinejoin="round" d="M15 19l-7-7 7-7" />
                   </svg>
                 </button>
-                <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-violet-500 to-purple-600
-                                flex items-center justify-center
-                                text-white font-bold text-[15px] tabular
-                                shadow-md shadow-purple-500/20 flex-shrink-0">
+                <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-violet-500 to-purple-600 flex items-center justify-center text-white font-bold text-[15px] tabular shadow-md shadow-purple-500/20 flex-shrink-0">
                   {Number(selectedDate.slice(-2))}
                 </div>
                 <div className="flex-1 min-w-0">
-                  <div className="text-[13px] font-semibold text-slate-900">
-                    {selectedDate.slice(5).replace("-", " 月 ")} 日
-                  </div>
+                  <div className="text-[13px] font-semibold text-slate-900">{selectedDate.slice(5).replace("-", " 月 ")} 日</div>
                   <div className="text-[10px] text-slate-400 mt-0.5 truncate">
-                    {isProductDetailMode
-                      ? selectedProductMeta.name
-                      : `${getDayProducts(selectedDate).length} 个产品`}
+                    {isProductDetailMode ? selectedProductMeta.name : `${getDayProducts(selectedDate).length} 个产品`}
                   </div>
                 </div>
                 <div className={`font-mono font-bold text-[18px] tabular flex-shrink-0 ${
@@ -967,30 +906,20 @@ export default function CalendarPage() {
                   : (isProductDetailMode ? selectedProductDayProfit : (getTotalDayProfit(selectedDate) || 0)) < 0 ? "text-emerald-500"
                   : "text-slate-400"
                 }`}>
-                  {fmtProfit(
-                    isProductDetailMode ? selectedProductDayProfit : (getTotalDayProfit(selectedDate) || 0)
-                  )}
+                  {fmtProfit(isProductDetailMode ? selectedProductDayProfit : (getTotalDayProfit(selectedDate) || 0))}
                 </div>
               </div>
 
               {isProductDetailMode ? (
                 <div className="px-5 py-4">
-                  <div className="text-[12px] text-slate-500 text-center py-3">
-                    该产品当日收益 {fmtProfit(selectedProductDayProfit)}
-                  </div>
-                  <Link
-                    href={`/product/${selectedProduct}`}
-                    className="block text-center py-3 text-[12px] text-purple-600 font-medium
-                               hover:bg-purple-50 rounded-xl transition-colors"
-                  >
+                  <div className="text-[12px] text-slate-500 text-center py-3">该产品当日收益 {fmtProfit(selectedProductDayProfit)}</div>
+                  <Link href={`/product/${selectedProduct}`} className="block text-center py-3 text-[12px] text-purple-600 font-medium hover:bg-purple-50 rounded-xl transition-colors">
                     查看产品详情 →
                   </Link>
                 </div>
               ) : getDayProducts(selectedDate).length === 0 ? (
                 <div className="py-12 text-center text-slate-300 text-xs">
-                  {bankFilter === "全部"
-                    ? "当天无收益数据（可能未到购买日或没有净值更新）"
-                    : "该银行当天无数据"}
+                  {bankFilter === "全部" ? "当天无收益数据（可能未到购买日或没有净值更新）" : "该银行当天无数据"}
                 </div>
               ) : (
                 <div>
@@ -1000,26 +929,15 @@ export default function CalendarPage() {
                       <Link
                         key={row.productId}
                         href={`/product/${row.productId}`}
-                        className="flex items-center gap-3 px-5 py-3.5
-                                   hover:bg-slate-50
-                                   border-b divider last:border-b-0
-                                   transition-colors duration-200"
+                        className="flex items-center gap-3 px-5 py-3.5 hover:bg-slate-50 border-b divider last:border-b-0 transition-colors duration-200"
                       >
-                        <span className="bank-avatar" style={{ background: info.bg, color: info.color }}>
-                          {info.label}
-                        </span>
+                        <span className="bank-avatar" style={{ background: info.bg, color: info.color }}>{info.label}</span>
                         <div className="flex-1 min-w-0">
-                          <div className="text-[13px] text-slate-900 font-medium truncate">
-                            {row.name}
-                          </div>
-                          <div className="text-[10px] text-slate-400 mt-0.5">
-                            {row.bank}
-                          </div>
+                          <div className="text-[13px] text-slate-900 font-medium truncate">{row.name}</div>
+                          <div className="text-[10px] text-slate-400 mt-0.5">{row.bank}</div>
                         </div>
                         <div className={`font-mono font-bold text-[14px] tabular ${
-                          row.profit > 0 ? "text-rose-500"
-                          : row.profit < 0 ? "text-emerald-500"
-                          : "text-slate-400"
+                          row.profit > 0 ? "text-rose-500" : row.profit < 0 ? "text-emerald-500" : "text-slate-400"
                         }`}>
                           {fmtProfit(row.profit)}
                         </div>
@@ -1038,34 +956,22 @@ export default function CalendarPage() {
                       setSelectedProduct(null);
                       setSelectedDate(null);
                     }}
-                    className="w-9 h-9 rounded-full bg-white border border-slate-200
-                               hover:border-slate-300 hover:bg-slate-50
-                               flex items-center justify-center flex-shrink-0
-                               transition-all active:scale-90"
+                    className="w-9 h-9 rounded-full bg-white border border-slate-200 hover:border-slate-300 hover:bg-slate-50 flex items-center justify-center flex-shrink-0 transition-all active:scale-90"
                     aria-label="返回产品列表"
                   >
                     <svg className="w-4 h-4 text-slate-600" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2.5}>
                       <path strokeLinecap="round" strokeLinejoin="round" d="M15 19l-7-7 7-7" />
                     </svg>
                   </button>
-                  <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-violet-500 to-purple-600
-                                  flex items-center justify-center
-                                  text-white font-bold text-[14px]
-                                  shadow-md shadow-purple-500/20 flex-shrink-0">
+                  <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-violet-500 to-purple-600 flex items-center justify-center text-white font-bold text-[14px] shadow-md shadow-purple-500/20 flex-shrink-0">
                     {getBankInfo(selectedProductMeta.bank).label}
                   </div>
                   <div className="flex-1 min-w-0">
-                    <div className="text-[13px] font-semibold text-slate-900 truncate">
-                      {selectedProductMeta.name}
-                    </div>
-                    <div className="text-[10px] text-slate-400 mt-0.5 truncate">
-                      {selectedProductMeta.bank} · 本月 {dailyList.length} 天
-                    </div>
+                    <div className="text-[13px] font-semibold text-slate-900 truncate">{selectedProductMeta.name}</div>
+                    <div className="text-[10px] text-slate-400 mt-0.5 truncate">{selectedProductMeta.bank} · 本月 {dailyList.length} 天</div>
                   </div>
                   <div className={`font-mono font-bold text-[16px] tabular flex-shrink-0 ${
-                    displayTotalProfit > 0 ? "text-rose-500"
-                    : displayTotalProfit < 0 ? "text-emerald-500"
-                    : "text-slate-400"
+                    displayTotalProfit > 0 ? "text-rose-500" : displayTotalProfit < 0 ? "text-emerald-500" : "text-slate-400"
                   }`}>
                     {fmtProfit(displayTotalProfit)}
                   </div>
@@ -1073,24 +979,16 @@ export default function CalendarPage() {
               ) : (
                 <div className="px-5 py-4 border-b divider flex items-center justify-between">
                   <div className="min-w-0 flex-1">
-                    <div className="text-[14px] font-semibold text-slate-900">
-                      本月每日明细
-                    </div>
-                    <div className="text-[11px] text-slate-400 mt-0.5 truncate">
-                      点击上方日历格子查看单日明细
-                    </div>
+                    <div className="text-[14px] font-semibold text-slate-900">本月每日明细</div>
+                    <div className="text-[11px] text-slate-400 mt-0.5 truncate">点击上方日历格子查看单日明细</div>
                   </div>
-                  <div className="text-[11px] text-slate-400 tabular flex-shrink-0">
-                    {dailyList.length} 天
-                  </div>
+                  <div className="text-[11px] text-slate-400 tabular flex-shrink-0">{dailyList.length} 天</div>
                 </div>
               )}
 
               <div>
                 {dailyList.length === 0 ? (
-                  <div className="py-12 text-center text-slate-300 text-xs">
-                    本月暂无收益数据
-                  </div>
+                  <div className="py-12 text-center text-slate-300 text-xs">本月暂无收益数据</div>
                 ) : (
                   dailyList.map((row) => {
                     const profit = row.profit;
@@ -1098,36 +996,23 @@ export default function CalendarPage() {
                       <button
                         key={row.date}
                         onClick={() => setSelectedDate(row.date)}
-                        className="w-full flex items-center justify-between px-5 py-3
-                                   hover:bg-slate-50
-                                   border-b divider last:border-b-0
-                                   transition-colors duration-200 text-left"
+                        className="w-full flex items-center justify-between px-5 py-3 hover:bg-slate-50 border-b divider last:border-b-0 transition-colors duration-200 text-left"
                       >
                         <div className="flex items-center gap-3">
-                          <div className={`w-9 h-9 rounded-lg
-                                          flex items-center justify-center
-                                          text-[12px] font-semibold tabular ${
-                            profit > 0 ? "bg-rose-50 text-rose-600"
-                            : profit < 0 ? "bg-emerald-50 text-emerald-600"
-                            : "bg-slate-50 text-slate-500"
+                          <div className={`w-9 h-9 rounded-lg flex items-center justify-center text-[12px] font-semibold tabular ${
+                            profit > 0 ? "bg-rose-50 text-rose-600" : profit < 0 ? "bg-emerald-50 text-emerald-600" : "bg-slate-50 text-slate-500"
                           }`}>
                             {Number(row.date.slice(-2))}
                           </div>
                           <div>
-                            <div className="text-[12px] text-slate-700 font-medium">
-                              {row.date.slice(5).replace("-", " 月 ")} 日
-                            </div>
+                            <div className="text-[12px] text-slate-700 font-medium">{row.date.slice(5).replace("-", " 月 ")} 日</div>
                             <div className="text-[10px] text-slate-400 mt-0.5">
-                              {isProductDetailMode
-                                ? selectedProductMeta.bank
-                                : `${row.count} 个产品`}
+                              {isProductDetailMode ? selectedProductMeta.bank : `${row.count} 个产品`}
                             </div>
                           </div>
                         </div>
                         <div className={`font-mono font-bold text-[14px] tabular ${
-                          profit > 0 ? "text-rose-500"
-                          : profit < 0 ? "text-emerald-500"
-                          : "text-slate-400"
+                          profit > 0 ? "text-rose-500" : profit < 0 ? "text-emerald-500" : "text-slate-400"
                         }`}>
                           {fmtProfit(profit)}
                         </div>
