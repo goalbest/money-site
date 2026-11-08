@@ -85,7 +85,7 @@ function MiniChart({ points }: { points: number[] }) {
   );
 }
 
-// ★ 完美复刻：严格按照你的 .txt 里的逻辑
+// 官方自然日历年化计算
 function calcAnnualizedFromNav(navs: {nav: number, date: string}[], period: string) {
   if (!navs || navs.length < 2) return 0;
   const sorted = [...navs].sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
@@ -93,7 +93,6 @@ function calcAnnualizedFromNav(navs: {nav: number, date: string}[], period: stri
   const latestDate = new Date(latest.date);
 
   let targetDate = new Date(latestDate);
-
   if (period === "7d") targetDate.setDate(targetDate.getDate() - 7);
   else if (period === "14d") targetDate.setDate(targetDate.getDate() - 14);
   else if (period === "1m") targetDate.setMonth(targetDate.getMonth() - 1);
@@ -106,7 +105,6 @@ function calcAnnualizedFromNav(navs: {nav: number, date: string}[], period: stri
     return ((latest.nav / first.nav - 1) / days) * 365 * 100;
   }
 
-  // 寻找离 targetDate 最近的净值点
   let closestNav = sorted[0];
   let minDiff = Infinity;
   for (const item of sorted) {
@@ -130,8 +128,11 @@ export default function HomePage() {
   const [privacy, setPrivacy] = useState(false);
   const [nowStr, setNowStr] = useState("");
   const [bankFilter, setBankFilter] = useState("全部");
-  const [sortKey, setSortKey] = useState<SortKey>("value");
+  
+  // ★ 默认按年化排序
+  const [sortKey, setSortKey] = useState<SortKey>("annual");
   const [sortDesc, setSortDesc] = useState(true);
+  
   const [annualPeriod, setAnnualPeriod] = useState("1m");
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
   const [summaryCollapsed, setSummaryCollapsed] = useState(false);
@@ -144,6 +145,28 @@ export default function HomePage() {
   const longPressTimer = useRef<NodeJS.Timeout | null>(null);
   const longPressed = useRef(false);
   const [mounted, setMounted] = useState(false);
+
+  // ★ 滚动位置记忆 (监听保存)
+  useEffect(() => {
+    const handleScroll = () => {
+      if (!loading) {
+        sessionStorage.setItem("home_scroll_y", window.scrollY.toString());
+      }
+    };
+    window.addEventListener("scroll", handleScroll, { passive: true });
+    return () => window.removeEventListener("scroll", handleScroll);
+  }, [loading]);
+
+  // ★ 滚动位置记忆 (恢复渲染)
+  useLayoutEffect(() => {
+    if (!loading) {
+      const savedY = sessionStorage.getItem("home_scroll_y");
+      if (savedY) {
+        // 瞬间跳转，不产生动画
+        window.scrollTo({ top: parseInt(savedY, 10), behavior: "instant" });
+      }
+    }
+  }, [loading]);
 
   useEffect(() => {
     const d = new Date();
@@ -206,7 +229,10 @@ export default function HomePage() {
         setView(v as View);
       }
     }
-    window.scrollTo(0, 0);
+    // 如果没有保存过滚动位置，才回到顶部
+    if (!sessionStorage.getItem("home_scroll_y")) {
+      window.scrollTo(0, 0);
+    }
     setScrolled(false);
     setMounted(true);
   }, []);
@@ -267,7 +293,9 @@ export default function HomePage() {
 
       const navs = navHistory[p.id] || [];
       if (navs.length >= 2) {
-        totalProfitToday += shares * (navs[navs.length - 1].nav - navs[navs.length - 2].nav);
+        if (p.nav_date === latestNavDateStr) {
+           totalProfitToday += shares * (navs[navs.length - 1].nav - navs[navs.length - 2].nav);
+        }
         
         for (let i = 1; i < navs.length; i++) {
           if (navs[i].date >= monthStart) {
@@ -371,7 +399,9 @@ export default function HomePage() {
       const inTransit = items.reduce((s, h) => s + Number(h.in_transit_amount || 0), 0);
       
       const todayProfit = items.reduce((s, h) => {
-        const navs = navHistory[h.products?.id || 0] || [];
+        const p = h.products;
+        if (!p || p.nav_date !== globalStats.latestNavDateStr) return s;
+        const navs = navHistory[p.id] || [];
         if (navs.length < 2) return s;
         return s + Number(h.shares || 0) * (navs[navs.length-1].nav - navs[navs.length-2].nav);
       }, 0);
@@ -381,9 +411,10 @@ export default function HomePage() {
       const startIdx = (currentPage - 1) * PAGE_SIZE;
       const paginatedItems = items.slice(startIdx, startIdx + PAGE_SIZE);
 
-      return { bank, items: paginatedItems, total, inTransit, todayProfit, currentPage, totalPages };
+      // ★ 返回真实的全部产品数量
+      return { bank, items: paginatedItems, totalCount: items.length, total, inTransit, todayProfit, currentPage, totalPages };
     }).sort((a, b) => b.total - a.total);
-  }, [holdings, bankFilter, sortKey, sortDesc, statusFilter, navHistory, annualPeriod, bankPages]);
+  }, [holdings, bankFilter, sortKey, sortDesc, statusFilter, navHistory, annualPeriod, bankPages, globalStats.latestNavDateStr]);
 
   function fmtMoney(n: number) { return privacy ? "••••" : n.toLocaleString("zh-CN", { minimumFractionDigits: 2, maximumFractionDigits: 2 }); }
   function fmtProfit(n: number) { return privacy ? "••" : `${n >= 0 ? "+" : ""}${n.toFixed(2)}`; }
@@ -601,7 +632,8 @@ export default function HomePage() {
                                       <span className="bank-avatar" style={{ background: info.bg, color: info.color }}>{info.label}</span>
                                       <div>
                                         <div className="text-[13px] font-semibold text-slate-900 leading-tight">{group.bank}</div>
-                                        <div className="text-[11px] text-slate-400 leading-tight mt-0.5">{group.items.length} 个产品 · 占比 {percent.toFixed(1)}%</div>
+                                        {/* ★ 显示该机构总产品数 */}
+                                        <div className="text-[11px] text-slate-400 leading-tight mt-0.5">{group.totalCount} 个产品 · 占比 {percent.toFixed(1)}%</div>
                                       </div>
                                     </div>
                                     <div className="text-right">
