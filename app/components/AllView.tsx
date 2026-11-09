@@ -64,18 +64,14 @@ export default function AllView({
   const [sortDesc, setSortDesc] = useState(true);
   const [annualPeriod, setAnnualPeriod] = useState("1m");
   
-  // ★ 核心改动：记录每个银行当前的页码，例如 { "中邮理财": 2, "招银理财": 1 }
   const [pageMap, setPageMap] = useState<Record<string, number>>({});
-  
   const [watchList, setWatchList] = useState<Set<number>>(new Set());
   const userId = typeof window !== "undefined" ? localStorage.getItem("user_id") : null;
 
-  // 切换筛选、排序时，清空所有银行的分页记录（回到第一页）
   useEffect(() => {
     setPageMap({});
   }, [statusFilter, bankFilter, sortKey, sortDesc, annualPeriod]);
 
-  // 拉取关注状态
   useEffect(() => {
     if (!userId) return;
     supabase.from("user_watchlist").select("product_id").eq("user_id", userId).then(({ data, error }) => {
@@ -85,7 +81,6 @@ export default function AllView({
     });
   }, [userId]);
 
-  // 切换关注状态
   async function toggleWatch(productId: number, e: React.MouseEvent) {
     e.preventDefault();
     e.stopPropagation();
@@ -126,7 +121,6 @@ export default function AllView({
     })).sort((a, b) => b.amount - a.amount);
   }, [holdings]);
 
-  // ★ 核心改动：按银行分组，并在组内进行分页
   const groupSummary = useMemo(() => {
     let filtered = [];
     if (statusFilter === "hold") {
@@ -141,7 +135,6 @@ export default function AllView({
 
     if (bankFilter !== "全部") filtered = filtered.filter(h => (h.products?.bank || "其他") === bankFilter);
 
-    // 1. 全局排序（确保所有产品的排序是正确的）
     const sortedItems = [...filtered].sort((a, b) => {
       let diff = 0;
       if (sortKey === "value") diff = getHoldingMarketValue(b) - getHoldingMarketValue(a);
@@ -157,7 +150,6 @@ export default function AllView({
       return sortDesc ? diff : -diff;
     });
 
-    // 2. 按银行分组
     const grouped: Record<string, any[]> = {};
     sortedItems.forEach(h => {
       const key = h.products?.bank || "其他";
@@ -165,7 +157,6 @@ export default function AllView({
       grouped[key].push(h);
     });
 
-    // 3. 针对每个银行单独分页
     const ITEMS_PER_PAGE = 8;
     return Object.entries(grouped).map(([bank, items]) => {
       const totalItems = items.length;
@@ -174,19 +165,17 @@ export default function AllView({
       
       const totalPages = Math.ceil(totalItems / ITEMS_PER_PAGE);
       const currentPage = pageMap[bank] || 1;
-      
-      // 截取该银行当前页的 15 条数据
       const paginatedItems = items.slice((currentPage - 1) * ITEMS_PER_PAGE, currentPage * ITEMS_PER_PAGE);
 
       return { 
         bank, 
         items: paginatedItems, 
-        totalItems,     // 银行总产品数
+        totalItems,
         totalCount: totalItems, 
         total, 
         percent,
-        totalPages,     // 银行总页数
-        currentPage     // 银行当前页
+        totalPages,
+        currentPage
       };
     }).sort((a, b) => b.total - a.total);
 
@@ -197,15 +186,12 @@ export default function AllView({
   const periodLabel = ANNUAL_PERIODS.find(x => x.key === annualPeriod)?.label || "1月";
   const activeSubTabIndex = STATUS_TABS.findIndex(t => t.key === statusFilter);
 
-  // 切换某家银行的分页
   const handlePageChange = (bank: string, newPage: number) => {
     setPageMap(prev => ({ ...prev, [bank]: newPage }));
   };
 
   return (
     <div className="animate-fade-in space-y-4">
-      
-      {/* 子 Tab */}
       <div className="relative flex bg-slate-100/60 p-1 rounded-full mb-4 shadow-sm border border-slate-200/50">
         <div 
           className="absolute top-1 bottom-1 bg-white rounded-full shadow-sm transition-transform duration-300 ease-out" 
@@ -227,7 +213,6 @@ export default function AllView({
         })}
       </div>
 
-      {/* 持仓分布 */}
       {statusFilter === "hold" && holdings.length > 0 && (
         <div className="card p-5 animate-fade-in-up">
           <div className="text-[14px] font-bold text-slate-900 mb-4">持仓分布</div>
@@ -279,7 +264,6 @@ export default function AllView({
         </div>
       )}
 
-      {/* 排序工具栏 */}
       {(statusFilter === "hold" || statusFilter === "watch") && (
         <div className="px-1 mt-4">
           <div className="segment-group flex">
@@ -303,7 +287,6 @@ export default function AllView({
         </div>
       )}
 
-      {/* 列表区 */}
       <div className="space-y-4 mt-4">
         {groupSummary.length === 0 ? (
           <div className="card p-12 text-center text-slate-300 text-xs">暂无数据</div>
@@ -362,7 +345,7 @@ export default function AllView({
                           )}
                         </div>
                         
-                        <div className="grid grid-cols-4 gap-2">
+                        <div className="grid grid-cols-[1.3fr_1fr_1fr_0.8fr] gap-1">
                           <div>
                             <div className="text-[10px] text-slate-400 mb-1">{isClosed ? "卖出金额" : "市值"}</div>
                             <div className="font-mono font-bold text-[14px] text-slate-900 truncate">
@@ -371,7 +354,6 @@ export default function AllView({
                           </div>
                           
                           <div className="text-right">
-                            {/* ★ 日期样式修改为橙色 */}
                             <div className="text-[10px] text-slate-400 mb-1 flex items-center justify-end gap-1">
                               今日
                               {!isClosed && p.nav_date && (
@@ -396,7 +378,7 @@ export default function AllView({
 
                           <div className="text-right">
                             <div className="text-[10px] text-slate-400 mb-1">天数</div>
-                            <div className="font-mono font-semibold text-[14px] text-slate-600">
+                            <div className="font-mono font-medium text-[12px] text-slate-500 mt-0.5">
                               {daysHeld(h.hold_date)}天
                             </div>
                           </div>
@@ -406,9 +388,9 @@ export default function AllView({
                   })}
                 </div>
 
-                {/* ★ 核心改动：把分页按钮放在每个银行卡片的内部底部 */}
+                {/* 独立的分页按钮 */}
                 {group.totalPages > 1 && (
-                  <div className="flex items-center justify-between px-5 py-3 bg-white">
+                  <div className="flex items-center justify-between px-5 py-3 bg-white border-t border-slate-100">
                     <button 
                       onClick={() => handlePageChange(group.bank, group.currentPage - 1)}
                       disabled={group.currentPage === 1}

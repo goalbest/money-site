@@ -21,7 +21,15 @@ export default function AssetCard({ stats, privacy }: { stats: any, privacy: boo
         
         <div className="grid grid-cols-3 gap-2 pt-4 border-t border-white/15">
           <div className="bg-white/10 rounded-xl p-2.5 flex flex-col justify-between">
-            <div className="text-[10px] text-white/70 mb-1.5">今日收益</div>
+            {/* ★ 修改：加上日期 */}
+            <div className="text-[10px] text-white/70 mb-1.5 flex items-center justify-start gap-1">
+              今日收益
+              {stats.latestNavDateStr && (
+                <span className="text-[9px] text-amber-200/90 font-mono">
+                  {String(stats.latestNavDateStr).slice(5)}
+                </span>
+              )}
+            </div>
             <div className="font-mono font-bold text-[15px] text-white tracking-tight leading-none mb-1">
               {fmtProfit(animatedToday)}
             </div>

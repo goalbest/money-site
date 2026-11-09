@@ -26,7 +26,6 @@ const PRESET_CATEGORIES = ["理财收益", "大额消费", "教育", "日常", "
 const NOTE_TARGETS = ["存款", "人情·斌", "人情·贝", "心意·斌", "心意·贝", "待定"];
 const PAGE_SIZE = 20;
 
-// 数字滚动动画 Hook
 function useCountUp(target: number, duration = 800) {
   const [val, setVal] = useState(0);
   useEffect(() => {
@@ -50,11 +49,6 @@ function useCountUp(target: number, duration = 800) {
   return val;
 }
 
-const AnimatedNumber = ({ value, className }: { value: number, className?: string }) => {
-  const animated = useCountUp(value, 800);
-  return <span className={className}>{animated.toLocaleString("zh-CN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>;
-};
-
 export default function LedgerPage() {
   const router = useRouter();
   const [userId, setUserId] = useState<string | null>(null);
@@ -77,6 +71,8 @@ export default function LedgerPage() {
   const [listSortDesc, setListSortDesc] = useState(true);
   const [giftView, setGiftView] = useState<GiftViewMode>("list");
   
+  // ★ 大卡片折叠状态
+  const [isAssetExpanded, setIsAssetExpanded] = useState(false);
 
   // 月报年份切换
   const currentYearStr = new Date().getFullYear().toString();
@@ -100,10 +96,10 @@ export default function LedgerPage() {
   const pressTimer = useRef<NodeJS.Timeout | null>(null);
   const [dragIdx, setDragIdx] = useState<number | null>(null);
 
-  // ★ 智能提示状态
+  // 智能提示状态
   const [showNameSuggest, setShowNameSuggest] = useState(false);
   const [showReasonSuggest, setShowReasonSuggest] = useState(false);
-  const [showAccountSuggest, setShowAccountSuggest] = useState(false); // 账户输入提示
+  const [showAccountSuggest, setShowAccountSuggest] = useState(false);
 
   // 资金表单状态
   const [formDate, setFormDate] = useState(new Date().toISOString().split("T")[0]);
@@ -180,7 +176,7 @@ export default function LedgerPage() {
     setLoading(false);
   }
 
-  // ★ 动态提取所有历史账户名
+  // 动态提取所有历史账户名
   const allAccountNames = useMemo(() => {
     const names = new Set<string>(DEFAULT_ACCOUNTS);
     transactions.forEach(t => { if (t.account) names.add(t.account); });
@@ -194,7 +190,6 @@ export default function LedgerPage() {
     return Array.from(names);
   }, [transactions, snapshots]);
 
-  // 提取历史姓名与事由用于智能提示
   const existingNames = useMemo(() => {
     const names = new Set<string>();
     socials.forEach(s => names.add(s.person));
@@ -208,7 +203,6 @@ export default function LedgerPage() {
     return Array.from(reasons);
   }, [socials]);
 
-  // 删除
   async function handleDelete(id: string, type: TabType) {
     if (!confirm("确认删除这条记录吗？")) return;
     const table = type === "deposit" ? "ledger_transactions" : type === "social" ? "ledger_social" : type === "gift" ? "ledger_gifts" : "ledger_notes";
@@ -216,7 +210,6 @@ export default function LedgerPage() {
     if (userId) fetchData(userId);
   }
 
-  // 删除对账
   async function handleDeleteSnapshot(month: string) {
     if (!confirm("确认删除此月的对账记录吗？")) return;
     await supabase.from("ledger_snapshots").delete().eq("user_id", userId).eq("month", month);
@@ -224,13 +217,11 @@ export default function LedgerPage() {
     if (userId) fetchData(userId);
   }
 
-  // 随手记归档
   async function handleArchive(id: string) {
     await supabase.from("ledger_notes").update({ status: "已归档" }).eq("id", id);
     if (userId) fetchData(userId);
   }
 
-  // 全面升级的导出功能
   function handleExport() {
     if (transactions.length === 0 && socials.length === 0 && gifts.length === 0 && notes.length === 0 && snapshots.length === 0) {
       alert("当前没有数据可导出！");
@@ -290,7 +281,6 @@ export default function LedgerPage() {
     }
   }
 
-  // 打开详情
   function openDetail(item: any, type: TabType) {
     setViewingItem(item);
     setFormDate(item.trade_date || item.note_date);
@@ -306,7 +296,6 @@ export default function LedgerPage() {
     setIsEditing(false); setModalType(type);
   }
 
-  // 打开新增
   function openAdd() {
     setViewingItem(null);
     setFormDate(new Date().toISOString().split("T")[0]);
@@ -316,7 +305,6 @@ export default function LedgerPage() {
     setIsEditing(true); setModalType(activeTab);
   }
 
-  // 打开对账弹窗
   function openSnapshot(monthStr: string) {
     const existing = snapshots.find(s => s.month === monthStr);
     let initialDate = `${monthStr}-01`;
@@ -368,7 +356,6 @@ export default function LedgerPage() {
     }
   };
 
-  // 保存
   async function handleSave() {
     if (!userId) return;
     if (modalType === "deposit") {
@@ -395,7 +382,6 @@ export default function LedgerPage() {
     fetchData(userId);
   }
 
-  // 保存对账
   async function handleSaveSnapshot() {
     if (!userId) return;
     const detailObj: Record<string, any> = {};
@@ -424,7 +410,6 @@ export default function LedgerPage() {
     fetchData(userId);
   }
 
-  // ---------- 核心逻辑：月报与流水合并 ----------
   const monthReport = useMemo(() => {
     const currentY = new Date().getFullYear();
     const currentM = new Date().getMonth() + 1;
@@ -554,41 +539,6 @@ export default function LedgerPage() {
     return Object.entries(groups).sort((a, b) => b[0].localeCompare(a[0]));
   }, [paginatedTransactions]);
 
-  // 监听滚动联动年份
-  const handleScroll = useCallback((e: React.UIEvent<HTMLDivElement>) => {
-    const container = e.currentTarget;
-    const rows = container.querySelectorAll('[data-month]');
-    const containerRect = container.getBoundingClientRect();
-    
-    for (let i = 0; i < rows.length; i++) {
-      const row = rows[i] as HTMLElement;
-      const rowRect = row.getBoundingClientRect();
-      if (rowRect.bottom > containerRect.top + 10) {
-        const m = row.getAttribute('data-month');
-        if (m) {
-          const y = m.slice(0, 4);
-          if (y !== viewYear) setViewYear(y);
-        }
-        break;
-      }
-    }
-  }, [viewYear]);
-
-  const scrollToYear = (y: string) => {
-    if (!listRef.current) return;
-    const currentY = new Date().getFullYear().toString();
-    const currentM = new Date().getMonth() + 1;
-    const targetMonth = y === currentY ? `${y}-${String(currentM).padStart(2, '0')}` : `${y}-12`;
-    const row = listRef.current.querySelector(`[data-month="${targetMonth}"]`);
-    if (row) {
-      listRef.current.scrollTo({
-        top: (row as HTMLElement).offsetTop,
-        behavior: 'smooth'
-      });
-    }
-  };
-
-  // ★ 流水视图：按不同维度排序并过滤
   const socialListData = useMemo(() => {
     let data = socials.filter(s => s.owner === (subTab === "bin" ? "斌" : "贝"));
     if (searchTerm) {
@@ -610,7 +560,6 @@ export default function LedgerPage() {
     return data;
   }, [socials, subTab, listSort, listSortDesc, searchTerm]);
 
-  // ★ 按人算视图：组合筛选与排序
   const socialAnalytics = useMemo(() => {
     const data = socials.filter(s => s.owner === (subTab === "bin" ? "斌" : "贝"));
     const map: Record<string, { person: string, send: number, recv: number }> = {};
@@ -639,7 +588,6 @@ export default function LedgerPage() {
   const paginatedSocials = socialAnalytics.slice((socialPage - 1) * PAGE_SIZE, socialPage * PAGE_SIZE);
   const paginatedSocialList = socialListData.slice((socialPage - 1) * PAGE_SIZE, socialPage * PAGE_SIZE);
 
-  // 心意
   const giftAnalytics = useMemo(() => {
     let data = gifts.filter(g => g.owner === (subTab === "bin" ? "斌" : "贝"));
     if (searchTerm) data = data.filter(g => g.person.includes(searchTerm));
@@ -780,7 +728,6 @@ export default function LedgerPage() {
           <input type="text" placeholder="搜索..." value={searchTerm} onChange={e => setSearchTerm(e.target.value)} className="w-full px-4 py-2.5 bg-white/60 backdrop-blur-md border border-white/50 rounded-2xl text-[13px] outline-none focus:border-purple-400 transition-all" />
         </div>
 
-        {/* 顶部Tab：苹果级液态玻璃感 */}
         <div className="relative flex bg-slate-200/50 backdrop-blur-md p-1 rounded-2xl mb-4 sticky top-2 z-20 border border-white/40 shadow-sm">
           <div className="absolute top-1 bottom-1 bg-white rounded-xl shadow-sm transition-transform duration-300" style={{ width: "calc(25% - 2px)", transform: `translateX(${activeTabIndex * 100}%)`, left: "4px" }} />
           {TABS.map(tab => (
@@ -788,11 +735,10 @@ export default function LedgerPage() {
           ))}
         </div>
 
-        {/* ================== 资金 Tab ================== */}
         {activeTab === "deposit" && (
           <div className="animate-fade-in space-y-6">
             
-            {/* 资产大卡片，改版：去掉内框，两列排版 */}
+            {/* ★ 大卡片：支持折叠展开 */}
             <div 
               onMouseDown={handleAssetPressStart}
               onMouseUp={handleAssetPressEnd}
@@ -807,19 +753,28 @@ export default function LedgerPage() {
               <div className="absolute bottom-0 left-0 w-48 h-48 bg-fuchsia-400/30 rounded-full blur-2xl -ml-10 -mb-10 pointer-events-none"></div>
               
               <div className="relative z-10">
-                <div className="text-[13px] text-white/80 font-medium tracking-widest mb-1">当前总资产（元）</div>
-                <div className="text-white tracking-tight flex items-baseline text-[44px] mb-6">
-                  <span className="text-[24px] mr-1">¥</span>
-                  {animatedAssets.toLocaleString("zh-CN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                {/* 头部：点击展开/收起 */}
+                <div className="flex items-center justify-between mb-2 cursor-pointer" onClick={(e) => { e.stopPropagation(); setIsAssetExpanded(!isAssetExpanded); }}>
+                  <div>
+                    <div className="text-[13px] text-white/80 font-medium tracking-widest mb-1">当前总资产（元）</div>
+                    <div className="text-white tracking-tight flex items-baseline text-[36px] sm:text-[44px]">
+                      <span className="text-[24px] mr-1">¥</span>
+                      {animatedAssets.toLocaleString("zh-CN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                    </div>
+                  </div>
+                  <div className={`w-8 h-8 rounded-full bg-white/10 flex items-center justify-center backdrop-blur transition-transform duration-300 ${isAssetExpanded ? "rotate-180" : ""}`}>
+                    <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" /></svg>
+                  </div>
                 </div>
                 
-                <div>
-                  <div className="grid grid-cols-2 gap-3 mt-4">
+                {/* 展开区域：各个子账户详情 */}
+                <div className={`transition-all duration-500 ease-in-out overflow-hidden ${isAssetExpanded ? "max-h-[600px] opacity-100 mt-5" : "max-h-0 opacity-0 mt-0"}`}>
+                  <div className="grid grid-cols-2 gap-3">
                     {Object.entries(displayDist).length === 0 ? (
                       <div className="col-span-2 text-[11px] text-white/60">暂无明细</div>
                     ) : (
                       Object.entries(displayDist).map(([name, amount]) => (
-                        <div key={name} className="bg-white/10 rounded-xl p-3 flex flex-col justify-between border border-white/5">
+                        <div key={name} className="bg-white/10 rounded-xl p-3 flex flex-col justify-between border border-white/5 backdrop-blur-sm">
                           <span className="text-[11px] text-white/70 mb-1">{name}</span>
                           <span className="text-[15px] font-mono font-bold text-white">
                             ¥{Number(amount).toLocaleString("zh-CN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
@@ -832,70 +787,69 @@ export default function LedgerPage() {
               </div>
             </div>
 
-            {/* ★ 月报汇总 */}
-              <div 
-                ref={listRef}
-                onScroll={handleScroll}
-                className="max-h-[320px] overflow-y-auto no-scrollbar relative bg-white rounded-2xl"
-              >
-                {monthReport.map((m, index) => {
-                  const formatAmt = (val: number | null) => val !== null ? val.toLocaleString("zh-CN", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : "-";
+            {/* ★ 月报汇总：UI 优化，字体不拥挤 */}
+            <div 
+              ref={listRef}
+              className="max-h-[320px] overflow-y-auto no-scrollbar relative bg-white rounded-2xl shadow-sm border border-slate-100"
+            >
+              {monthReport.map((m, index) => {
+                const formatAmt = (val: number | null) => val !== null ? val.toLocaleString("zh-CN", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : "-";
 
-                  return (
-                    <div 
-                      key={m.month} 
-                      data-month={m.month}
-                      onClick={() => openSnapshot(m.month)} 
-                      className="flex flex-col px-5 py-3.5 hover:bg-slate-50/80 cursor-pointer transition-colors border-b border-slate-100 last:border-b-0"
-                    >
-                      {/* 主信息：月份 和 月底余额 */}
-                      <div className="flex justify-between items-center mb-1.5">
-                        <span className="text-[15px] font-bold text-slate-800">{m.month.slice(5)}月</span>
-                        
-                        <div className="flex items-baseline gap-1.5">
-                          <span className="text-[10px] text-slate-400 font-medium">月底</span>
-                          <span className="text-[17px] font-bold text-slate-900 font-mono tracking-tight">
-                            {m.calcEndBalance ? `¥${formatAmt(m.calcEndBalance)}` : "-"}
-                          </span>
-                        </div>
-                      </div>
-
-                      {/* 副信息：进、出、月初、差 */}
-                      <div className="flex justify-between items-center text-[11px] font-mono text-slate-400">
-                        <div className="flex gap-4">
-                          <span>
-                            进 <span className={m.income > 0 ? "text-rose-400" : "text-slate-300"}>
-                              {m.income > 0 ? `+${formatAmt(m.income)}` : "-"}
-                            </span>
-                          </span>
-                          <span>
-                            出 <span className={m.expense > 0 ? "text-emerald-500" : "text-slate-300"}>
-                              {m.expense > 0 ? `-${formatAmt(m.expense)}` : "-"}
-                            </span>
-                          </span>
-                        </div>
-                        
-                        <div className="flex gap-4">
-                          <span>
-                            月初 <span className="text-slate-500">{m.startBalance ? formatAmt(m.startBalance) : "-"}</span>
-                          </span>
-                          <span>
-                            差 <span className={`font-bold ${
-                              m.diff !== null && m.diff !== 0
-                                ? (m.diff > 0 ? "text-rose-500" : "text-emerald-500") 
-                                : "text-slate-300"
-                            }`}>
-                              {m.diff !== null ? (m.diff > 0 ? `+${formatAmt(m.diff)}` : formatAmt(m.diff)) : "-"}
-                            </span>
-                          </span>
-                        </div>
+                return (
+                  <div 
+                    key={m.month} 
+                    data-month={m.month}
+                    onClick={() => openSnapshot(m.month)} 
+                    className="flex flex-col px-5 py-4 hover:bg-slate-50/80 cursor-pointer transition-colors border-b border-slate-100 last:border-b-0"
+                  >
+                    {/* 主信息：月份 和 月底余额 */}
+                    <div className="flex justify-between items-center mb-2">
+                      <span className="text-[15px] font-bold text-slate-800">{m.month.slice(5)}月</span>
+                      
+                      <div className="flex items-baseline gap-2">
+                        <span className="text-[10px] text-slate-400 font-medium">月底</span>
+                        <span className="text-[18px] font-bold text-slate-900 font-mono tracking-tight">
+                          {m.calcEndBalance ? `¥${formatAmt(m.calcEndBalance)}` : "-"}
+                        </span>
                       </div>
                     </div>
-                  );
-                })}
-              </div>
 
-            {/* 流水明细（已合并对账记录） */}
+                    {/* 副信息：进、出、月初、差 */}
+                    <div className="flex justify-between items-center text-[11px] font-mono text-slate-400">
+                      <div className="flex gap-5">
+                        <span>
+                          进 <span className={m.income > 0 ? "text-rose-400" : "text-slate-300"}>
+                            {m.income > 0 ? `+${formatAmt(m.income)}` : "-"}
+                          </span>
+                        </span>
+                        <span>
+                          出 <span className={m.expense > 0 ? "text-emerald-500" : "text-slate-300"}>
+                            {m.expense > 0 ? `-${formatAmt(m.expense)}` : "-"}
+                          </span>
+                        </span>
+                      </div>
+                      
+                      <div className="flex gap-5">
+                        <span>
+                          月初 <span className="text-slate-500">{m.startBalance ? formatAmt(m.startBalance) : "-"}</span>
+                        </span>
+                        <span>
+                          差 <span className={`font-bold ${
+                            m.diff !== null && m.diff !== 0
+                              ? (m.diff > 0 ? "text-rose-500" : "text-emerald-500") 
+                              : "text-slate-300"
+                          }`}>
+                            {m.diff !== null ? (m.diff > 0 ? `+${formatAmt(m.diff)}` : formatAmt(m.diff)) : "-"}
+                          </span>
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+
+            {/* 流水明细 */}
             <div>
               <div className="text-[15px] font-bold text-slate-800 mb-3 px-1">流水明细</div>
               {groupedPageTransactions.map(([month, txs]) => (
@@ -950,7 +904,6 @@ export default function LedgerPage() {
                 </div>
               </div>
               
-              {/* ★ 流水视图：排序工具栏 */}
               {socialView === "list" && (
                 <div className="flex justify-end items-center mt-2">
                   <div className="flex items-center gap-1 bg-white/80 backdrop-blur-md border border-white/50 rounded-xl px-2 py-1 shadow-sm">
@@ -971,7 +924,6 @@ export default function LedgerPage() {
                 </div>
               )}
 
-              {/* ★ 按人算视图：筛选与排序工具栏 */}
               {socialView === "summary" && (
                 <div className="flex justify-between items-center mt-2 flex-wrap gap-2">
                   <div className="flex gap-1.5 overflow-x-auto no-scrollbar">
@@ -1006,7 +958,6 @@ export default function LedgerPage() {
               )}
             </div>
 
-            {/* 美化背景的人情看板 */}
             <div className="grid grid-cols-2 gap-3 mb-4">
               <div className="bg-gradient-to-br from-indigo-50/80 to-white backdrop-blur-md rounded-3xl p-4 shadow-sm border border-indigo-100/50 flex flex-col justify-between">
                 <div className="text-[11px] text-slate-500 mb-1">待回礼 (净人情)</div>
@@ -1208,7 +1159,7 @@ export default function LedgerPage() {
         )}
       </div>
 
-      {/* ★ 悬浮按钮（去掉底部全局加号后，各页面自带） */}
+      {/* 悬浮按钮 */}
       <button onClick={openAdd} className="fixed z-40 flex items-center justify-center w-14 h-14 rounded-full bg-white/30 backdrop-blur-2xl border border-white/50 shadow-[0_8px_32px_rgba(0,0,0,0.15)] text-purple-700 hover:text-purple-800 active:scale-90 transition-all duration-300" style={{ bottom: "calc(100px + env(safe-area-inset-bottom))", right: "20px" }}>
         <svg className="w-7 h-7" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2.5}><path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" /></svg>
       </button>
@@ -1240,7 +1191,6 @@ export default function LedgerPage() {
                   <div className="grid grid-cols-2 gap-3">
                     <div><label className="block text-[11px] text-slate-500 mb-1.5">收支类型</label>{isEditing ? <div className="segment-group flex bg-slate-100/80 p-1 rounded-xl"><button onClick={() => setDepositType("转入")} className={`flex-1 py-2 text-[13px] font-medium rounded-lg transition-all ${depositType === "转入" ? "bg-white shadow-sm text-slate-900" : "text-slate-500"}`}>转入</button><button onClick={() => setDepositType("转出")} className={`flex-1 py-2 text-[13px] font-medium rounded-lg transition-all ${depositType === "转出" ? "bg-white shadow-sm text-slate-900" : "text-slate-500"}`}>转出</button></div> : <div className="text-[14px] text-slate-800">{depositType}</div>}</div>
                     
-                    {/* ★ 图五：所属账户支持输入和提示 */}
                     <div className="relative">
                       <label className="block text-[11px] text-slate-500 mb-1.5">所属账户</label>
                       {isEditing ? (
@@ -1406,7 +1356,6 @@ export default function LedgerPage() {
         </div>
       )}
 
-      {/* 对账弹窗 */}
       {modalType === "snapshot" && (
         <div className="fixed inset-0 z-[100] flex items-end sm:items-center justify-center sm:px-6">
           <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" onClick={() => setModalType(null)} />

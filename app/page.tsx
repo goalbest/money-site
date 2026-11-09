@@ -12,8 +12,6 @@ import AddModal from "./components/AddModal";
 const CalendarView = dynamic(() => import("./components/CalendarView"), { ssr: false });
 const MonitorPanel = dynamic(() => import("./components/MonitorPanel"), { ssr: false });
 
-// ★ 修复 1：把 showAddModal 移除了，放到组件内部去
-
 function daysAgoStr(n: number): string {
   const d = new Date();
   d.setDate(d.getDate() - n);
@@ -28,20 +26,18 @@ export default function HomePage() {
   const [loading, setLoading] = useState(true);
   const [privacy, setPrivacy] = useState(false);
   const [nowStr, setNowStr] = useState("");
-  const [scrolled, setScrolled] = useState(false);
   const [view, setView] = useState<View>("all");
   const [mounted, setMounted] = useState(false);
   
-  // ★ 新增：控制加号按钮是否隐藏
+  // 控制加号按钮是否隐藏
   const [hideFab, setHideFab] = useState(false);
   
-  // ★ 修复 1：将 showAddModal 放在 HomePage 内部
+  // 弹窗状态
   const [showAddModal, setShowAddModal] = useState(false);
 
   useEffect(() => {
     const onScroll = () => {
-      setScrolled(window.scrollY > 180);
-      setHideFab(window.scrollY > 150); // ★ 滑动超过 150px 隐藏加号
+      setHideFab(window.scrollY > 150); // 滑动超过 150px 隐藏加号
     };
     window.addEventListener("scroll", onScroll, { passive: true });
     return () => window.removeEventListener("scroll", onScroll);
@@ -127,25 +123,7 @@ export default function HomePage() {
 
   return (
     <div className="min-h-screen pb-24 bg-slate-50">
-      {mounted && (
-        <div className={`fixed top-0 left-0 right-0 z-50 pointer-events-none pt-4 px-4 transition-all duration-300 ${scrolled ? "translate-y-0 opacity-100" : "-translate-y-full opacity-0"}`}>
-          <div className="max-w-md mx-auto pointer-events-auto bg-white/70 backdrop-blur-xl border border-white/50 shadow-[0_8px_32px_rgba(0,0,0,0.08)] rounded-full px-5 py-2.5 flex items-center justify-between">
-            <div className="flex flex-col">
-              <span className="text-[10px] text-slate-500 font-medium">总资产</span>
-              <span className="font-mono font-bold text-[15px] text-slate-900 tracking-tight">¥{privacy ? "••••" : globalStats.totalAssets.toLocaleString("zh-CN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
-            </div>
-            <div className="flex items-center gap-4">
-              <div className="flex flex-col items-end">
-                <span className="text-[10px] text-slate-500 font-medium">今日收益</span>
-                <span className={`font-mono font-bold text-[14px] ${globalStats.totalProfitToday > 0 ? "text-rose-500" : globalStats.totalProfitToday < 0 ? "text-emerald-500" : "text-slate-700"}`}>{fmtProfit(globalStats.totalProfitToday)}</span>
-              </div>
-              <button onClick={() => setPrivacy(p => !p)} className="w-8 h-8 rounded-full bg-white/80 border border-slate-200 flex items-center justify-center active:scale-90 transition-all">
-                {privacy ? <svg className="w-3.5 h-3.5 text-slate-500" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}><path d="M17.94 17.94A10.07 10.07 0 0112 20c-7 0-11-8-11-8a18.45 18.45 0 015.06-5.94M9.9 4.24A9.12 9.12 0 0112 4c7 0 11 8 11 8a18.5 18.5 0 01-2.16 3.19m-6.72-1.07a3 3 0 11-4.24-4.24M1 1l22 22" strokeLinecap="round" strokeLinejoin="round" /></svg> : <svg className="w-3.5 h-3.5 text-slate-500" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" strokeLinecap="round" strokeLinejoin="round" /><circle cx="12" cy="12" r="3" strokeLinecap="round" strokeLinejoin="round" /></svg>}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      {/* ★ 顶部悬浮条已按需求删除 */}
 
       <div className="container mx-auto px-5 pt-8 max-w-3xl">
         <div className="flex items-center gap-3 mb-5">
@@ -153,6 +131,10 @@ export default function HomePage() {
             <div className="text-[22px] font-bold tracking-tight text-slate-900">理财助手</div>
             <div className="text-[12px] text-slate-400 mt-0.5">{nowStr}</div>
           </div>
+          {/* ★ 悬浮条删了，视力保护按钮移到了右上角，方便随时切换隐私 */}
+          <button onClick={() => setPrivacy(p => !p)} className="w-9 h-9 rounded-full bg-white border border-slate-200 flex items-center justify-center active:scale-90 transition-all shadow-sm">
+            {privacy ? <svg className="w-4 h-4 text-slate-500" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}><path d="M17.94 17.94A10.07 10.07 0 0112 20c-7 0-11-8-11-8a18.45 18.45 0 015.06-5.94M9.9 4.24A9.12 9.12 0 0112 4c7 0 11 8 11 8a18.5 18.5 0 01-2.16 3.19m-6.72-1.07a3 3 0 11-4.24-4.24M1 1l22 22" strokeLinecap="round" strokeLinejoin="round" /></svg> : <svg className="w-4 h-4 text-slate-500" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" strokeLinecap="round" strokeLinejoin="round" /><circle cx="12" cy="12" r="3" strokeLinecap="round" strokeLinejoin="round" /></svg>}
+          </button>
         </div>
 
         {loading ? (
@@ -210,12 +192,11 @@ export default function HomePage() {
         <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2.5}><path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" /></svg>
       </button>
       
-      {/* ★ 修复 2：全屏添加产品弹窗的语法错误 */}
+      {/* ★ 全屏添加产品弹窗 */}
       {showAddModal && (
         <div className="fixed inset-0 z-[200] bg-white overflow-y-auto">
           <AddModal onClose={() => {
             setShowAddModal(false);
-            // 关闭弹窗后，为了能看到最新数据，最好刷新一下页面
             window.location.reload(); 
           }} />
         </div>
