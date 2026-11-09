@@ -14,7 +14,10 @@ export default function LoginPage() {
   const [loading, setLoading] = useState(false);
   const router = useRouter();
 
-  async function handleSubmit() {
+    async function handleSubmit() {
+    // 1. 最直接的第一步拦截，如果连这个都没弹，说明点击事件都没触发
+    alert("进入登录函数，账号：" + account);
+    
     if (loading) return;
 
     if (!account) return (setMsg("请输入手机号或用户名"), setMsgType("err"));
@@ -23,26 +26,56 @@ export default function LoginPage() {
     setLoading(true);
     setMsg("登录中..."); setMsgType("info");
 
-    let query = supabase.from("users").select("id, role").eq("password", password);
-    
-    // ★ 核心逻辑：如果是纯 11 位数字，就查手机号；否则查老用户名
-    if (/^\d{11}$/.test(account)) {
-      query = query.eq("phone", account);
-    } else {
-      query = query.eq("username", account);
-    }
+    try {
+      // 2. 检查 Supabase 实例是否存在
+      alert("准备发起请求，Supabase对象：" + (supabase ? "已加载" : "加载失败"));
 
-    const { data, error } = await query.maybeSingle();
+      let query = supabase.from("users").select("id, role").eq("password", password);
+      
+      if (/^\d{11}$/.test(account)) {
+        query = query.eq("phone", account);
+      } else {
+        query = query.eq("username", account);
+      }
 
-    if (error || !data) {
-      setMsg("账号或密码错误"); setMsgType("err");
-      setLoading(false);
-    } else {
+      // 3. 强制加上超时机制，防止一直卡住
+      const fetchPromise = query.maybeSingle();
+      const timeoutPromise = new Promise((_, reject) => 
+        setTimeout(() => reject(new Error("网络请求超时（10秒无响应）")), 10000)
+      );
+
+      const { data, error } = await Promise.race([fetchPromise, timeoutPromise]) as any;
+
+      // 4. 看看有没有返回错误
+      if (error) {
+        alert("数据库返回错误: " + error.message);
+        setMsg(`数据库错误: ${error.message}`); setMsgType("err");
+        setLoading(false);
+        return;
+      }
+
+      if (!data) {
+        alert("查询成功，但没找到这个账号密码");
+        setMsg("账号或密码错误"); setMsgType("err");
+        setLoading(false);
+        return;
+      }
+
+      // 5. 成功逻辑
+      alert("登录成功，准备跳转！");
       localStorage.setItem("username", account);
       localStorage.setItem("user_id", String(data.id));
       localStorage.setItem("role", data.role || "user");
       setMsg("登录成功，正在跳转..."); setMsgType("ok");
       setTimeout(() => { router.push("/"); router.refresh(); }, 800);
+      
+    } catch (err: any) {
+      // 6. 捕获所有 Promise 抛出的异常
+      alert("请求抛出异常: " + err.message);
+      console.error("Fetch Error:", err);
+      setMsg(`网络请求失败，请检查手机网络。详细错误: ${err.message}`); 
+      setMsgType("err");
+      setLoading(false);
     }
   }
 

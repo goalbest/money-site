@@ -12,7 +12,6 @@ type SocialViewMode = "list" | "summary";
 type SocialStatusFilter = "all" | "unsettled" | "to_receive" | "to_return" | "settled";
 type GiftViewMode = "list" | "by_person" | "by_year";
 type SocialSort = "default" | "amount" | "name";
-// ★ 新增流水排序类型
 type ListSort = "date" | "amount" | "name";
 
 const TABS = [
@@ -22,7 +21,7 @@ const TABS = [
   { key: "notes", label: "随手记" },
 ];
 
-const ACCOUNTS = ["余额", "理财", "基金", "股票", "借款", "日常"];
+const DEFAULT_ACCOUNTS = ["余额", "理财", "基金", "股票", "借款", "日常"];
 const PRESET_CATEGORIES = ["理财收益", "大额消费", "教育", "日常", "其他"];
 const NOTE_TARGETS = ["存款", "人情·斌", "人情·贝", "心意·斌", "心意·贝", "待定"];
 const PAGE_SIZE = 20;
@@ -74,21 +73,16 @@ export default function LedgerPage() {
   const [socialStatus, setSocialStatus] = useState<SocialStatusFilter>("all");
   const [socialSort, setSocialSort] = useState<SocialSort>("default");
   const [socialSortDesc, setSocialSortDesc] = useState(true); 
-  
-  // ★ 新增：流水视图的排序状态
   const [listSort, setListSort] = useState<ListSort>("date");
   const [listSortDesc, setListSortDesc] = useState(true);
-
   const [giftView, setGiftView] = useState<GiftViewMode>("list");
   
-  // 折叠状态
-  const [summaryCollapsed, setSummaryCollapsed] = useState(false);
 
   // 月报年份切换
   const currentYearStr = new Date().getFullYear().toString();
   const [viewYear, setViewYear] = useState(currentYearStr);
   const listRef = useRef<HTMLDivElement>(null);
-
+  
   // 数据
   const [transactions, setTransactions] = useState<any[]>([]);
   const [socials, setSocials] = useState<any[]>([]);
@@ -106,9 +100,10 @@ export default function LedgerPage() {
   const pressTimer = useRef<NodeJS.Timeout | null>(null);
   const [dragIdx, setDragIdx] = useState<number | null>(null);
 
-  // 智能提示状态
+  // ★ 智能提示状态
   const [showNameSuggest, setShowNameSuggest] = useState(false);
   const [showReasonSuggest, setShowReasonSuggest] = useState(false);
+  const [showAccountSuggest, setShowAccountSuggest] = useState(false); // 账户输入提示
 
   // 资金表单状态
   const [formDate, setFormDate] = useState(new Date().toISOString().split("T")[0]);
@@ -184,6 +179,20 @@ export default function LedgerPage() {
 
     setLoading(false);
   }
+
+  // ★ 动态提取所有历史账户名
+  const allAccountNames = useMemo(() => {
+    const names = new Set<string>(DEFAULT_ACCOUNTS);
+    transactions.forEach(t => { if (t.account) names.add(t.account); });
+    snapshots.forEach(s => {
+      if (s.details) {
+        Object.keys(s.details).forEach(k => {
+          if (k !== "_order" && k !== "_locked" && k !== "start_balance" && k !== "snapshotDate") names.add(k);
+        });
+      }
+    });
+    return Array.from(names);
+  }, [transactions, snapshots]);
 
   // 提取历史姓名与事由用于智能提示
   const existingNames = useMemo(() => {
@@ -307,7 +316,7 @@ export default function LedgerPage() {
     setIsEditing(true); setModalType(activeTab);
   }
 
-  // 打开对账弹窗，联动日期
+  // 打开对账弹窗
   function openSnapshot(monthStr: string) {
     const existing = snapshots.find(s => s.month === monthStr);
     let initialDate = `${monthStr}-01`;
@@ -707,10 +716,10 @@ export default function LedgerPage() {
     const totalPages = Math.ceil(total / PAGE_SIZE);
     if (totalPages <= 1) return null;
     return (
-      <div className="flex items-center justify-between mt-4 mb-2 bg-white rounded-xl p-2 border border-slate-100 shadow-sm">
-        <button onClick={() => setPage((p: number) => Math.max(1, p - 1))} disabled={page === 1} className="px-4 py-1.5 text-[12px] font-medium text-slate-600 hover:text-purple-600 disabled:opacity-30 bg-slate-50 rounded-lg">上一页</button>
+      <div className="flex items-center justify-between mt-4 mb-2 bg-white/80 backdrop-blur rounded-xl p-2 border border-slate-100 shadow-sm">
+        <button onClick={() => setPage((p: number) => Math.max(1, p - 1))} disabled={page === 1} className="px-4 py-1.5 text-[12px] font-medium text-slate-600 hover:text-purple-600 disabled:opacity-30 bg-slate-50 rounded-lg transition-all">上一页</button>
         <span className="text-[12px] text-slate-500 font-mono">第 <span className="text-purple-600 font-bold">{page}</span> / {totalPages} 页</span>
-        <button onClick={() => setPage((p: number) => Math.min(totalPages, p + 1))} disabled={page === totalPages} className="px-4 py-1.5 text-[12px] font-medium text-slate-600 hover:text-purple-600 disabled:opacity-30 bg-slate-50 rounded-lg">下一页</button>
+        <button onClick={() => setPage((p: number) => Math.min(totalPages, p + 1))} disabled={page === totalPages} className="px-4 py-1.5 text-[12px] font-medium text-slate-600 hover:text-purple-600 disabled:opacity-30 bg-slate-50 rounded-lg transition-all">下一页</button>
       </div>
     );
   };
@@ -757,24 +766,25 @@ export default function LedgerPage() {
             <div className="text-[12px] text-slate-400 mt-0.5">流水分析 · 资产透视</div>
           </div>
           <div className="flex gap-2 items-center">
-            <button onClick={handleExport} className="px-3 py-2 bg-white border border-slate-200 text-slate-700 text-[13px] font-medium rounded-xl shadow-sm hover:bg-slate-50 flex items-center gap-1">
+            <button onClick={handleExport} className="px-3 py-2 bg-white/60 backdrop-blur-md border border-white/50 text-slate-700 text-[13px] font-medium rounded-2xl shadow-sm hover:bg-white transition-all flex items-center gap-1">
               <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" /></svg>
               导出
             </button>
-            <button onClick={() => setIsSearchOpen(!isSearchOpen)} className={`w-9 h-9 flex items-center justify-center rounded-xl border transition-all ${isSearchOpen ? "bg-purple-50 border-purple-200 text-purple-600" : "bg-white border-slate-200 text-slate-600"}`}>
+            <button onClick={() => setIsSearchOpen(!isSearchOpen)} className={`w-9 h-9 flex items-center justify-center rounded-2xl border backdrop-blur-md transition-all ${isSearchOpen ? "bg-purple-50/80 border-purple-200 text-purple-600" : "bg-white/60 border-white/50 text-slate-600"}`}>
               <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" /></svg>
             </button>
           </div>
         </div>
         
         <div className={`overflow-hidden transition-all duration-300 ${isSearchOpen ? "max-h-20 mb-4 opacity-100" : "max-h-0 opacity-0"}`}>
-          <input type="text" placeholder="搜索..." value={searchTerm} onChange={e => setSearchTerm(e.target.value)} className="w-full px-4 py-2.5 bg-white border border-slate-200 rounded-xl text-[13px] outline-none focus:border-purple-400" />
+          <input type="text" placeholder="搜索..." value={searchTerm} onChange={e => setSearchTerm(e.target.value)} className="w-full px-4 py-2.5 bg-white/60 backdrop-blur-md border border-white/50 rounded-2xl text-[13px] outline-none focus:border-purple-400 transition-all" />
         </div>
 
-        <div className="relative flex bg-slate-200/60 p-1 rounded-xl mb-4 sticky top-2 z-20">
-          <div className="absolute top-1 bottom-1 bg-white rounded-lg shadow-sm transition-transform duration-300" style={{ width: "calc(25% - 2px)", transform: `translateX(${activeTabIndex * 100}%)`, left: "4px" }} />
+        {/* 顶部Tab：苹果级液态玻璃感 */}
+        <div className="relative flex bg-slate-200/50 backdrop-blur-md p-1 rounded-2xl mb-4 sticky top-2 z-20 border border-white/40 shadow-sm">
+          <div className="absolute top-1 bottom-1 bg-white rounded-xl shadow-sm transition-transform duration-300" style={{ width: "calc(25% - 2px)", transform: `translateX(${activeTabIndex * 100}%)`, left: "4px" }} />
           {TABS.map(tab => (
-            <button key={tab.key} onClick={() => { setActiveTab(tab.key as TabType); setSearchTerm(""); setIsSearchOpen(false); }} className={`flex-1 py-2.5 text-[13px] font-medium relative z-10 transition-colors ${activeTab === tab.key ? "text-purple-600" : "text-slate-500"}`}>{tab.label}</button>
+            <button key={tab.key} onClick={() => { setActiveTab(tab.key as TabType); setSearchTerm(""); setIsSearchOpen(false); }} className={`flex-1 py-2.5 text-[13px] font-medium relative z-10 transition-colors rounded-xl ${activeTab === tab.key ? "text-purple-600" : "text-slate-500"}`}>{tab.label}</button>
           ))}
         </div>
 
@@ -782,6 +792,7 @@ export default function LedgerPage() {
         {activeTab === "deposit" && (
           <div className="animate-fade-in space-y-6">
             
+            {/* 资产大卡片，改版：去掉内框，两列排版 */}
             <div 
               onMouseDown={handleAssetPressStart}
               onMouseUp={handleAssetPressEnd}
@@ -790,112 +801,99 @@ export default function LedgerPage() {
               onTouchEnd={handleAssetPressEnd}
               onTouchMove={handleAssetPressEnd}
               onContextMenu={(e) => e.preventDefault()}
-              className="relative overflow-hidden rounded-3xl bg-gradient-to-br from-violet-500 via-purple-500 to-fuchsia-500 p-6 shadow-xl shadow-purple-500/20 cursor-pointer select-none active:scale-[0.99] transition-transform"
+              className="relative overflow-hidden rounded-[32px] bg-gradient-to-br from-violet-500 via-purple-500 to-fuchsia-500 p-6 shadow-xl shadow-purple-500/20 cursor-pointer select-none active:scale-[0.99] transition-transform"
             >
               <div className="absolute top-0 right-0 w-64 h-64 bg-white/20 rounded-full blur-3xl -mr-20 -mt-20 pointer-events-none"></div>
               <div className="absolute bottom-0 left-0 w-48 h-48 bg-fuchsia-400/30 rounded-full blur-2xl -ml-10 -mb-10 pointer-events-none"></div>
               
               <div className="relative z-10">
-                <button onClick={(e) => { e.stopPropagation(); setSummaryCollapsed(c => !c); }} className="absolute top-0 right-0 w-8 h-8 rounded-full bg-white/15 hover:bg-white/25 flex items-center justify-center transition-all duration-300 active:scale-90">
-                  <svg className={`w-4 h-4 text-white transition-transform duration-300 ${summaryCollapsed ? "rotate-180" : ""}`} fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2.5}><path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" /></svg>
-                </button>
-
                 <div className="text-[13px] text-white/80 font-medium tracking-widest mb-1">当前总资产（元）</div>
-                <div className={`text-white tracking-tight flex items-baseline transition-all duration-300 ${summaryCollapsed ? "text-[32px]" : "text-[44px] mb-6"}`}>
+                <div className="text-white tracking-tight flex items-baseline text-[44px] mb-6">
                   <span className="text-[24px] mr-1">¥</span>
                   {animatedAssets.toLocaleString("zh-CN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                 </div>
                 
-                <div className={`overflow-hidden transition-all duration-500 ${summaryCollapsed ? "max-h-0 opacity-0" : "max-h-[500px] opacity-100"}`}>
-                  <div className="bg-white/10 backdrop-blur-md rounded-2xl p-3 border border-white/20">
-                    <div className="text-[11px] text-white/70 mb-2 font-medium px-1 flex justify-between">
-                      <span>最新资产分布 <span className="opacity-70 text-[9px]">(长按直接编辑)</span></span>
-                    </div>
-                    <div className="grid grid-cols-3 gap-2">
-                      {Object.entries(displayDist).length === 0 ? (
-                        <div className="col-span-3 text-[11px] text-white/60 px-1">暂无明细</div>
-                      ) : (
-                        Object.entries(displayDist).map(([name, amount]) => (
-                          <div key={name} className="bg-white/10 hover:bg-white/20 transition-colors px-2 py-1.5 rounded-xl flex flex-col border border-white/10 truncate">
-                            <span className="text-[10px] text-white/80 mb-0.5 truncate">{name}</span>
-                            <span className="text-[12px] font-mono font-bold text-white truncate">
-                              ¥{Number(amount).toLocaleString("zh-CN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                            </span>
-                          </div>
-                        ))
-                      )}
-                    </div>
+                <div>
+                  <div className="grid grid-cols-2 gap-3 mt-4">
+                    {Object.entries(displayDist).length === 0 ? (
+                      <div className="col-span-2 text-[11px] text-white/60">暂无明细</div>
+                    ) : (
+                      Object.entries(displayDist).map(([name, amount]) => (
+                        <div key={name} className="bg-white/10 rounded-xl p-3 flex flex-col justify-between border border-white/5">
+                          <span className="text-[11px] text-white/70 mb-1">{name}</span>
+                          <span className="text-[15px] font-mono font-bold text-white">
+                            ¥{Number(amount).toLocaleString("zh-CN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                          </span>
+                        </div>
+                      ))
+                    )}
                   </div>
                 </div>
               </div>
             </div>
 
             {/* ★ 月报汇总 */}
-            <div className="bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden">
-              <div className="flex items-center justify-center px-4 py-3 border-b border-slate-100 bg-slate-50/50">
-                <select 
-                  value={viewYear} 
-                  onChange={e => {
-                    setViewYear(e.target.value);
-                    scrollToYear(e.target.value);
-                  }} 
-                  className="text-[15px] font-bold text-slate-800 bg-transparent outline-none cursor-pointer appearance-none text-center"
-                >
-                  {[(new Date().getFullYear()+2).toString(), (new Date().getFullYear()+1).toString(), new Date().getFullYear().toString(), (new Date().getFullYear()-1).toString(), (new Date().getFullYear()-2).toString(), (new Date().getFullYear()-3).toString()].map(y => (
-                    <option key={y} value={y}>{y} 年月报</option>
-                  ))}
-                </select>
-              </div>
-
-              <div className="grid grid-cols-[1fr_1fr_1fr_1.2fr_1.2fr_1fr] gap-1 px-3 py-2 bg-slate-50 text-[10px] text-slate-400 font-medium border-b border-slate-100 text-center">
-                <div>月份</div>
-                <div>进</div>
-                <div>出</div>
-                <div>月初</div>
-                <div>月末</div>
-                <div>差</div>
-              </div>
-
               <div 
                 ref={listRef}
                 onScroll={handleScroll}
-                className="max-h-[320px] overflow-y-auto no-scrollbar relative"
+                className="max-h-[320px] overflow-y-auto no-scrollbar relative bg-white rounded-2xl"
               >
-                {monthReport.map(m => {
-                  const isRegistered = m.trueTotal !== null;
+                {monthReport.map((m, index) => {
+                  const formatAmt = (val: number | null) => val !== null ? val.toLocaleString("zh-CN", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : "-";
+
                   return (
                     <div 
                       key={m.month} 
                       data-month={m.month}
                       onClick={() => openSnapshot(m.month)} 
-                      className="grid grid-cols-[1fr_1fr_1fr_1.2fr_1.2fr_1fr] gap-1 px-3 py-3 items-center border-b border-slate-50 last:border-b-0 hover:bg-slate-50 cursor-pointer text-center"
+                      className="flex flex-col px-5 py-3.5 hover:bg-slate-50/80 cursor-pointer transition-colors border-b border-slate-100 last:border-b-0"
                     >
-                      <div className="flex flex-col items-center">
-                        <span className="text-[13px] font-bold text-slate-800">{m.month.slice(5)}月</span>
-                        <span className={`text-[9px] mt-0.5 px-1 py-0.2 rounded border ${isRegistered ? "bg-emerald-50 text-emerald-500 border-emerald-100" : "bg-amber-50 text-amber-500 border-amber-100"}`}>
-                          {isRegistered ? "已登" : "待登"}
-                        </span>
+                      {/* 主信息：月份 和 月底余额 */}
+                      <div className="flex justify-between items-center mb-1.5">
+                        <span className="text-[15px] font-bold text-slate-800">{m.month.slice(5)}月</span>
+                        
+                        <div className="flex items-baseline gap-1.5">
+                          <span className="text-[10px] text-slate-400 font-medium">月底</span>
+                          <span className="text-[17px] font-bold text-slate-900 font-mono tracking-tight">
+                            {m.calcEndBalance ? `¥${formatAmt(m.calcEndBalance)}` : "-"}
+                          </span>
+                        </div>
                       </div>
-                      <div className="text-[11px] text-rose-500 font-mono truncate">
-                        {m.income > 0 ? `+${m.income.toLocaleString()}` : "-"}
-                      </div>
-                      <div className="text-[11px] text-emerald-600 font-mono truncate">
-                        {m.expense > 0 ? `-${m.expense.toLocaleString()}` : "-"}
-                      </div>
-                      <div className="text-[11px] text-slate-500 font-mono truncate">
-                        {m.startBalance ? m.startBalance.toLocaleString() : "-"}
-                      </div>
-                      <div className="text-[12px] font-bold text-slate-800 font-mono truncate">
-                        {m.calcEndBalance ? m.calcEndBalance.toLocaleString() : "-"}
-                      </div>
-                      <div className={`text-[11px] font-mono font-bold truncate ${m.diff !== null ? (m.diff > 0 ? "text-rose-500" : m.diff < 0 ? "text-emerald-600" : "text-slate-400") : "text-slate-300"}`}>
-                        {m.diff !== null ? (m.diff > 0 ? `+${m.diff.toLocaleString()}` : m.diff.toLocaleString()) : "-"}
+
+                      {/* 副信息：进、出、月初、差 */}
+                      <div className="flex justify-between items-center text-[11px] font-mono text-slate-400">
+                        <div className="flex gap-4">
+                          <span>
+                            进 <span className={m.income > 0 ? "text-rose-400" : "text-slate-300"}>
+                              {m.income > 0 ? `+${formatAmt(m.income)}` : "-"}
+                            </span>
+                          </span>
+                          <span>
+                            出 <span className={m.expense > 0 ? "text-emerald-500" : "text-slate-300"}>
+                              {m.expense > 0 ? `-${formatAmt(m.expense)}` : "-"}
+                            </span>
+                          </span>
+                        </div>
+                        
+                        <div className="flex gap-4">
+                          <span>
+                            月初 <span className="text-slate-500">{m.startBalance ? formatAmt(m.startBalance) : "-"}</span>
+                          </span>
+                          <span>
+                            差 <span className={`font-bold ${
+                              m.diff !== null && m.diff !== 0
+                                ? (m.diff > 0 ? "text-rose-500" : "text-emerald-500") 
+                                : "text-slate-300"
+                            }`}>
+                              {m.diff !== null ? (m.diff > 0 ? `+${formatAmt(m.diff)}` : formatAmt(m.diff)) : "-"}
+                            </span>
+                          </span>
+                        </div>
                       </div>
                     </div>
                   );
                 })}
               </div>
-            </div>
 
             {/* 流水明细（已合并对账记录） */}
             <div>
@@ -903,12 +901,12 @@ export default function LedgerPage() {
               {groupedPageTransactions.map(([month, txs]) => (
                 <div key={month} className="mb-5">
                   <div className="text-[12px] font-bold text-slate-500 mb-2 px-1">{month.replace("-", " 年 ")} 月</div>
-                  <div className="card overflow-hidden">
+                  <div className="bg-white/80 backdrop-blur-md rounded-2xl shadow-sm border border-white/50 overflow-hidden">
                     {txs.map((t, idx) => {
                       const isSnapshot = t.isSnapshot;
                       const isIncome = t.type === "转入";
                       return (
-                        <div key={t.id} onClick={() => { if (isSnapshot) { openSnapshot(t.original.month); } else { openDetail(t, "deposit"); } }} className="group px-5 py-3.5 flex items-center justify-between cursor-pointer hover:bg-slate-50 border-b divider last:border-b-0">
+                        <div key={t.id} onClick={() => { if (isSnapshot) { openSnapshot(t.original.month); } else { openDetail(t, "deposit"); } }} className="group px-5 py-3.5 flex items-center justify-between cursor-pointer hover:bg-slate-50/50 border-b border-slate-100 last:border-b-0 transition-colors">
                           <div className="flex items-center gap-3">
                             <div className={`w-8 h-8 rounded-full flex items-center justify-center ${isSnapshot ? "bg-purple-50 text-purple-600" : isIncome ? "bg-rose-50 text-rose-500" : "bg-emerald-50 text-emerald-600"}`}>
                               {isSnapshot ? "✎" : isIncome ? "↑" : "↓"}
@@ -940,12 +938,12 @@ export default function LedgerPage() {
           <div className="animate-fade-in">
              <div className="flex flex-col gap-3 mb-4">
               <div className="flex justify-between items-center">
-                <div className="relative inline-flex bg-slate-200/60 p-1 rounded-full">
+                <div className="relative inline-flex bg-slate-200/50 backdrop-blur-md p-1 rounded-full border border-white/40 shadow-sm">
                   <div className="absolute top-1 bottom-1 bg-white rounded-full shadow-sm transition-transform duration-300" style={{ width: "calc(50% - 2px)", transform: `translateX(${subTab === "bin" ? 0 : 100}%)`, left: "4px" }} />
                   <button onClick={() => setSubTab("bin")} className={`px-6 py-1.5 rounded-full text-[12px] font-medium relative z-10 transition-colors ${subTab === "bin" ? "text-purple-600" : "text-slate-500"}`}>斌</button>
                   <button onClick={() => setSubTab("bei")} className={`px-6 py-1.5 rounded-full text-[12px] font-medium relative z-10 transition-colors ${subTab === "bei" ? "text-purple-600" : "text-slate-500"}`}>贝</button>
                 </div>
-                <div className="relative inline-flex bg-slate-200/60 p-1 rounded-full">
+                <div className="relative inline-flex bg-slate-200/50 backdrop-blur-md p-1 rounded-full border border-white/40 shadow-sm">
                   <div className="absolute top-1 bottom-1 bg-white rounded-full shadow-sm transition-transform duration-300" style={{ width: "calc(50% - 2px)", transform: `translateX(${socialView === "list" ? 0 : 100}%)`, left: "4px" }} />
                   <button onClick={() => setSocialView("list")} className={`px-5 py-1.5 rounded-full text-[11px] font-medium relative z-10 transition-colors ${socialView === "list" ? "text-purple-600" : "text-slate-500"}`}>流水</button>
                   <button onClick={() => setSocialView("summary")} className={`px-5 py-1.5 rounded-full text-[11px] font-medium relative z-10 transition-colors ${socialView === "summary" ? "text-purple-600" : "text-slate-500"}`}>按人算</button>
@@ -955,14 +953,14 @@ export default function LedgerPage() {
               {/* ★ 流水视图：排序工具栏 */}
               {socialView === "list" && (
                 <div className="flex justify-end items-center mt-2">
-                  <div className="flex items-center gap-1 bg-white border border-slate-200 rounded-md px-2 py-1 shadow-sm">
+                  <div className="flex items-center gap-1 bg-white/80 backdrop-blur-md border border-white/50 rounded-xl px-2 py-1 shadow-sm">
                     <select value={listSort} onChange={e => setListSort(e.target.value as ListSort)} className="text-[11px] text-slate-500 bg-transparent outline-none cursor-pointer py-0.5">
                       <option value="date">按时间排</option>
                       <option value="amount">按金额排</option>
                       <option value="name">按姓名排</option>
                     </select>
                     <div className="w-px h-3 bg-slate-200 mx-1"></div>
-                    <button onClick={() => setListSortDesc(!listSortDesc)} className="p-0.5 hover:bg-slate-50 rounded text-slate-500">
+                    <button onClick={() => setListSortDesc(!listSortDesc)} className="p-0.5 hover:bg-slate-50 rounded text-slate-500 transition-colors">
                       {listSortDesc ? (
                          <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 4h13M3 8h9m-9 4h6m4 0l4-4m0 0l4 4m-4-4v12" /></svg>
                       ) : (
@@ -984,19 +982,19 @@ export default function LedgerPage() {
                       { key: "to_return", label: "待回" },
                       { key: "settled", label: "平衡" }
                     ].map(s => (
-                      <button key={s.key} onClick={() => setSocialStatus(s.key as SocialStatusFilter)} className={`px-3 py-1 rounded-md text-[11px] border transition-all shrink-0 ${socialStatus === s.key ? "bg-purple-50 text-purple-600 border-purple-200 font-medium" : "bg-white text-slate-500 border-slate-200"}`}>
+                      <button key={s.key} onClick={() => setSocialStatus(s.key as SocialStatusFilter)} className={`px-3 py-1 rounded-xl text-[11px] border transition-all shrink-0 ${socialStatus === s.key ? "bg-purple-50 text-purple-600 border-purple-200 font-medium shadow-sm" : "bg-white/80 backdrop-blur border-white/50 text-slate-500"}`}>
                         {s.label}
                       </button>
                     ))}
                   </div>
-                  <div className="flex items-center gap-1 bg-white border border-slate-200 rounded-md px-2 py-1">
+                  <div className="flex items-center gap-1 bg-white/80 backdrop-blur-md border border-white/50 rounded-xl px-2 py-1 shadow-sm">
                     <select value={socialSort} onChange={e => setSocialSort(e.target.value as SocialSort)} className="text-[11px] text-slate-500 bg-transparent outline-none cursor-pointer py-0.5">
                       <option value="default">按差额排</option>
                       <option value="amount">按总额排</option>
                       <option value="name">按姓名排</option>
                     </select>
                     <div className="w-px h-3 bg-slate-200 mx-1"></div>
-                    <button onClick={() => setSocialSortDesc(!socialSortDesc)} className="p-0.5 hover:bg-slate-50 rounded text-slate-500">
+                    <button onClick={() => setSocialSortDesc(!socialSortDesc)} className="p-0.5 hover:bg-slate-50 rounded text-slate-500 transition-colors">
                       {socialSortDesc ? (
                          <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 4h13M3 8h9m-9 4h6m4 0l4-4m0 0l4 4m-4-4v12" /></svg>
                       ) : (
@@ -1010,7 +1008,7 @@ export default function LedgerPage() {
 
             {/* 美化背景的人情看板 */}
             <div className="grid grid-cols-2 gap-3 mb-4">
-              <div className="bg-gradient-to-br from-indigo-50 to-white rounded-2xl p-4 shadow-sm border border-indigo-100/50 flex flex-col justify-between">
+              <div className="bg-gradient-to-br from-indigo-50/80 to-white backdrop-blur-md rounded-3xl p-4 shadow-sm border border-indigo-100/50 flex flex-col justify-between">
                 <div className="text-[11px] text-slate-500 mb-1">待回礼 (净人情)</div>
                 <div className="text-[24px] font-bold text-slate-900 font-mono tracking-tight mb-2">
                   ¥{socialSummary.pendingAmount.toLocaleString("zh-CN", { minimumFractionDigits: 2 })}
@@ -1021,7 +1019,7 @@ export default function LedgerPage() {
                 </div>
               </div>
 
-              <div className="bg-gradient-to-br from-blue-50 to-white rounded-2xl p-4 shadow-sm border border-blue-100/50 flex flex-col justify-between">
+              <div className="bg-gradient-to-br from-blue-50/80 to-white backdrop-blur-md rounded-3xl p-4 shadow-sm border border-blue-100/50 flex flex-col justify-between">
                 <div className="text-[11px] text-slate-500 mb-1 flex justify-between">
                   <span>礼金往来总览</span>
                   <span className="text-[9px] bg-slate-100/80 text-slate-500 px-1 rounded">{socialSummary.totalCount} 笔</span>
@@ -1045,11 +1043,11 @@ export default function LedgerPage() {
 
             {socialView === "summary" ? (
               <>
-                <div className="card overflow-hidden">
+                <div className="bg-white/80 backdrop-blur-md rounded-2xl shadow-sm border border-white/50 overflow-hidden">
                   {paginatedSocials.map(s => {
                     const net = s.send - s.recv;
                     return (
-                      <div key={s.person} onClick={() => setViewingSocialPerson(s.person)} className="flex items-center justify-between px-5 py-4 border-b divider last:border-b-0 hover:bg-slate-50 transition-colors cursor-pointer">
+                      <div key={s.person} onClick={() => setViewingSocialPerson(s.person)} className="flex items-center justify-between px-5 py-4 border-b border-slate-100 last:border-b-0 hover:bg-slate-50/50 transition-colors cursor-pointer">
                         <div className="text-[14px] font-medium text-slate-800">{s.person}</div>
                         <div className="flex items-center gap-5">
                           <div className="text-right">
@@ -1074,9 +1072,9 @@ export default function LedgerPage() {
               </>
             ) : (
               <>
-                <div className="card overflow-hidden">
+                <div className="bg-white/80 backdrop-blur-md rounded-2xl shadow-sm border border-white/50 overflow-hidden">
                   {paginatedSocialList.map(s => (
-                    <div key={s.id} onClick={() => openDetail(s, "social")} className="group px-5 py-3.5 border-b divider last:border-b-0 flex items-center justify-between cursor-pointer hover:bg-slate-50">
+                    <div key={s.id} onClick={() => openDetail(s, "social")} className="group px-5 py-3.5 border-b border-slate-100 last:border-b-0 flex items-center justify-between cursor-pointer hover:bg-slate-50/50 transition-colors">
                       <div className="flex items-center gap-3">
                         <div className="w-10 h-10 rounded-xl bg-slate-100 flex items-center justify-center text-slate-600 font-bold text-[14px]">{s.person.slice(0,1)}</div>
                         <div>
@@ -1098,12 +1096,12 @@ export default function LedgerPage() {
         {activeTab === "gift" && (
           <div className="animate-fade-in">
              <div className="flex justify-between items-center mb-4">
-                <div className="relative inline-flex bg-slate-200/60 p-1 rounded-full">
+                <div className="relative inline-flex bg-slate-200/50 backdrop-blur-md p-1 rounded-full border border-white/40 shadow-sm">
                   <div className="absolute top-1 bottom-1 bg-white rounded-full shadow-sm transition-transform duration-300" style={{ width: "calc(50% - 2px)", transform: `translateX(${subTab === "bin" ? 0 : 100}%)`, left: "4px" }} />
                   <button onClick={() => setSubTab("bin")} className={`px-6 py-1.5 rounded-full text-[12px] font-medium relative z-10 transition-colors ${subTab === "bin" ? "text-purple-600" : "text-slate-500"}`}>斌</button>
                   <button onClick={() => setSubTab("bei")} className={`px-6 py-1.5 rounded-full text-[12px] font-medium relative z-10 transition-colors ${subTab === "bei" ? "text-purple-600" : "text-slate-500"}`}>贝</button>
                 </div>
-                <div className="relative inline-flex bg-slate-200/60 p-1 rounded-full">
+                <div className="relative inline-flex bg-slate-200/50 backdrop-blur-md p-1 rounded-full border border-white/40 shadow-sm">
                   <div className="absolute top-1 bottom-1 bg-white rounded-full shadow-sm transition-transform duration-300" style={{ width: "calc(33.33% - 2px)", transform: `translateX(${giftView === "list" ? 0 : giftView === "by_person" ? 100 : 200}%)`, left: "4px" }} />
                   <button onClick={() => setGiftView("list")} className={`px-3 py-1.5 rounded-full text-[11px] font-medium relative z-10 transition-colors ${giftView === "list" ? "text-purple-600" : "text-slate-500"}`}>明细</button>
                   <button onClick={() => setGiftView("by_person")} className={`px-3 py-1.5 rounded-full text-[11px] font-medium relative z-10 transition-colors ${giftView === "by_person" ? "text-purple-600" : "text-slate-500"}`}>按人</button>
@@ -1112,7 +1110,7 @@ export default function LedgerPage() {
               </div>
 
             <div className="grid grid-cols-2 gap-3 mb-4">
-              <div className="bg-gradient-to-br from-indigo-50 to-white rounded-2xl p-4 shadow-sm border border-indigo-100/50 flex flex-col justify-between">
+              <div className="bg-gradient-to-br from-indigo-50/80 to-white backdrop-blur-md rounded-3xl p-4 shadow-sm border border-indigo-100/50 flex flex-col justify-between">
                 <div className="text-[11px] text-slate-500 mb-1">累计心意支出</div>
                 <div className="text-[24px] font-bold text-slate-900 font-mono tracking-tight mb-2">
                   ¥{giftSummary.totalGift.toLocaleString("zh-CN", { minimumFractionDigits: 2 })}
@@ -1123,7 +1121,7 @@ export default function LedgerPage() {
                 </div>
               </div>
 
-              <div className="bg-gradient-to-br from-blue-50 to-white rounded-2xl p-4 shadow-sm border border-blue-100/50 flex flex-col justify-between">
+              <div className="bg-gradient-to-br from-blue-50/80 to-white backdrop-blur-md rounded-3xl p-4 shadow-sm border border-blue-100/50 flex flex-col justify-between">
                 <div className="text-[11px] text-slate-500 mb-1">按人看份量最重</div>
                 <div className="text-[24px] font-bold text-slate-900 font-mono tracking-tight mb-2">
                   ¥{giftSummary.maxAmount.toLocaleString("zh-CN", { minimumFractionDigits: 2 })}
@@ -1139,7 +1137,7 @@ export default function LedgerPage() {
               <>
                 <div className="space-y-3">
                    {paginatedGifts.map(g => (
-                      <div key={g.id} onClick={() => openDetail(g, "gift")} className="card p-4 group cursor-pointer hover:bg-slate-50 transition-colors">
+                      <div key={g.id} onClick={() => openDetail(g, "gift")} className="bg-white/80 backdrop-blur-md rounded-2xl shadow-sm border border-white/50 p-4 group cursor-pointer hover:bg-slate-50/50 transition-colors">
                         <div className="flex justify-between items-start mb-2">
                           <div className="flex items-center gap-2">
                             <span className="text-[16px]">🎁</span>
@@ -1150,7 +1148,7 @@ export default function LedgerPage() {
                           </div>
                           <div className="font-mono font-bold text-[16px] text-emerald-600">-{Number(g.amount).toFixed(2)}</div>
                         </div>
-                        <div className="text-[12px] text-slate-600 bg-white p-2.5 rounded-lg mt-3 border border-slate-100">{g.details || "无详细说明"}</div>
+                        <div className="text-[12px] text-slate-600 bg-white/60 p-2.5 rounded-xl mt-3 border border-slate-100">{g.details || "无详细说明"}</div>
                       </div>
                     ))}
                 </div>
@@ -1160,9 +1158,9 @@ export default function LedgerPage() {
 
             {giftView === "by_person" && (
               <>
-                <div className="card overflow-hidden">
+                <div className="bg-white/80 backdrop-blur-md rounded-2xl shadow-sm border border-white/50 overflow-hidden">
                   {giftAnalytics.byPerson.map(p => (
-                    <div key={p.name} className="flex items-center justify-between px-5 py-4 border-b divider last:border-b-0 hover:bg-slate-50">
+                    <div key={p.name} className="flex items-center justify-between px-5 py-4 border-b border-slate-100 last:border-b-0 hover:bg-slate-50/50">
                       <div className="text-[14px] font-medium text-slate-800">{p.name}</div>
                       <div className="font-mono font-bold text-[15px] text-emerald-600">-{p.amount.toFixed(2)}</div>
                     </div>
@@ -1172,9 +1170,9 @@ export default function LedgerPage() {
             )}
 
             {giftView === "by_year" && (
-              <div className="card overflow-hidden">
+              <div className="bg-white/80 backdrop-blur-md rounded-2xl shadow-sm border border-white/50 overflow-hidden">
                 {giftAnalytics.byYear.map(y => (
-                  <div key={y.year} className="flex items-center justify-between px-5 py-4 border-b divider last:border-b-0 hover:bg-slate-50">
+                  <div key={y.year} className="flex items-center justify-between px-5 py-4 border-b border-slate-100 last:border-b-0 hover:bg-slate-50/50">
                     <div className="text-[14px] font-medium text-slate-800">{y.year} 年</div>
                     <div className="font-mono font-bold text-[15px] text-emerald-600">-{y.amount.toFixed(2)}</div>
                   </div>
@@ -1190,17 +1188,17 @@ export default function LedgerPage() {
              {notes.map(n => {
                 const isArchived = n.status === "已归档";
                 return (
-                  <div key={n.id} onClick={() => openDetail(n, "notes")} className={`card p-4 group cursor-pointer hover:bg-slate-50 transition-all ${isArchived ? "opacity-50 grayscale" : ""}`}>
+                  <div key={n.id} onClick={() => openDetail(n, "notes")} className={`bg-white/80 backdrop-blur-md rounded-2xl shadow-sm border border-white/50 p-4 group cursor-pointer hover:bg-slate-50/50 transition-all ${isArchived ? "opacity-50 grayscale" : ""}`}>
                     <div className="text-[13px] text-slate-800 leading-relaxed mb-3">{n.content}</div>
-                    <div className="flex justify-between items-center text-[11px] text-slate-400 pt-2 border-t divider">
+                    <div className="flex justify-between items-center text-[11px] text-slate-400 pt-2 border-t border-slate-100">
                       <span>{n.note_date} · 归入：<span className="text-purple-600 font-medium">{n.target}</span></span>
                       <div className="flex items-center gap-3">
                         {n.amount && <span className="font-mono text-amber-600 font-bold">¥{Number(n.amount).toFixed(2)}</span>}
                         {!isArchived && (
-                          <button onClick={(e) => { e.stopPropagation(); handleArchive(n.id); }} className="px-2 py-1 bg-slate-100 text-slate-600 rounded text-[10px] hover:bg-slate-200">标记已归档</button>
+                          <button onClick={(e) => { e.stopPropagation(); handleArchive(n.id); }} className="px-2 py-1 bg-slate-100 text-slate-600 rounded text-[10px] hover:bg-slate-200 transition-colors">标记已归档</button>
                         )}
                         {isArchived && <span className="text-[10px]">已归档</span>}
-                        <button onClick={(e) => { e.stopPropagation(); handleDelete(n.id, "notes"); }} className="text-slate-300 hover:text-rose-500"><svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg></button>
+                        <button onClick={(e) => { e.stopPropagation(); handleDelete(n.id, "notes"); }} className="text-slate-300 hover:text-rose-500 transition-colors"><svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg></button>
                       </div>
                     </div>
                   </div>
@@ -1210,8 +1208,8 @@ export default function LedgerPage() {
         )}
       </div>
 
-      {/* ★ 悬浮按钮 */}
-      <button onClick={openAdd} className="fixed z-40 flex items-center justify-center w-14 h-14 rounded-full bg-white/20 backdrop-blur-2xl border border-white/40 shadow-[0_8px_32px_rgba(0,0,0,0.08)] text-purple-700 hover:text-purple-800 active:scale-90 transition-all duration-300" style={{ bottom: "calc(88px + env(safe-area-inset-bottom))", right: "20px" }}>
+      {/* ★ 悬浮按钮（去掉底部全局加号后，各页面自带） */}
+      <button onClick={openAdd} className="fixed z-40 flex items-center justify-center w-14 h-14 rounded-full bg-white/30 backdrop-blur-2xl border border-white/50 shadow-[0_8px_32px_rgba(0,0,0,0.15)] text-purple-700 hover:text-purple-800 active:scale-90 transition-all duration-300" style={{ bottom: "calc(100px + env(safe-area-inset-bottom))", right: "20px" }}>
         <svg className="w-7 h-7" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2.5}><path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" /></svg>
       </button>
 
@@ -1220,15 +1218,15 @@ export default function LedgerPage() {
       {/* 日常新增/详情编辑弹窗 */}
       {modalType && modalType !== "snapshot" && !viewingSocialPerson && (
         <div className="fixed inset-0 z-[100] flex items-end sm:items-center justify-center sm:px-6">
-          <div className="absolute inset-0 bg-black/60 backdrop-blur-sm animate-fade-in" onClick={() => setModalType(null)} />
-          <div className="relative bg-white w-full max-w-md rounded-t-3xl sm:rounded-3xl p-6 animate-slide-up sm:animate-scale-in max-h-[85vh] overflow-y-auto no-scrollbar">
+          <div className="absolute inset-0 bg-black/40 backdrop-blur-sm animate-fade-in" onClick={() => setModalType(null)} />
+          <div className="relative bg-white/90 backdrop-blur-xl w-full max-w-md rounded-t-[32px] sm:rounded-[32px] p-6 animate-slide-up sm:animate-scale-in max-h-[85vh] overflow-y-auto no-scrollbar border border-white/50 shadow-2xl">
             
             <div className="flex justify-between items-center mb-5">
               <h3 className="text-[17px] font-bold text-slate-900">
                 {!viewingItem ? `新增${modalType === "deposit" ? "流水" : modalType === "social" ? "人情" : modalType === "gift" ? "心意" : "随手记"}` : isEditing ? "编辑记录" : "详细信息"}
               </h3>
               {viewingItem && !isEditing && (
-                <button onClick={() => setIsEditing(true)} className="px-3 py-1.5 bg-purple-50 text-purple-600 font-medium rounded-lg text-[12px]">编辑</button>
+                <button onClick={() => setIsEditing(true)} className="px-3 py-1.5 bg-purple-50/80 text-purple-600 font-medium rounded-xl text-[12px] transition-colors">编辑</button>
               )}
             </div>
 
@@ -1236,38 +1234,61 @@ export default function LedgerPage() {
               {modalType === "deposit" && (
                 <>
                   <div className="grid grid-cols-2 gap-3">
-                    <div><label className="block text-[11px] text-slate-500 mb-1.5">日期</label>{isEditing ? <input type="date" value={formDate} onChange={e => setFormDate(e.target.value)} className="input-field w-full px-3 py-2.5 text-[13px]" /> : <div className="text-[14px] font-medium text-slate-800">{formDate}</div>}</div>
-                    <div><label className="block text-[11px] text-slate-500 mb-1.5">金额（元）</label>{isEditing ? <input type="number" value={depositAmount} onChange={e => setDepositAmount(e.target.value)} className="input-field w-full px-3 py-2.5 text-[15px] font-bold text-rose-500" /> : <div className={`text-[18px] font-bold font-mono ${depositType === "转入" ? "text-rose-500" : "text-emerald-600"}`}>{depositType === "转入" ? "+" : "-"}{depositAmount}</div>}</div>
+                    <div><label className="block text-[11px] text-slate-500 mb-1.5">日期</label>{isEditing ? <input type="date" value={formDate} onChange={e => setFormDate(e.target.value)} className="input-field w-full px-3 py-2.5 text-[13px] rounded-xl" /> : <div className="text-[14px] font-medium text-slate-800">{formDate}</div>}</div>
+                    <div><label className="block text-[11px] text-slate-500 mb-1.5">金额（元）</label>{isEditing ? <input type="number" value={depositAmount} onChange={e => setDepositAmount(e.target.value)} className="input-field w-full px-3 py-2.5 text-[15px] font-bold text-rose-500 rounded-xl" /> : <div className={`text-[18px] font-bold font-mono ${depositType === "转入" ? "text-rose-500" : "text-emerald-600"}`}>{depositType === "转入" ? "+" : "-"}{depositAmount}</div>}</div>
                   </div>
                   <div className="grid grid-cols-2 gap-3">
-                    <div><label className="block text-[11px] text-slate-500 mb-1.5">收支类型</label>{isEditing ? <div className="segment-group flex"><button onClick={() => setDepositType("转入")} className={`flex-1 py-2 text-[13px] segment-item ${depositType === "转入" ? "segment-item-active" : ""}`}>转入</button><button onClick={() => setDepositType("转出")} className={`flex-1 py-2 text-[13px] segment-item ${depositType === "转出" ? "segment-item-active" : ""}`}>转出</button></div> : <div className="text-[14px] text-slate-800">{depositType}</div>}</div>
-                    <div><label className="block text-[11px] text-slate-500 mb-1.5">所属账户</label>{isEditing ? <select value={depositAccount} onChange={e => setDepositAccount(e.target.value)} className="input-field w-full px-3 py-2.5 text-[13px] bg-white">{ACCOUNTS.map(a => <option key={a} value={a}>{a}</option>)}</select> : <div className="text-[14px] text-slate-800">{depositAccount}</div>}</div>
+                    <div><label className="block text-[11px] text-slate-500 mb-1.5">收支类型</label>{isEditing ? <div className="segment-group flex bg-slate-100/80 p-1 rounded-xl"><button onClick={() => setDepositType("转入")} className={`flex-1 py-2 text-[13px] font-medium rounded-lg transition-all ${depositType === "转入" ? "bg-white shadow-sm text-slate-900" : "text-slate-500"}`}>转入</button><button onClick={() => setDepositType("转出")} className={`flex-1 py-2 text-[13px] font-medium rounded-lg transition-all ${depositType === "转出" ? "bg-white shadow-sm text-slate-900" : "text-slate-500"}`}>转出</button></div> : <div className="text-[14px] text-slate-800">{depositType}</div>}</div>
+                    
+                    {/* ★ 图五：所属账户支持输入和提示 */}
+                    <div className="relative">
+                      <label className="block text-[11px] text-slate-500 mb-1.5">所属账户</label>
+                      {isEditing ? (
+                        <>
+                          <input 
+                            type="text" 
+                            value={depositAccount} 
+                            onChange={e => setDepositAccount(e.target.value)} 
+                            onFocus={() => setShowAccountSuggest(true)} 
+                            onBlur={() => setTimeout(() => setShowAccountSuggest(false), 200)} 
+                            className="input-field w-full px-3 py-2.5 text-[13px] rounded-xl" 
+                            placeholder="输入或选择账户..."
+                          />
+                          {showAccountSuggest && (
+                            <div className="absolute top-full left-0 right-0 mt-1 bg-white border border-slate-200 rounded-xl shadow-lg z-50 max-h-32 overflow-y-auto no-scrollbar">
+                              {allAccountNames.filter(a => a.includes(depositAccount)).map(a => (
+                                <button key={a} onMouseDown={() => setDepositAccount(a)} className="w-full text-left px-3 py-2 text-[13px] text-slate-700 hover:bg-purple-50 border-b border-slate-50 last:border-0 transition-colors">{a}</button>
+                              ))}
+                            </div>
+                          )}
+                        </>
+                      ) : <div className="text-[14px] text-slate-800">{depositAccount}</div>}
+                    </div>
                   </div>
                   <div className="relative">
                     <label className="block text-[11px] text-slate-500 mb-1.5">分类</label>
                     {isEditing ? (
                       <>
-                        <input type="text" value={depositCategory} onChange={e => setDepositCategory(e.target.value)} onFocus={() => setShowCategorySuggest(true)} onBlur={() => setTimeout(() => setShowCategorySuggest(false), 200)} placeholder="输入或选择分类..." className="input-field w-full px-3 py-2.5 text-[13px]" />
+                        <input type="text" value={depositCategory} onChange={e => setDepositCategory(e.target.value)} onFocus={() => setShowCategorySuggest(true)} onBlur={() => setTimeout(() => setShowCategorySuggest(false), 200)} placeholder="输入或选择分类..." className="input-field w-full px-3 py-2.5 text-[13px] rounded-xl" />
                         {showCategorySuggest && (
-                          <div className="absolute top-full left-0 right-0 mt-1 bg-white border border-slate-200 rounded-lg shadow-lg z-50 max-h-32 overflow-y-auto no-scrollbar">
+                          <div className="absolute top-full left-0 right-0 mt-1 bg-white border border-slate-200 rounded-xl shadow-lg z-50 max-h-32 overflow-y-auto no-scrollbar">
                             {PRESET_CATEGORIES.filter(c => c.includes(depositCategory)).map(c => (
-                              <button key={c} onMouseDown={() => setDepositCategory(c)} className="w-full text-left px-3 py-2 text-[13px] text-slate-700 hover:bg-purple-50 border-b border-slate-50 last:border-0">{c}</button>
+                              <button key={c} onMouseDown={() => setDepositCategory(c)} className="w-full text-left px-3 py-2 text-[13px] text-slate-700 hover:bg-purple-50 border-b border-slate-50 last:border-0 transition-colors">{c}</button>
                             ))}
                           </div>
                         )}
                       </>
                     ) : <div className="text-[14px] text-slate-800">{depositCategory}</div>}
                   </div>
-                  <div><label className="block text-[11px] text-slate-500 mb-1.5">摘要 / 备注</label>{isEditing ? <input type="text" value={depositNote} onChange={e => setDepositNote(e.target.value)} className="input-field w-full px-3 py-2.5 text-[13px]" /> : <div className="text-[13px] text-slate-600 bg-slate-50 p-2.5 rounded-lg border border-slate-100">{depositNote || "无"}</div>}</div>
+                  <div><label className="block text-[11px] text-slate-500 mb-1.5">摘要 / 备注</label>{isEditing ? <input type="text" value={depositNote} onChange={e => setDepositNote(e.target.value)} className="input-field w-full px-3 py-2.5 text-[13px] rounded-xl" /> : <div className="text-[13px] text-slate-600 bg-slate-50/80 p-2.5 rounded-xl border border-slate-100">{depositNote || "无"}</div>}</div>
                 </>
               )}
 
               {(modalType === "social" || modalType === "gift") && (
                 <>
                   <div className="grid grid-cols-2 gap-3">
-                    <div><label className="block text-[11px] text-slate-500 mb-1.5">日期</label>{isEditing ? <input type="date" value={formDate} onChange={e => setFormDate(e.target.value)} className="input-field w-full px-3 py-2.5 text-[13px]" /> : <div className="text-[14px] font-medium text-slate-800">{formDate}</div>}</div>
+                    <div><label className="block text-[11px] text-slate-500 mb-1.5">日期</label>{isEditing ? <input type="date" value={formDate} onChange={e => setFormDate(e.target.value)} className="input-field w-full px-3 py-2.5 text-[13px] rounded-xl" /> : <div className="text-[14px] font-medium text-slate-800">{formDate}</div>}</div>
                     
-                    {/* ★ 智能提示 - 姓名 */}
                     <div className="relative">
                       <label className="block text-[11px] text-slate-500 mb-1.5">姓名</label>
                       {isEditing ? (
@@ -1278,12 +1299,12 @@ export default function LedgerPage() {
                             onChange={e => modalType === "social" ? setSocialName(e.target.value) : setGiftName(e.target.value)} 
                             onFocus={() => setShowNameSuggest(true)} 
                             onBlur={() => setTimeout(() => setShowNameSuggest(false), 200)} 
-                            className="input-field w-full px-3 py-2.5 text-[13px]" 
+                            className="input-field w-full px-3 py-2.5 text-[13px] rounded-xl" 
                           />
                           {showNameSuggest && (
-                            <div className="absolute top-full left-0 right-0 mt-1 bg-white border border-slate-200 rounded-lg shadow-lg z-50 max-h-32 overflow-y-auto no-scrollbar">
+                            <div className="absolute top-full left-0 right-0 mt-1 bg-white border border-slate-200 rounded-xl shadow-lg z-50 max-h-32 overflow-y-auto no-scrollbar">
                               {existingNames.filter(n => n.includes(modalType === "social" ? socialName : giftName)).map(n => (
-                                <button key={n} onMouseDown={() => modalType === "social" ? setSocialName(n) : setGiftName(n)} className="w-full text-left px-3 py-2 text-[13px] text-slate-700 hover:bg-purple-50 border-b border-slate-50 last:border-0">{n}</button>
+                                <button key={n} onMouseDown={() => modalType === "social" ? setSocialName(n) : setGiftName(n)} className="w-full text-left px-3 py-2 text-[13px] text-slate-700 hover:bg-purple-50 border-b border-slate-50 last:border-0 transition-colors">{n}</button>
                               ))}
                             </div>
                           )}
@@ -1295,11 +1316,10 @@ export default function LedgerPage() {
                   {modalType === "social" ? (
                     <>
                       <div className="grid grid-cols-2 gap-3">
-                        <div><label className="block text-[11px] text-slate-500 mb-1.5">方向</label>{isEditing ? <div className="segment-group flex"><button onClick={() => setSocialType("送")} className={`flex-1 py-2 text-[13px] segment-item ${socialType === "送" ? "segment-item-active" : ""}`}>我送出</button><button onClick={() => setSocialType("收")} className={`flex-1 py-2 text-[13px] segment-item ${socialType === "收" ? "segment-item-active" : ""}`}>我收到</button></div> : <div className="text-[14px] text-slate-800">{socialType}</div>}</div>
-                        <div><label className="block text-[11px] text-slate-500 mb-1.5">金额（元）</label>{isEditing ? <input type="number" value={socialAmount} onChange={e => setSocialAmount(e.target.value)} className="input-field w-full px-3 py-2.5 text-[15px] font-bold text-rose-500" /> : <div className={`text-[18px] font-bold font-mono ${socialType === "送" ? "text-emerald-600" : "text-rose-500"}`}>{socialType === "送" ? "-" : "+"}{socialAmount}</div>}</div>
+                        <div><label className="block text-[11px] text-slate-500 mb-1.5">方向</label>{isEditing ? <div className="segment-group flex bg-slate-100/80 p-1 rounded-xl"><button onClick={() => setSocialType("送")} className={`flex-1 py-2 text-[13px] font-medium rounded-lg transition-all ${socialType === "送" ? "bg-white shadow-sm text-slate-900" : "text-slate-500"}`}>我送出</button><button onClick={() => setSocialType("收")} className={`flex-1 py-2 text-[13px] font-medium rounded-lg transition-all ${socialType === "收" ? "bg-white shadow-sm text-slate-900" : "text-slate-500"}`}>我收到</button></div> : <div className="text-[14px] text-slate-800">{socialType}</div>}</div>
+                        <div><label className="block text-[11px] text-slate-500 mb-1.5">金额（元）</label>{isEditing ? <input type="number" value={socialAmount} onChange={e => setSocialAmount(e.target.value)} className="input-field w-full px-3 py-2.5 text-[15px] font-bold text-rose-500 rounded-xl" /> : <div className={`text-[18px] font-bold font-mono ${socialType === "送" ? "text-emerald-600" : "text-rose-500"}`}>{socialType === "送" ? "-" : "+"}{socialAmount}</div>}</div>
                       </div>
                       
-                      {/* ★ 智能提示 - 事由 */}
                       <div className="relative">
                         <label className="block text-[11px] text-slate-500 mb-1.5">事由 / 备注</label>
                         {isEditing ? (
@@ -1310,26 +1330,26 @@ export default function LedgerPage() {
                               onChange={e => setSocialReason(e.target.value)} 
                               onFocus={() => setShowReasonSuggest(true)} 
                               onBlur={() => setTimeout(() => setShowReasonSuggest(false), 200)} 
-                              className="input-field w-full px-3 py-2.5 text-[13px]" 
+                              className="input-field w-full px-3 py-2.5 text-[13px] rounded-xl" 
                             />
                             {showReasonSuggest && (
-                              <div className="absolute top-full left-0 right-0 mt-1 bg-white border border-slate-200 rounded-lg shadow-lg z-50 max-h-32 overflow-y-auto no-scrollbar">
+                              <div className="absolute top-full left-0 right-0 mt-1 bg-white border border-slate-200 rounded-xl shadow-lg z-50 max-h-32 overflow-y-auto no-scrollbar">
                                 {existingReasons.filter(r => r.includes(socialReason)).map(r => (
-                                  <button key={r} onMouseDown={() => setSocialReason(r)} className="w-full text-left px-3 py-2 text-[13px] text-slate-700 hover:bg-purple-50 border-b border-slate-50 last:border-0">{r}</button>
+                                  <button key={r} onMouseDown={() => setSocialReason(r)} className="w-full text-left px-3 py-2 text-[13px] text-slate-700 hover:bg-purple-50 border-b border-slate-50 last:border-0 transition-colors">{r}</button>
                                 ))}
                               </div>
                             )}
                           </>
-                        ) : <div className="text-[13px] text-slate-600 bg-slate-50 p-2.5 rounded-lg border border-slate-100">{socialReason || "无"}</div>}
+                        ) : <div className="text-[13px] text-slate-600 bg-slate-50/80 p-2.5 rounded-xl border border-slate-100">{socialReason || "无"}</div>}
                       </div>
                     </>
                   ) : (
                     <>
                       <div className="grid grid-cols-2 gap-3">
-                        <div><label className="block text-[11px] text-slate-500 mb-1.5">场合</label>{isEditing ? <input type="text" value={giftOccasion} onChange={e => setGiftOccasion(e.target.value)} className="input-field w-full px-3 py-2.5 text-[13px]" /> : <div className="text-[14px] text-slate-800">{giftOccasion}</div>}</div>
-                        <div><label className="block text-[11px] text-slate-500 mb-1.5">金额（元）</label>{isEditing ? <input type="number" value={giftAmount} onChange={e => setGiftAmount(e.target.value)} className="input-field w-full px-3 py-2.5 text-[15px] font-bold text-emerald-600" /> : <div className="text-[18px] font-bold font-mono text-emerald-600">-{giftAmount}</div>}</div>
+                        <div><label className="block text-[11px] text-slate-500 mb-1.5">场合</label>{isEditing ? <input type="text" value={giftOccasion} onChange={e => setGiftOccasion(e.target.value)} className="input-field w-full px-3 py-2.5 text-[13px] rounded-xl" /> : <div className="text-[14px] text-slate-800">{giftOccasion}</div>}</div>
+                        <div><label className="block text-[11px] text-slate-500 mb-1.5">金额（元）</label>{isEditing ? <input type="number" value={giftAmount} onChange={e => setGiftAmount(e.target.value)} className="input-field w-full px-3 py-2.5 text-[15px] font-bold text-emerald-600 rounded-xl" /> : <div className="text-[18px] font-bold font-mono text-emerald-600">-{giftAmount}</div>}</div>
                       </div>
-                      <div><label className="block text-[11px] text-slate-500 mb-1.5">礼品明细</label>{isEditing ? <input type="text" value={giftDetails} onChange={e => setGiftDetails(e.target.value)} className="input-field w-full px-3 py-2.5 text-[13px]" /> : <div className="text-[13px] text-slate-600 bg-slate-50 p-2.5 rounded-lg border border-slate-100">{giftDetails || "无"}</div>}</div>
+                      <div><label className="block text-[11px] text-slate-500 mb-1.5">礼品明细</label>{isEditing ? <input type="text" value={giftDetails} onChange={e => setGiftDetails(e.target.value)} className="input-field w-full px-3 py-2.5 text-[13px] rounded-xl" /> : <div className="text-[13px] text-slate-600 bg-slate-50/80 p-2.5 rounded-xl border border-slate-100">{giftDetails || "无"}</div>}</div>
                     </>
                   )}
                 </>
@@ -1337,22 +1357,22 @@ export default function LedgerPage() {
 
               {modalType === "notes" && (
                 <>
-                  <div><label className="block text-[11px] text-slate-500 mb-1.5">日期</label>{isEditing ? <input type="date" value={formDate} onChange={e => setFormDate(e.target.value)} className="input-field w-full px-3 py-2.5 text-[13px]" /> : <div className="text-[14px] font-medium text-slate-800">{formDate}</div>}</div>
-                  <div><label className="block text-[11px] text-slate-500 mb-1.5">记点什么...</label>{isEditing ? <textarea value={noteContent} onChange={e => setNoteContent(e.target.value)} rows={3} className="input-field w-full px-3 py-2.5 text-[13px] resize-none" placeholder="想到什么先写一句..." /> : <div className="text-[13px] text-slate-800 bg-slate-50 p-2.5 rounded-lg border border-slate-100 leading-relaxed">{noteContent}</div>}</div>
+                  <div><label className="block text-[11px] text-slate-500 mb-1.5">日期</label>{isEditing ? <input type="date" value={formDate} onChange={e => setFormDate(e.target.value)} className="input-field w-full px-3 py-2.5 text-[13px] rounded-xl" /> : <div className="text-[14px] font-medium text-slate-800">{formDate}</div>}</div>
+                  <div><label className="block text-[11px] text-slate-500 mb-1.5">记点什么...</label>{isEditing ? <textarea value={noteContent} onChange={e => setNoteContent(e.target.value)} rows={3} className="input-field w-full px-3 py-2.5 text-[13px] resize-none rounded-xl" placeholder="想到什么先写一句..." /> : <div className="text-[13px] text-slate-800 bg-slate-50/80 p-2.5 rounded-xl border border-slate-100 leading-relaxed">{noteContent}</div>}</div>
                   <div className="grid grid-cols-2 gap-3">
-                    <div><label className="block text-[11px] text-slate-500 mb-1.5">金额（可选）</label>{isEditing ? <input type="number" value={noteAmount} onChange={e => setNoteAmount(e.target.value)} className="input-field w-full px-3 py-2.5 text-[13px] text-amber-600 font-bold" placeholder="不填就是纯备忘" /> : <div className="text-[14px] font-bold font-mono text-amber-600">{noteAmount ? `¥${Number(noteAmount).toFixed(2)}` : "无"}</div>}</div>
-                    <div><label className="block text-[11px] text-slate-500 mb-1.5">归入</label>{isEditing ? <select value={noteTarget} onChange={e => setNoteTarget(e.target.value)} className="input-field w-full px-3 py-2.5 text-[13px] bg-white">{NOTE_TARGETS.map(t => <option key={t} value={t}>{t}</option>)}</select> : <div className="text-[14px] text-purple-600 font-medium">{noteTarget}</div>}</div>
+                    <div><label className="block text-[11px] text-slate-500 mb-1.5">金额（可选）</label>{isEditing ? <input type="number" value={noteAmount} onChange={e => setNoteAmount(e.target.value)} className="input-field w-full px-3 py-2.5 text-[13px] text-amber-600 font-bold rounded-xl" placeholder="不填就是纯备忘" /> : <div className="text-[14px] font-bold font-mono text-amber-600">{noteAmount ? `¥${Number(noteAmount).toFixed(2)}` : "无"}</div>}</div>
+                    <div><label className="block text-[11px] text-slate-500 mb-1.5">归入</label>{isEditing ? <select value={noteTarget} onChange={e => setNoteTarget(e.target.value)} className="input-field w-full px-3 py-2.5 text-[13px] bg-white rounded-xl">{NOTE_TARGETS.map(t => <option key={t} value={t}>{t}</option>)}</select> : <div className="text-[14px] text-purple-600 font-medium">{noteTarget}</div>}</div>
                   </div>
                 </>
               )}
             </div>
 
-            <div className="flex gap-2 mt-6">
-              <button onClick={() => setModalType(null)} className="flex-1 py-3 bg-slate-100 text-slate-600 font-medium rounded-xl">关闭</button>
+            <div className="flex gap-2 mt-8">
+              <button onClick={() => setModalType(null)} className="flex-1 py-3.5 bg-slate-100/80 text-slate-600 font-medium rounded-2xl transition-colors">关闭</button>
               {viewingItem && (
-                 <button onClick={() => { if(confirm("确认删除吗？")) { handleDelete(viewingItem.id, modalType); setModalType(null); } }} className="w-24 py-3 bg-rose-50 text-rose-600 font-medium rounded-xl">删除</button>
+                 <button onClick={() => { if(confirm("确认删除吗？")) { handleDelete(viewingItem.id, modalType); setModalType(null); } }} className="w-24 py-3.5 bg-rose-50/80 text-rose-600 font-medium rounded-2xl transition-colors">删除</button>
               )}
-              {isEditing && <button onClick={handleSave} className="flex-[2] py-3 bg-purple-600 text-white font-bold rounded-xl active:scale-95 transition-all">保存</button>}
+              {isEditing && <button onClick={handleSave} className="flex-[2] py-3.5 bg-purple-600 text-white font-bold rounded-2xl active:scale-95 transition-all shadow-md shadow-purple-500/20">保存</button>}
             </div>
           </div>
         </div>
@@ -1360,16 +1380,16 @@ export default function LedgerPage() {
 
       {viewingSocialPerson && (
         <div className="fixed inset-0 z-[100] flex items-end sm:items-center justify-center sm:px-6">
-          <div className="absolute inset-0 bg-black/60 backdrop-blur-sm animate-fade-in" onClick={() => setViewingSocialPerson(null)} />
-          <div className="relative bg-white w-full max-w-md rounded-t-3xl sm:rounded-3xl p-6 animate-slide-up max-h-[85vh] overflow-y-auto no-scrollbar">
+          <div className="absolute inset-0 bg-black/40 backdrop-blur-sm animate-fade-in" onClick={() => setViewingSocialPerson(null)} />
+          <div className="relative bg-white/90 backdrop-blur-xl w-full max-w-md rounded-t-[32px] sm:rounded-[32px] p-6 animate-slide-up max-h-[85vh] overflow-y-auto no-scrollbar border border-white/50 shadow-2xl">
             <div className="flex justify-between items-center mb-4">
               <h3 className="text-[17px] font-bold text-slate-900">{viewingSocialPerson} 的账单明细</h3>
-              <button onClick={() => setViewingSocialPerson(null)} className="text-slate-400 hover:text-slate-600">✕</button>
+              <button onClick={() => setViewingSocialPerson(null)} className="text-slate-400 hover:text-slate-600 transition-colors">✕</button>
             </div>
             
             <div className="space-y-2 mb-6">
               {socials.filter(s => s.person === viewingSocialPerson && s.owner === (subTab === "bin" ? "斌" : "贝")).map(s => (
-                <div key={s.id} onClick={() => { setViewingSocialPerson(null); openDetail(s, "social"); }} className="p-3 bg-slate-50 rounded-xl border border-slate-100 flex justify-between items-center cursor-pointer hover:bg-slate-100">
+                <div key={s.id} onClick={() => { setViewingSocialPerson(null); openDetail(s, "social"); }} className="p-3 bg-slate-50/80 rounded-xl border border-slate-100 flex justify-between items-center cursor-pointer hover:bg-slate-100 transition-colors">
                   <div>
                     <div className="text-[13px] font-medium text-slate-800">{s.reason || "无备注"}</div>
                     <div className="text-[11px] text-slate-400 mt-1">{s.trade_date} · {s.type}</div>
@@ -1381,7 +1401,7 @@ export default function LedgerPage() {
               ))}
             </div>
 
-            <button onClick={() => setViewingSocialPerson(null)} className="w-full py-3 bg-slate-100 text-slate-600 font-medium rounded-xl">返回</button>
+            <button onClick={() => setViewingSocialPerson(null)} className="w-full py-3 bg-slate-100/80 text-slate-600 font-medium rounded-2xl transition-colors">返回</button>
           </div>
         </div>
       )}
@@ -1389,8 +1409,8 @@ export default function LedgerPage() {
       {/* 对账弹窗 */}
       {modalType === "snapshot" && (
         <div className="fixed inset-0 z-[100] flex items-end sm:items-center justify-center sm:px-6">
-          <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={() => setModalType(null)} />
-          <div className="relative bg-white w-full max-w-md rounded-t-3xl p-6 max-h-[85vh] overflow-y-auto no-scrollbar">
+          <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" onClick={() => setModalType(null)} />
+          <div className="relative bg-white/90 backdrop-blur-xl w-full max-w-md rounded-t-[32px] p-6 max-h-[85vh] overflow-y-auto no-scrollbar border border-white/50 shadow-2xl">
             <h3 className="text-[17px] font-bold mb-4 select-none">登记月末资产</h3>
             <div className="space-y-4">
               <div className="grid grid-cols-2 gap-3">
@@ -1400,18 +1420,18 @@ export default function LedgerPage() {
                     type="date" 
                     value={snapshotDate} 
                     onChange={e => handleDateChange(e.target.value)} 
-                    className="input-field w-full px-3 py-2.5 text-[13px]" 
+                    className="input-field w-full px-3 py-2.5 text-[13px] rounded-xl" 
                   />
                 </div>
                 <div>
                   <label className="block text-[11px] text-slate-500 mb-1.5 select-none">本月月初（选填）</label>
-                  <input type="number" placeholder="默认等于上月末" value={snapshotStart} onChange={e => setSnapshotStart(e.target.value)} className="input-field w-full px-3 py-2.5 text-[13px]" />
+                  <input type="number" placeholder="默认等于上月末" value={snapshotStart} onChange={e => setSnapshotStart(e.target.value)} className="input-field w-full px-3 py-2.5 text-[13px] rounded-xl" />
                 </div>
               </div>
               
               <div>
                 <label className="block text-[11px] text-slate-500 mb-1.5 select-none">总资产（元）<span className="text-emerald-500 ml-1">(自动求和)</span></label>
-                <input type="number" placeholder="总资产" value={snapshotTotal} readOnly className="input-field w-full px-3 py-2.5 text-[15px] font-bold text-slate-800 bg-slate-50 cursor-not-allowed" />
+                <input type="number" placeholder="总资产" value={snapshotTotal} readOnly className="input-field w-full px-3 py-2.5 text-[15px] font-bold text-slate-800 bg-slate-50 cursor-not-allowed rounded-xl" />
               </div>
 
               <div>
@@ -1436,7 +1456,7 @@ export default function LedgerPage() {
                        </svg>
                     </div>
                     
-                    <input type="text" placeholder="名字" value={item.name} onChange={e => { const n = [...snapshotDetails]; n[idx].name = e.target.value; setSnapshotDetails(n); }} className="input-field w-[28%] px-2 py-2 text-[12px]" />
+                    <input type="text" placeholder="名字" value={item.name} onChange={e => { const n = [...snapshotDetails]; n[idx].name = e.target.value; setSnapshotDetails(n); }} className="input-field w-[28%] px-2 py-2 text-[12px] rounded-lg" />
                     
                     <input 
                       type="number" 
@@ -1444,7 +1464,7 @@ export default function LedgerPage() {
                       value={item.amount} 
                       onChange={e => { if (!item.isLocked) { const n = [...snapshotDetails]; n[idx].amount = e.target.value; setSnapshotDetails(n); } }} 
                       readOnly={item.isLocked}
-                      className={`input-field flex-1 px-2 py-2 text-[12px] ${item.isLocked ? "bg-slate-100 text-slate-500 cursor-not-allowed" : ""}`} 
+                      className={`input-field flex-1 px-2 py-2 text-[12px] rounded-lg ${item.isLocked ? "bg-slate-100 text-slate-500 cursor-not-allowed" : ""}`} 
                     />
                     
                     <button 
@@ -1463,18 +1483,18 @@ export default function LedgerPage() {
                       )}
                     </button>
 
-                    <button onClick={() => { const n = [...snapshotDetails]; n.splice(idx, 1); setSnapshotDetails(n); }} className="px-1 text-rose-400 hover:text-rose-600 text-[12px] w-6 select-none">删除</button>
+                    <button onClick={() => { const n = [...snapshotDetails]; n.splice(idx, 1); setSnapshotDetails(n); }} className="px-1 text-rose-400 hover:text-rose-600 text-[12px] w-6 select-none transition-colors">删除</button>
                   </div>
                 ))}
                 <button onClick={() => setSnapshotDetails([...snapshotDetails, { name: "", amount: "", isLocked: false }])} className="text-[11px] text-purple-600 mt-1 select-none">+ 添加账户</button>
               </div>
             </div>
-            <div className="flex gap-2 mt-6">
+            <div className="flex gap-2 mt-8">
               {snapshots.find(s => s.month === snapshotDate.slice(0, 7)) && (
-                <button onClick={() => handleDeleteSnapshot(snapshotDate.slice(0, 7))} className="w-24 py-3 bg-rose-50 text-rose-600 font-medium rounded-xl">删除对账</button>
+                <button onClick={() => handleDeleteSnapshot(snapshotDate.slice(0, 7))} className="w-24 py-3.5 bg-rose-50/80 text-rose-600 font-medium rounded-2xl transition-colors">删除对账</button>
               )}
-              <button onClick={() => setModalType(null)} className="flex-1 py-3 bg-slate-100 text-slate-600 font-medium rounded-xl">取消</button>
-              <button onClick={handleSaveSnapshot} className="flex-1 py-3 bg-purple-600 text-white rounded-xl font-bold">保存</button>
+              <button onClick={() => setModalType(null)} className="flex-1 py-3.5 bg-slate-100/80 text-slate-600 font-medium rounded-2xl transition-colors">取消</button>
+              <button onClick={handleSaveSnapshot} className="flex-1 py-3.5 bg-purple-600 text-white rounded-2xl font-bold transition-all shadow-md shadow-purple-500/20">保存</button>
             </div>
           </div>
         </div>

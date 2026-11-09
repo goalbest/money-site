@@ -8,21 +8,19 @@ const TABS = [
   {
     key: "home",
     href: "/",
-    label: "首页",
+    label: "理财",
     icon: "M3 12l9-9 9 9M5 10v10a1 1 0 001 1h3a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1h3a1 1 0 001-1V10",
   },
   {
     key: "calendar",
     href: "/calendar",
-    label: "日历",
+    label: "基金",
     icon: "M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z",
   },
-  { key: "add", href: "/add", label: "", icon: "" },
   {
     key: "holdings",
     href: "/ledger",
-    label: "账簿",
-    // 换成了经典的账本图标
+    label: "账本",
     icon: "M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253",
   },
   {
@@ -33,11 +31,15 @@ const TABS = [
   },
 ];
 
-/* ★ 外壳：只负责用 pathname 变化重置子组件 */
 export default function BottomNav() {
   const pathname = usePathname();
+  const [hidden, setHidden] = useState(false);
+  const lastYRef = useRef(0);
 
-  /* 隐藏页 */
+  const activeIndex = TABS.findIndex((tab) =>
+    tab.href === "/" ? pathname === "/" : pathname?.startsWith(tab.href)
+  );
+
   if (
     pathname?.startsWith("/product/") ||
     pathname?.startsWith("/login") ||
@@ -45,132 +47,126 @@ export default function BottomNav() {
     (pathname?.startsWith("/holdings/") && pathname.length > "/holdings/".length)
   ) return null;
 
-  /* ★ key=pathname → 切页时整个组件重挂，state 重置 */
-  return <BottomNavInner key={pathname} pathname={pathname || ""} />;
-}
-
-function BottomNavInner({ pathname }: { pathname: string }) {
-  /* ★ 初始就是 false，切页瞬间在正确位置，没有动画 */
-  const [hidden, setHidden] = useState(false);
-  const lastYRef = useRef(0);
-
   useEffect(() => {
-    /* 记住初始 scrollY */
     lastYRef.current = window.scrollY;
 
     function onScroll() {
       const y = window.scrollY;
       const delta = y - lastYRef.current;
 
-      if (y < 80) {
+      if (y < 60) {
         setHidden(false);
-      } else if (delta > 6) {
+      } else if (delta > 15) {
         setHidden(true);
-      } else if (delta < -6) {
+      } else if (delta < -15) {
         setHidden(false);
       }
 
       lastYRef.current = y;
     }
 
-    /* 延迟 500ms 才绑定 scroll，避免浏览器 scroll restoration 误触发 */
-    let attached = false;
-    const timer = setTimeout(() => {
-      lastYRef.current = window.scrollY;
-      window.addEventListener("scroll", onScroll, { passive: true });
-      attached = true;
-    }, 500);
-
-    return () => {
-      clearTimeout(timer);
-      if (attached) window.removeEventListener("scroll", onScroll);
+    let ticking = false;
+    const throttledScroll = () => {
+      if (!ticking) {
+        window.requestAnimationFrame(() => {
+          onScroll();
+          ticking = false;
+        });
+        ticking = true;
+      }
     };
+
+    window.addEventListener("scroll", throttledScroll, { passive: true });
+    return () => window.removeEventListener("scroll", throttledScroll);
   }, []);
 
   return (
+    <>
+      {/* 隐藏全局滚动条，防止计算偏移 */}
+      <style>{`
+        ::-webkit-scrollbar { display: none !important; width: 0 !important; height: 0 !important; }
+        ::-webkit-scrollbar-track { background: transparent !important; }
+        ::-webkit-scrollbar-thumb { background: transparent !important; }
+        * { scrollbar-width: none !important; -ms-overflow-style: none !important; }
+      `}</style>
+
     <div
       className="fixed left-0 right-0 z-50 pointer-events-none"
       style={{
         bottom: 0,
-        paddingBottom: "calc(12px + env(safe-area-inset-bottom))",
-        transform: hidden ? "translateY(200%)" : "translateY(0)",
-        opacity: hidden ? 0 : 1,
-        transition: "transform 0.5s cubic-bezier(0.16, 1, 0.3, 1), opacity 0.5s ease-out",
+        paddingBottom: "calc(16px + env(safe-area-inset-bottom))",
+        // ★ 只保留位移，去掉 opacity（透明度）动画
+        transform: hidden ? "translateY(150%)" : "translateY(0)",
+        // ★ 加上 will-change 让浏览器提前准备好硬件加速
+        willChange: "transform", 
+        // ★ 动画曲线微调，0.3s 更干脆利落，没有透明度参与，完全同步
+        transition: "transform 0.3s cubic-bezier(0.16, 1, 0.3, 1)",
       }}
     >
-      <div className="max-w-3xl mx-auto px-4">
-        <div
-          className="pointer-events-auto
-                     rounded-[26px]
-                     border border-white/40
-                     flex items-center justify-around
-                     h-[58px] px-2
-                     relative"
-          style={{
-            background: "rgba(255, 255, 255, 0.72)",
-            boxShadow:
-              "0 8px 32px rgba(15,23,42,0.08), 0 2px 8px rgba(15,23,42,0.04), inset 0 1px 0 rgba(255,255,255,0.6)",
-          }}
-        >
-          {TABS.map((tab) => {
-            if (tab.key === "add") {
+        <div className="max-w-md mx-auto px-6">
+          <div
+            className="pointer-events-auto
+                       rounded-full
+                       border border-white/20
+                       flex items-center justify-around
+                       h-[60px]
+                       relative overflow-hidden"
+            style={{
+              background: "rgba(255, 255, 255, 0.01)", 
+              backdropFilter: "blur(10px) saturate(200%)",
+              WebkitBackdropFilter: "blur(32px) saturate(200%)",
+              boxShadow: "0 8px 32px rgba(0,0,0,0.05), inset 0 1px 1px rgba(255,255,255,0.3)", 
+            }}
+          >
+            {/* ★ 去掉父级 padding，严格 25% 宽度 */}
+            {activeIndex !== -1 && (
+              <div
+                className="absolute top-0 bottom-0 transition-transform duration-500 ease-[cubic-bezier(0.34,1.56,0.64,1)] pointer-events-none"
+                style={{
+                  width: "25%", 
+                  left: 0,
+                  transform: `translateX(${activeIndex * 100}%)`, 
+                }}
+              >
+                {/* 内部留白，确保不贴边且绝对居中 */}
+                <div className="absolute inset-y-1.5 inset-x-3 bg-purple-500/10 rounded-full" />
+              </div>
+            )}
+
+            {TABS.map((tab, idx) => {
+              const isActive = idx === activeIndex;
+
               return (
                 <Link
                   key={tab.key}
                   href={tab.href}
-                  className="relative -mt-5 flex-shrink-0 active:scale-95 transition-transform"
+                  className="flex-1 flex flex-col items-center justify-center gap-0.5 py-1
+                             transition-all duration-300 active:scale-90 relative z-10"
                 >
-                  <div
-                    className="w-12 h-12 rounded-full flex items-center justify-center
-                               transition-all duration-300 ease-out"
-                    style={{
-                      background: "linear-gradient(135deg, #6366f1 0%, #a855f7 55%, #ec4899 100%)",
-                      boxShadow:
-                        "0 8px 20px -6px rgba(139, 92, 246, 0.5), 0 3px 8px -2px rgba(236, 72, 153, 0.3)",
-                    }}
+                  <svg
+                    className={`w-[21px] h-[21px] transition-all duration-300 ${
+                      isActive ? "text-purple-600 scale-105" : "text-slate-500"
+                    }`}
+                    fill="none"
+                    stroke="currentColor"
+                    viewBox="0 0 24 24"
+                    strokeWidth={isActive ? 2.5 : 2}
                   >
-                    <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M12 5v14m7-7H5" />
-                    </svg>
-                  </div>
+                    <path strokeLinecap="round" strokeLinejoin="round" d={tab.icon} />
+                  </svg>
+                  <span
+                    className={`text-[10px] transition-colors duration-300 ${
+                      isActive ? "text-purple-600 font-bold" : "text-slate-500 font-medium"
+                    }`}
+                  >
+                    {tab.label}
+                  </span>
                 </Link>
               );
-            }
-
-            const isActive = tab.href === "/"
-              ? pathname === "/"
-              : pathname?.startsWith(tab.href);
-
-            return (
-              <Link
-                key={tab.key}
-                href={tab.href}
-                className="flex-1 flex flex-col items-center justify-center gap-0.5 py-1
-                           transition-all duration-300 active:scale-95"
-              >
-                <svg
-                  className={`w-[22px] h-[22px] transition-all duration-300 ${
-                    isActive ? "text-purple-600" : "text-slate-500"
-                  }`}
-                  fill="none"
-                  stroke="currentColor"
-                  viewBox="0 0 24 24"
-                  strokeWidth={isActive ? 2.3 : 1.9}
-                >
-                  <path strokeLinecap="round" strokeLinejoin="round" d={tab.icon} />
-                </svg>
-                <span
-                  className={`text-[10px] transition-colors duration-300 ${
-                    isActive ? "text-purple-600 font-semibold" : "text-slate-500"
-                  }`}
-                >
-                  {tab.label}
-                </span>
-              </Link>
-            );
-          })}
+            })}
+          </div>
         </div>
       </div>
-    </div>
+    </>
   );
 }

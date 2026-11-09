@@ -54,10 +54,11 @@ function calcAnnualized(
   }
   if (!ref || ref.nav <= 0 || ref.date === latest.date) return null;
 
-  const actualDays = Math.max(
-    1,
-    Math.round((latestTime - new Date(ref.date).getTime()) / 86400000)
-  );
+  const actualDays = Math.max(1, Math.round((latestTime - new Date(ref.date).getTime()) / 86400000));
+  
+  // ★ 核心修复：如果实际跨度天数太少（比如算3个月，但只找到了5天前的数据），说明数据不足，直接返回 null，避免年化被夸大。
+  if (actualDays < days * 0.5) return null; 
+
   const totalReturn = (latest.nav - ref.nav) / ref.nav;
   return ((totalReturn * 365) / actualDays) * 100;
 }
