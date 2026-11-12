@@ -6,14 +6,18 @@ import { supabase } from "../../lib/supabase";
 import { getBankInfo } from "../../lib/banks";
 import { getHoldingMarketValue } from "../../lib/holdings";
 
-const SORTS = [
+const HOLD_SORTS = [
   { key: "value", label: "市值" },
   { key: "today", label: "今日" },
   { key: "wanfen", label: "万收" },
   { key: "annual", label: "年化" },
   { key: "days", label: "天数" },
-  { key: "sell_date", label: "卖出日期" },
 ];
+const WATCH_SORTS = [
+  { key: "wanfen", label: "万收" },
+  { key: "annual", label: "年化" },
+];
+
 const ANNUAL_PERIODS = [
   { key: "7d", label: "7天" }, { key: "14d", label: "14天" }, { key: "1m", label: "1月" },
   { key: "3m", label: "3月" }, { key: "6m", label: "6月" }, { key: "1y", label: "1年" }, { key: "all", label: "成立" },
@@ -68,8 +72,8 @@ export default function AllView({
     return "全部";
   });
   const [sortKey, setSortKey] = useState(() => {
-    if (typeof window !== "undefined") return sessionStorage.getItem("all_view_sort") || "sell_date";
-    return "sell_date";
+    if (typeof window !== "undefined") return sessionStorage.getItem("all_view_sort") || "annual";
+    return "annual";
   });
   const [annualPeriod, setAnnualPeriod] = useState(() => {
     if (typeof window !== "undefined") return sessionStorage.getItem("all_view_period") || "1m";
@@ -83,21 +87,34 @@ export default function AllView({
   const userId = typeof window !== "undefined" ? localStorage.getItem("user_id") : null;
 
   useEffect(() => {
-    if (typeof window !== "undefined") sessionStorage.setItem("all_view_tab", statusFilter);
+    if (statusFilter === "hold") {
+      setSortKey(sessionStorage.getItem("all_view_sort_hold") || "annual");
+    } else if (statusFilter === "watch") {
+      setSortKey(sessionStorage.getItem("all_view_sort_watch") || "wanfen");
+    } else if (statusFilter === "closed") {
+      setSortKey("sell_date");
+    }
+    setPageMap({});
   }, [statusFilter]);
+
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      sessionStorage.setItem("all_view_tab", statusFilter);
+      if (statusFilter === "hold") sessionStorage.setItem("all_view_sort_hold", sortKey);
+      if (statusFilter === "watch") sessionStorage.setItem("all_view_sort_watch", sortKey);
+    }
+  }, [statusFilter, sortKey]);
+
   useEffect(() => {
     if (typeof window !== "undefined") sessionStorage.setItem("all_view_bank", bankFilter);
   }, [bankFilter]);
-  useEffect(() => {
-    if (typeof window !== "undefined") sessionStorage.setItem("all_view_sort", sortKey);
-  }, [sortKey]);
   useEffect(() => {
     if (typeof window !== "undefined") sessionStorage.setItem("all_view_period", annualPeriod);
   }, [annualPeriod]);
 
   useEffect(() => {
     setPageMap({});
-  }, [statusFilter, bankFilter, sortKey, sortDesc, annualPeriod]);
+  }, [bankFilter, sortKey, sortDesc, annualPeriod]);
 
   useEffect(() => {
     if (!userId) return;
@@ -129,24 +146,6 @@ export default function AllView({
 
   const holdings = useMemo(() => allHoldings.filter(h => h.status === "active"), [allHoldings]);
   const closedHoldings = useMemo(() => allHoldings.filter(h => h.status === "closed"), [allHoldings]);
-
-  const bankStats = useMemo(() => {
-    const map = new Map<string, { count: number; amount: number }>();
-    let total = 0;
-    holdings.forEach(h => {
-      const amount = Number(h.holding_amount || 0);
-      const bank = h.products?.bank || "其他";
-      if (!map.has(bank)) map.set(bank, { count: 0, amount: 0 });
-      const curr = map.get(bank)!;
-      curr.count += 1;
-      curr.amount += amount;
-      total += amount;
-    });
-    return Array.from(map.entries()).map(([bank, data]) => ({
-      bank, count: data.count, amount: data.amount,
-      percent: total > 0 ? (data.amount / total) * 100 : 0,
-    })).sort((a, b) => b.amount - a.amount);
-  }, [holdings]);
 
   const groupSummary = useMemo(() => {
     let filtered: any[] = [];
@@ -181,7 +180,6 @@ export default function AllView({
       } else if (sortKey === "days") {
         diff = daysHeld(b.hold_date) - daysHeld(a.hold_date);
       } else if (sortKey === "sell_date") {
-        // ★ 新增：按最后卖出日期排序
         const getSellDate = (h: any) => {
           if (h.status !== "closed") return h.hold_date || "";
           const pTxs = transactions.filter((t: any) => t.product_id === h.products?.id && (t.type === "sell" || t.type === "close"));
@@ -239,8 +237,11 @@ export default function AllView({
     setPageMap(prev => ({ ...prev, [bank]: newPage }));
   };
 
+  const currentSorts = statusFilter === "hold" ? HOLD_SORTS : statusFilter === "watch" ? WATCH_SORTS : [];
+
   return (
     <div className="animate-fade-in space-y-4">
+      {/* Tabs */}
       <div className="relative flex bg-slate-100/60 p-1 rounded-full mb-4 shadow-sm border border-slate-200/50">
         <div 
           className="absolute top-1 bottom-1 bg-white rounded-full shadow-sm transition-transform duration-300 ease-out" 
@@ -262,61 +263,11 @@ export default function AllView({
         })}
       </div>
 
-      {statusFilter === "hold" && holdings.length > 0 && (
-        <div className="card p-5 animate-fade-in-up">
-          <div className="text-[14px] font-bold text-slate-900 mb-4">持仓分布</div>
-          <div className="flex h-2.5 rounded-full overflow-hidden mb-4 bg-slate-100">
-            {bankStats.map((b) => (
-              <div key={b.bank} style={{ width: `${b.percent}%`, background: getBankInfo(b.bank).bar }} className="h-full" />
-            ))}
-          </div>
-          <div className="space-y-2 mb-5">
-            {bankStats.map((b) => {
-              const info = getBankInfo(b.bank);
-              return (
-                <div key={b.bank} className="flex items-center justify-between text-[12px]">
-                  <div className="flex items-center gap-2 text-slate-700 font-medium">
-                    <span className="w-2 h-2 rounded-full" style={{ background: info.bar }} />
-                    {b.bank}
-                  </div>
-                  <div className="flex items-center gap-6 tabular">
-                    <span className="text-slate-400 font-mono text-[11px]">{b.percent.toFixed(1)}%</span>
-                    <span className="font-mono font-bold text-slate-900 w-24 text-right">
-                      {privacy ? "••••" : b.amount.toLocaleString("zh-CN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                    </span>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-          <div className="flex gap-2 overflow-x-auto no-scrollbar pt-2 border-t border-slate-100">
-            <button 
-              onClick={() => setBankFilter("全部")} 
-              className={`px-4 py-1.5 rounded-full text-[12px] font-medium transition-all shrink-0 ${
-                bankFilter === "全部" ? "bg-purple-600 text-white shadow-md shadow-purple-500/20" : "bg-slate-100 text-slate-600 hover:bg-slate-200"
-              }`}
-            >
-              全部 <span className="opacity-70 text-[10px] ml-1">{holdings.length}</span>
-            </button>
-            {bankStats.map(b => (
-              <button 
-                key={b.bank}
-                onClick={() => setBankFilter(b.bank)} 
-                className={`px-4 py-1.5 rounded-full text-[12px] font-medium transition-all shrink-0 ${
-                  bankFilter === b.bank ? "bg-slate-800 text-white shadow-md" : "bg-white border border-slate-200 text-slate-600 hover:bg-slate-50"
-                }`}
-              >
-                {b.bank} <span className="opacity-50 text-[10px] ml-1">{b.count}</span>
-              </button>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {(statusFilter === "hold" || statusFilter === "watch" || statusFilter === "closed") && (
+      {/* 排序工具栏 */}
+      {currentSorts.length > 0 && (
         <div className="px-1 mt-4">
           <div className="segment-group flex">
-            {SORTS.map(s => (
+            {currentSorts.map(s => (
               <button key={s.key} onClick={() => { if (sortKey === s.key) setSortDesc(!sortDesc); else { setSortKey(s.key); setSortDesc(true); } }}
                 className={`flex-1 py-2 text-[12px] segment-item flex items-center justify-center gap-1 ${sortKey === s.key ? "segment-item-active" : "hover:text-slate-700"}`}>
                 {s.label}
@@ -344,6 +295,7 @@ export default function AllView({
             const info = getBankInfo(group.bank);
             return (
               <div key={group.bank} className="card overflow-hidden" style={{ animationDelay: `${0.06 * (gi + 1)}s` }}>
+                {/* ★ 图二的头部卡片：包含了银行、产品数、占比、金额 */}
                 <div className="flex items-stretch">
                   <div className="w-1" style={{ background: info.bar }} />
                   <div className="flex-1 px-5 py-4 bg-slate-50/60 border-b divider">
@@ -522,25 +474,23 @@ export default function AllView({
                        );
                     }
 
-                    // ★ 渲染多次清仓：汇总行完美对齐 + 明细4列
                     return (
                       <div key={h.id} className="border-b divider last:border-b-0 bg-white">
                         <Link href={`/product/${p.id}`} className="block px-5 pt-4 pb-3 hover:bg-slate-50 transition-colors">
                           <CardHeader />
-                          {/* 汇总行：本金靠左，累计收益和万收靠右对齐 */}
                           <div className="flex justify-between items-center text-[11px] mb-1">
                              <div className="text-slate-400">
                                本金 {privacy ? "••••" : totalPurchaseAmount.toLocaleString("zh-CN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                              </div>
                              <div className="flex items-center gap-4">
                                <div className="flex items-center gap-1 justify-end">
-                                 <span className="text-slate-400">累计收益</span>
+                                 <span className="text-slate-400 whitespace-nowrap">累计收益</span>
                                  <span className={`font-mono font-semibold ${totalProfit > 0 ? "text-rose-500" : "text-emerald-500"}`}>
                                    {fmtProfit(totalProfit)}
                                  </span>
                                </div>
                                <div className="flex items-center gap-1 justify-end">
-                                 <span className="text-slate-400">万收</span>
+                                 <span className="text-slate-400 whitespace-nowrap">万收</span>
                                  <span className={`font-mono font-semibold ${wanfen > 0 ? "text-rose-500" : wanfen < 0 ? "text-emerald-500" : "text-slate-300"}`}>
                                    {allNavs.length < 2 ? "-" : (wanfen >= 0 ? "+" : "") + wanfen.toFixed(2)}
                                  </span>
@@ -558,7 +508,6 @@ export default function AllView({
                                   <span className="text-[11px] text-slate-400 font-mono">{b.date}</span>
                                 </div>
                               </div>
-                              {/* 明细行：4列，完美对齐 */}
                               <div className="grid grid-cols-[1.2fr_1fr_1fr_0.8fr] gap-1">
                                 <div>
                                   <div className="text-[10px] text-slate-400 mb-0.5">本金</div>
