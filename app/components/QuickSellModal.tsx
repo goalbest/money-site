@@ -1,9 +1,8 @@
 "use client";
 
-import { useState, useEffect, useRef, useMemo } from "react";
+import { useState, useEffect, useRef } from "react";
 import { supabase } from "../../lib/supabase";
 import { recalcHoldingFromTransactions, fetchNavByDate } from "../../lib/holdings";
-import { addTradingDays, ensureTradingDay } from "../../lib/holidays";
 
 type Props = {
   open: boolean;
@@ -14,45 +13,6 @@ type Props = {
 
 function todayStr() {
   return new Date().toISOString().split("T")[0];
-}
-
-function fmtDate(d: Date): string {
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
-}
-
-function calcRedemption(
-  dateStr: string,
-  rules: { arrival_days?: number | null; confirm_days?: number | null; cutoff_time?: string | null }
-) {
-  const arrivalDays = rules.arrival_days ?? 1;
-  const confirmDays = rules.confirm_days ?? 1;
-  const cutoff = rules.cutoff_time;
-
-  let t = new Date(dateStr + "T12:00:00");
-  let note = "";
-
-  const today = todayStr();
-  if (dateStr === today && cutoff) {
-    const [h, m] = cutoff.split(":").map(Number);
-    const now = new Date();
-    if (now.getHours() > h || (now.getHours() === h && now.getMinutes() >= m)) {
-      t = addTradingDays(t, 1);
-      note = `已过 ${cutoff} 截止，顺延到下一个交易日`;
-    }
-  }
-
-  t = ensureTradingDay(t);
-  const confirmDate = addTradingDays(t, confirmDays);
-  const arrivalDate = addTradingDays(t, arrivalDays);
-
-  return {
-    t: fmtDate(t),
-    confirmDate: fmtDate(confirmDate),
-    arrivalDate: fmtDate(arrivalDate),
-    note,
-    arrivalDays,
-    confirmDays,
-  };
 }
 
 export default function QuickSellModal({ open, holding, onClose, onSuccess }: Props) {
@@ -120,19 +80,6 @@ export default function QuickSellModal({ open, holding, onClose, onSuccess }: Pr
   const navNum = Number(nav);
   const sellAmt = sh * navNum;
 
-  const redemption = useMemo(() => {
-    if (!date || !holding?.products) return null;
-    const p = holding.products;
-    if (p.redeem_arrival_days == null && p.redeem_confirm_days == null && !p.redeem_cutoff_time) {
-      return null;
-    }
-    return calcRedemption(date, {
-      arrival_days: p.redeem_arrival_days,
-      confirm_days: p.redeem_confirm_days,
-      cutoff_time: p.redeem_cutoff_time,
-    });
-  }, [date, holding?.products]);
-
   if (!open || !holding) return null;
 
   async function handleSubmit() {
@@ -150,7 +97,6 @@ export default function QuickSellModal({ open, holding, onClose, onSuccess }: Pr
       const remainShares = currentShares - sh;
       const isClosed = remainShares < 0.01;
 
-      // 1. 插入交易记录
       await supabase.from("transactions").insert({
         user_id: userId,
         product_id: holding.products.id,
@@ -162,22 +108,15 @@ export default function QuickSellModal({ open, holding, onClose, onSuccess }: Pr
         note: note || (isClosed ? "清仓" : "部分赎回"),
       });
 
-      // 2. 重算持仓（会把 shares=0 的置为 closed）
       await recalcHoldingFromTransactions(userId, holding.products.id);
 
-      // 3. ★ 全部赎回 → 覆盖为 pending_sell
+      // 如果是全部赎回，直接进入待确认状态，不再自动计算 T+ 日期
       if (isClosed) {
-        const confirmDateStr = redemption?.confirmDate || (() => {
-          const t = ensureTradingDay(new Date(date + "T12:00:00"));
-          const c = addTradingDays(t, 1);
-          return fmtDate(c);
-        })();
-
         const { error: updErr } = await supabase
           .from("user_holdings")
           .update({
             status: "pending_sell",
-            confirm_date: confirmDateStr,
+            confirm_date: null, // 清空自动算的日期，等待用户手动确认
             closed_amount: sellAmt,
             closed_at: null,
           })
@@ -187,7 +126,7 @@ export default function QuickSellModal({ open, holding, onClose, onSuccess }: Pr
         if (updErr) {
           console.error("pending_sell 更新失败:", updErr.message);
         } else {
-          console.log(`✅ 已进入 pending_sell，确认日: ${confirmDateStr}`);
+          console.log(`✅ 已进入 pending_sell 状态`);
         }
       }
 
@@ -272,50 +211,7 @@ export default function QuickSellModal({ open, holding, onClose, onSuccess }: Pr
 
               {sellAmt > 0 && (
                 <div className="bg-slate-50 rounded-xl px-3 py-2.5 text-[11px] text-slate-600 font-mono">
-                  预计赎回金额：¥ {sellAmt.toLocaleString("zh-CN", { minimumFractionDigits: 2 })}
-                </div>
-              )}
-
-              {redemption && (
-                <div className="bg-amber-50/60 border border-amber-100 rounded-xl p-3.5 space-y-2.5">
-                  <div className="flex items-center gap-1.5 mb-1">
-                    <svg className="w-3.5 h-3.5 text-amber-600" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
-                      <circle cx="12" cy="12" r="9" />
-                      <path strokeLinecap="round" strokeLinejoin="round" d="M12 7v5l3 3" />
-                    </svg>
-                    <span className="text-[11px] font-semibold text-amber-700">赎回时间预估</span>
-                  </div>
-
-                  <div className="flex items-center justify-between text-[11px]">
-                    <span className="text-slate-500">交易日 T</span>
-                    <span className="font-mono font-semibold text-slate-700 tabular">{redemption.t}</span>
-                  </div>
-
-                  <div className="flex items-center justify-between text-[11px]">
-                    <span className="text-slate-500">
-                      收益截止日
-                      <span className="text-[9px] text-slate-400 ml-1">(T+{redemption.confirmDays})</span>
-                    </span>
-                    <span className="font-mono font-semibold text-rose-600 tabular">{redemption.confirmDate}</span>
-                  </div>
-
-                  <div className="flex items-center justify-between text-[11px]">
-                    <span className="text-slate-500">
-                      资金到账日
-                      <span className="text-[9px] text-slate-400 ml-1">(T+{redemption.arrivalDays})</span>
-                    </span>
-                    <span className="font-mono font-semibold text-emerald-600 tabular">{redemption.arrivalDate}</span>
-                  </div>
-
-                  {redemption.note && (
-                    <div className="text-[10px] text-amber-700 bg-amber-100/60 rounded-lg px-2.5 py-1.5 leading-relaxed">
-                      ⚠️ {redemption.note}
-                    </div>
-                  )}
-
-                  <div className="text-[9px] text-amber-600/80 leading-relaxed pt-1 border-t border-amber-100">
-                    ⚠️ 到账时间为保守估计，复杂产品以银行公告为准
-                  </div>
+                  预计赎回金额：¥ {sellAmt.toLocaleString("zh-CN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                 </div>
               )}
 

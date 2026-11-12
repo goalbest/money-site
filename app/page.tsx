@@ -1,12 +1,11 @@
 "use client";
 
-import { useState, useEffect, useLayoutEffect, useMemo } from "react";
+import { useState, useEffect, useLayoutEffect, useMemo, useCallback } from "react";
 import dynamic from "next/dynamic";
 import { supabase } from "../lib/supabase";
 import { getHoldingMarketValue } from "../lib/holdings";
 import AssetCard from "./components/AssetCard";
 
-// ★ 核心优化：按需懒加载列表、日历、监控，不阻塞首页第一屏渲染
 const AllView = dynamic(() => import("./components/AllView"), { 
   ssr: false,
   loading: () => <div className="h-40 flex items-center justify-center text-slate-400 text-sm animate-pulse">正在加载持仓列表...</div>
@@ -14,6 +13,8 @@ const AllView = dynamic(() => import("./components/AllView"), {
 const CalendarView = dynamic(() => import("./components/CalendarView"), { ssr: false });
 const MonitorPanel = dynamic(() => import("./components/MonitorPanel"), { ssr: false });
 const AddModal = dynamic(() => import("./components/AddModal"), { ssr: false });
+
+const CACHE_KEY = "cache_home_data_v8";
 
 function daysAgoStr(n: number): string {
   const d = new Date();
@@ -24,19 +25,91 @@ function daysAgoStr(n: number): string {
 type View = "calendar" | "all" | "monitor";
 
 export default function HomePage() {
-  const [allHoldings, setAllHoldings] = useState<any[]>([]);
-  const [navHistory, setNavHistory] = useState<Record<number, any[]>>({});
-  const [loading, setLoading] = useState(true);
+  const [allHoldings, setAllHoldings] = useState<any[]>(() => {
+    if (typeof window !== "undefined") {
+      const cached = localStorage.getItem(CACHE_KEY);
+      if (cached) return JSON.parse(cached).allHoldings || [];
+    }
+    return [];
+  });
+  
+  const [navHistory, setNavHistory] = useState<Record<number, any[]>>(() => {
+    if (typeof window !== "undefined") {
+      const cached = localStorage.getItem(CACHE_KEY);
+      if (cached) return JSON.parse(cached).navHistory || {};
+    }
+    return {};
+  });
+
+  // ★ 新增：存储交易流水
+  const [transactions, setTransactions] = useState<any[]>(() => {
+    if (typeof window !== "undefined") {
+      const cached = localStorage.getItem(CACHE_KEY);
+      if (cached) return JSON.parse(cached).transactions || [];
+    }
+    return [];
+  });
+
+  const [loading, setLoading] = useState(() => {
+    if (typeof window !== "undefined") return !localStorage.getItem(CACHE_KEY);
+    return true;
+  });
+
   const [privacy, setPrivacy] = useState(false);
   const [nowStr, setNowStr] = useState("");
   const [view, setView] = useState<View>("all");
   const [hideFab, setHideFab] = useState(false);
   const [showAddModal, setShowAddModal] = useState(false);
 
+  const fetchData = useCallback(async (userId: string) => {
+    try {
+      const { data, error } = await supabase.from("user_holdings")
+        .select("id, holding_amount, in_transit_amount, purchase_amount, shares, hold_date, closed_at, closed_amount, status, products(id, name, bank, category, unit_nav, nav_date)")
+        .eq("user_id", userId).in("status", ["active", "closed"]);
+      
+      if (error) throw error;
+      if (!data) return;
+
+      // 拉取流水
+      const { data: txs } = await supabase.from("transactions")
+        .select("product_id, type, amount, trade_date")
+        .eq("user_id", userId);
+
+      const allIds = data.map((h: any) => h.products?.id).filter(Boolean);
+      let allGrouped: Record<number, {nav: number, date: string}[]> = {};
+      
+      if (allIds.length > 0) {
+        await Promise.all(allIds.map(async (id: number) => {
+          const { data: navData } = await supabase.from("nav_history")
+            .select("nav_date, unit_nav")
+            .eq("product_id", id)
+            .gte("nav_date", daysAgoStr(30)) 
+            .order("nav_date", { ascending: true });
+          if (navData && navData.length > 0) {
+            allGrouped[id] = navData.map((r: any) => ({ nav: Number(r.unit_nav), date: r.nav_date }));
+          }
+        }));
+      }
+
+      setAllHoldings(data);
+      setNavHistory(allGrouped);
+      setTransactions(txs || []);
+      setLoading(false); 
+
+      localStorage.setItem(CACHE_KEY, JSON.stringify({
+        allHoldings: data,
+        navHistory: allGrouped,
+        transactions: txs || []
+      }));
+    } catch (err) {
+      console.error("加载数据失败:", err);
+      setLoading(false);
+    }
+  }, []);
+
   useEffect(() => {
     const d = new Date();
     setNowStr(`${d.getFullYear()}年${d.getMonth() + 1}月${d.getDate()}日 ${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`);
-    
     const onScroll = () => setHideFab(window.scrollY > 150);
     window.addEventListener("scroll", onScroll, { passive: true });
     return () => window.removeEventListener("scroll", onScroll);
@@ -51,51 +124,9 @@ export default function HomePage() {
 
   useEffect(() => {
     const userId = localStorage.getItem("user_id");
-    if (!userId) { 
-      setLoading(false); 
-      return; 
-    }
-    
-    async function fetchData() {
-      try {
-        // 第一步：拿到用户的持仓基本信息（这个请求极小，极快）
-        const { data, error } = await supabase.from("user_holdings")
-          .select("id, holding_amount, in_transit_amount, purchase_amount, shares, hold_date, closed_at, closed_amount, status, products(id, name, bank, category, unit_nav, nav_date)")
-          .eq("user_id", userId).in("status", ["active", "closed"]);
-        
-        if (error) throw error;
-        if (!data) return;
-
-        setAllHoldings(data);
-        setLoading(false); // 此时大卡片和 Tab 已经渲染出来了！用户不会觉得卡了。
-
-        // 第二步：后台静默拉取历史净值（只拉最近 30 天，足够算今天和这个月的收益了）
-        const activeIds = data.filter((h: any) => h.status === "active").map((h: any) => h.products?.id).filter(Boolean);
-        if (activeIds.length > 0) {
-          const allGrouped: Record<number, {nav: number, date: string}[]> = {};
-          await Promise.all(activeIds.map(async (id: number) => {
-            const { data: navData } = await supabase.from("nav_history")
-              .select("nav_date, unit_nav")
-              .eq("product_id", id)
-              .gte("nav_date", daysAgoStr(30)) // ★ 提速核心：从 400 天缩减到 30 天
-              .order("nav_date", { ascending: true });
-            if (navData && navData.length > 0) {
-              allGrouped[id] = navData.map((r: any) => ({ nav: Number(r.unit_nav), date: r.nav_date }));
-            }
-          }));
-          setNavHistory(allGrouped); // 拉取完后，收益数字会自动跳动更新
-        }
-      } catch (err) {
-        console.error("加载数据失败:", err);
-      } finally {
-        setLoading(false);
-      }
-    }
-    fetchData();
-  }, []);
-
-  // 切换 Tab 时，如果切到“全部”，且净值历史还没拉完，可以显示一个轻量级的 Loading
-  const isNavLoading = Object.keys(navHistory).length === 0 && allHoldings.length > 0;
+    if (!userId) { setLoading(false); return; }
+    fetchData(userId);
+  }, [fetchData]);
 
   function switchView(v: View) {
     setView(v);
@@ -105,7 +136,6 @@ export default function HomePage() {
   const holdings = useMemo(() => allHoldings.filter(h => h.status === "active"), [allHoldings]);
 
   const globalStats = useMemo(() => {
-    if (loading) return { totalAssets: 0, totalHolding: 0, totalInTransit: 0, totalProfitToday: 0, totalProfitCumulative: 0, monthProfit: 0, todayWanfen: 0, totalRate: 0, monthAnnual: 0, latestNavDateStr: "" };
     const totalHolding = holdings.reduce((s, h) => s + getHoldingMarketValue(h), 0);
     const totalInTransit = holdings.reduce((s, h) => s + Number(h.in_transit_amount || 0), 0);
     const dates = holdings.map(h => h.products?.nav_date).filter(Boolean).sort();
@@ -119,6 +149,7 @@ export default function HomePage() {
       const p = h.products; if (!p) return;
       const shares = Number(h.shares || 0); const hold = getHoldingMarketValue(h); const purchase = Number(h.purchase_amount || 0);
       if (purchase > 0) totalProfitCumulative += (hold - purchase);
+      
       const navs = navHistory[p.id] || [];
       if (navs.length >= 2) {
         if (p.nav_date === latestNavDateStr) totalProfitToday += shares * (navs[navs.length - 1].nav - navs[navs.length - 2].nav);
@@ -127,13 +158,18 @@ export default function HomePage() {
     });
 
     return {
-      totalAssets: totalHolding + totalInTransit, totalHolding, totalInTransit, totalProfitToday, totalProfitCumulative, monthProfit,
+      totalAssets: totalHolding + totalInTransit, 
+      totalHolding, 
+      totalInTransit, 
+      totalProfitToday, 
+      totalProfitCumulative, 
+      monthProfit,
       todayWanfen: totalHolding > 0 ? (totalProfitToday / totalHolding) * 10000 : 0,
       totalRate: totalHolding - totalProfitCumulative > 0 ? (totalProfitCumulative / (totalHolding - totalProfitCumulative)) * 100 : 0,
       monthAnnual: totalHolding > 0 && d.getDate() > 0 ? (monthProfit / totalHolding) * (365 / d.getDate()) * 100 : 0,
       latestNavDateStr
     };
-  }, [holdings, navHistory, loading]);
+  }, [holdings, navHistory]);
 
   return (
     <div className="min-h-screen pb-24 bg-slate-50">
@@ -179,15 +215,9 @@ export default function HomePage() {
               <button onClick={() => switchView("monitor")} className={`flex-1 py-2.5 text-[13px] font-bold relative z-10 transition-colors duration-300 rounded-2xl ${view === "monitor" ? "text-slate-900" : "text-slate-500 hover:text-slate-700"}`}>监控</button>
             </div>
 
-            {/* 如果净值历史还在后台拉取，给列表一个极简的提示，不卡白屏 */}
-            {isNavLoading && view === "all" && (
-              <div className="text-center text-[12px] text-slate-400 mb-2 animate-pulse">
-                正在计算最新收益...
-              </div>
-            )}
-
             {view === "calendar" && <CalendarView />}
-            {view === "all" && <AllView allHoldings={allHoldings} navHistory={navHistory} globalStats={globalStats} privacy={privacy} />}
+            {/* ★ 传 transactions 给 AllView */}
+            {view === "all" && <AllView allHoldings={allHoldings} navHistory={navHistory} transactions={transactions} globalStats={globalStats} privacy={privacy} />}
             {view === "monitor" && <MonitorPanel />}
           </>
         )}

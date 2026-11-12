@@ -290,11 +290,11 @@ export default function MetricsPanel({ navList }: { navList: any[] }) {
         </div>
       </div>
 
-      <div className="grid grid-cols-2 sm:grid-cols-3 gap-1.5 relative z-[3]">
+      <div className="grid grid-cols-3 gap-1.5 relative z-[3]">
         {DEFAULT_ORDER.map((key) => (
           <div
             key={key}
-            className={`relative min-w-0 p-2.5 rounded-xl select-none ${cellBg(key)}`}
+            className={`relative min-w-0 p-2 rounded-xl select-none ${cellBg(key)}`}
           >
             {renderCell(key)}
           </div>

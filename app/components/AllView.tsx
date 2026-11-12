@@ -12,6 +12,7 @@ const SORTS = [
   { key: "wanfen", label: "万收" },
   { key: "annual", label: "年化" },
   { key: "days", label: "天数" },
+  { key: "sell_date", label: "卖出日期" },
 ];
 const ANNUAL_PERIODS = [
   { key: "7d", label: "7天" }, { key: "14d", label: "14天" }, { key: "1m", label: "1月" },
@@ -54,19 +55,45 @@ function calcAnnualizedFromNav(navs: any[], period: string) {
 }
 
 export default function AllView({ 
-  allHoldings, navHistory, globalStats, privacy 
+  allHoldings, navHistory, transactions = [], globalStats, privacy 
 }: { 
-  allHoldings: any[], navHistory: any, globalStats: any, privacy: boolean 
+  allHoldings: any[], navHistory: any, transactions?: any[], globalStats: any, privacy: boolean 
 }) {
-  const [statusFilter, setStatusFilter] = useState("hold");
-  const [bankFilter, setBankFilter] = useState("全部");
-  const [sortKey, setSortKey] = useState("annual");
+  const [statusFilter, setStatusFilter] = useState(() => {
+    if (typeof window !== "undefined") return sessionStorage.getItem("all_view_tab") || "hold";
+    return "hold";
+  });
+  const [bankFilter, setBankFilter] = useState(() => {
+    if (typeof window !== "undefined") return sessionStorage.getItem("all_view_bank") || "全部";
+    return "全部";
+  });
+  const [sortKey, setSortKey] = useState(() => {
+    if (typeof window !== "undefined") return sessionStorage.getItem("all_view_sort") || "sell_date";
+    return "sell_date";
+  });
+  const [annualPeriod, setAnnualPeriod] = useState(() => {
+    if (typeof window !== "undefined") return sessionStorage.getItem("all_view_period") || "1m";
+    return "1m";
+  });
+
   const [sortDesc, setSortDesc] = useState(true);
-  const [annualPeriod, setAnnualPeriod] = useState("1m");
   
   const [pageMap, setPageMap] = useState<Record<string, number>>({});
   const [watchList, setWatchList] = useState<Set<number>>(new Set());
   const userId = typeof window !== "undefined" ? localStorage.getItem("user_id") : null;
+
+  useEffect(() => {
+    if (typeof window !== "undefined") sessionStorage.setItem("all_view_tab", statusFilter);
+  }, [statusFilter]);
+  useEffect(() => {
+    if (typeof window !== "undefined") sessionStorage.setItem("all_view_bank", bankFilter);
+  }, [bankFilter]);
+  useEffect(() => {
+    if (typeof window !== "undefined") sessionStorage.setItem("all_view_sort", sortKey);
+  }, [sortKey]);
+  useEffect(() => {
+    if (typeof window !== "undefined") sessionStorage.setItem("all_view_period", annualPeriod);
+  }, [annualPeriod]);
 
   useEffect(() => {
     setPageMap({});
@@ -122,11 +149,12 @@ export default function AllView({
   }, [holdings]);
 
   const groupSummary = useMemo(() => {
-    let filtered = [];
+    let filtered: any[] = [];
+    
     if (statusFilter === "hold") {
       filtered = holdings;
     } else if (statusFilter === "closed") {
-      filtered = closedHoldings;
+      filtered = closedHoldings; 
     } else if (statusFilter === "watch") {
       filtered = holdings.filter(h => h.products && watchList.has(Number(h.products.id)));
     } else {
@@ -152,6 +180,20 @@ export default function AllView({
         diff = calcAnnualizedFromNav(navHistory[b.products?.id] || [], annualPeriod) - calcAnnualizedFromNav(navHistory[a.products?.id] || [], annualPeriod);
       } else if (sortKey === "days") {
         diff = daysHeld(b.hold_date) - daysHeld(a.hold_date);
+      } else if (sortKey === "sell_date") {
+        // ★ 新增：按最后卖出日期排序
+        const getSellDate = (h: any) => {
+          if (h.status !== "closed") return h.hold_date || "";
+          const pTxs = transactions.filter((t: any) => t.product_id === h.products?.id && (t.type === "sell" || t.type === "close"));
+          if (pTxs.length > 0) {
+            pTxs.sort((x: any, y: any) => new Date(y.trade_date).getTime() - new Date(x.trade_date).getTime());
+            return pTxs[0].trade_date;
+          }
+          return h.closed_at || h.hold_date || "";
+        };
+        const dateA = getSellDate(a);
+        const dateB = getSellDate(b);
+        diff = new Date(dateB).getTime() - new Date(dateA).getTime();
       }
       return sortDesc ? diff : -diff;
     });
@@ -185,9 +227,10 @@ export default function AllView({
       };
     }).sort((a, b) => b.total - a.total);
 
-  }, [holdings, closedHoldings, statusFilter, watchList, bankFilter, sortKey, sortDesc, navHistory, annualPeriod, globalStats.totalHolding, pageMap]);
+  }, [holdings, closedHoldings, statusFilter, watchList, bankFilter, sortKey, sortDesc, navHistory, annualPeriod, globalStats.totalHolding, pageMap, transactions]);
 
   function fmtProfit(n: number) { return privacy ? "••" : `${n >= 0 ? "+" : ""}${n.toFixed(2)}`; }
+  function fmtPercent(n: number) { return privacy ? "••" : `${n >= 0 ? "+" : ""}${n.toFixed(2)}%`; }
   
   const periodLabel = ANNUAL_PERIODS.find(x => x.key === annualPeriod)?.label || "1月";
   const activeSubTabIndex = STATUS_TABS.findIndex(t => t.key === statusFilter);
@@ -239,7 +282,7 @@ export default function AllView({
                   <div className="flex items-center gap-6 tabular">
                     <span className="text-slate-400 font-mono text-[11px]">{b.percent.toFixed(1)}%</span>
                     <span className="font-mono font-bold text-slate-900 w-24 text-right">
-                      {privacy ? "••••" : b.amount.toLocaleString("zh-CN", { minimumFractionDigits: 2 })}
+                      {privacy ? "••••" : b.amount.toLocaleString("zh-CN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                     </span>
                   </div>
                 </div>
@@ -270,7 +313,7 @@ export default function AllView({
         </div>
       )}
 
-      {(statusFilter === "hold" || statusFilter === "watch") && (
+      {(statusFilter === "hold" || statusFilter === "watch" || statusFilter === "closed") && (
         <div className="px-1 mt-4">
           <div className="segment-group flex">
             {SORTS.map(s => (
@@ -313,7 +356,7 @@ export default function AllView({
                         </div>
                       </div>
                       <div className="text-right">
-                        <div className="text-[13px] font-mono font-bold text-slate-900 tabular">{privacy ? "••••" : group.total.toLocaleString("zh-CN", { minimumFractionDigits: 2 })}</div>
+                        <div className="text-[13px] font-mono font-bold text-slate-900 tabular">{privacy ? "••••" : group.total.toLocaleString("zh-CN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
                       </div>
                     </div>
                     <div className="h-1 w-full bg-slate-100 rounded-full overflow-hidden">
@@ -326,101 +369,233 @@ export default function AllView({
                   {group.items.map((h: any, hi: number) => {
                     const p = h.products;
                     if (!p) return null;
-                    const hold = getHoldingMarketValue(h);
-                    const allNavs = navHistory[p.id] || [];
-                    const today = allNavs.length >= 2 ? Number(h.shares||0) * (allNavs[allNavs.length-1].nav - allNavs[allNavs.length-2].nav) : 0;
-                    const wanfen = allNavs.length >= 2 ? (allNavs[allNavs.length-1].nav - allNavs[allNavs.length-2].nav) * 10000 : 0;
-                    const annual = calcAnnualizedFromNav(allNavs, annualPeriod);
                     const isClosed = statusFilter === "closed";
+                    const allNavs = navHistory[p.id] || [];
+                    const wanfen = allNavs.length >= 2 ? (allNavs[allNavs.length-1].nav - allNavs[allNavs.length-2].nav) * 10000 : 0;
                     const isWatched = watchList.has(Number(p.id));
+
+                    let batches: any[] = [];
+                    let totalProfit = 0;
+                    let totalPurchaseAmount = 0;
                     
-                    return (
-                      <Link key={h.id} href={`/product/${p.id}`} className="block px-5 py-4 border-b divider last:border-b-0 hover:bg-slate-50 transition-colors">
-                        <div className="flex justify-between items-start mb-3">
-                          <div className="text-[14px] text-slate-900 font-medium leading-snug pr-4">
+                    if (isClosed) {
+                      const productTxs = transactions.filter((t: any) => t.product_id === p.id).sort((a:any,b:any) => new Date(a.trade_date).getTime() - new Date(b.trade_date).getTime());
+                      const buyTxs = productTxs.filter((t: any) => t.type === "buy");
+                      const sellTxs = productTxs.filter((t: any) => t.type === "sell" || t.type === "close");
+                      
+                      const lastSellDate = sellTxs.length > 0 ? sellTxs[sellTxs.length - 1].trade_date : h.closed_at;
+                      const totalSoldAmount = Number(h.closed_amount || 0) || sellTxs.reduce((sum:number, t:any)=> sum + Number(t.amount), 0);
+                      totalPurchaseAmount = buyTxs.reduce((sum:number, t:any) => sum + Number(t.amount), 0);
+                      const totalBuyShares = buyTxs.reduce((sum:number, t:any) => sum + Number(t.shares), 0);
+
+                      if (buyTxs.length > 0) {
+                        batches = buyTxs.map((bt: any, idx: number) => {
+                          const batchShares = Number(bt.shares);
+                          const batchAmount = Number(bt.amount);
+                          
+                          let batchSellAmount = 0;
+                          if (totalBuyShares > 0 && batchShares > 0) {
+                              batchSellAmount = (batchShares / totalBuyShares) * totalSoldAmount;
+                          } else if (totalPurchaseAmount > 0) {
+                              batchSellAmount = (batchAmount / totalPurchaseAmount) * totalSoldAmount;
+                          }
+
+                          const batchProfit = batchSellAmount - batchAmount;
+                          totalProfit += batchProfit;
+                          
+                          const buyDateObj = new Date(bt.trade_date);
+                          const sellDateObj = lastSellDate ? new Date(lastSellDate) : new Date();
+                          const batchDays = Math.max(1, Math.floor((sellDateObj.getTime() - buyDateObj.getTime()) / (1000 * 60 * 60 * 24)));
+                          const batchAnnualized = batchAmount > 0 ? (batchProfit / batchAmount) * (365 / batchDays) * 100 : 0;
+
+                          return {
+                            id: bt.id,
+                            index: idx + 1,
+                            amount: batchAmount,
+                            profit: batchProfit,
+                            days: batchDays,
+                            annualized: batchAnnualized,
+                            date: bt.trade_date,
+                          };
+                        });
+                      } else {
+                        totalPurchaseAmount = Number(h.purchase_amount || 0);
+                        totalProfit = Number(h.closed_amount || 0) - totalPurchaseAmount;
+                        batches = [{
+                          id: h.id, index: 1, amount: totalPurchaseAmount, 
+                          profit: totalProfit, days: daysHeld(h.hold_date), annualized: 0, date: h.hold_date
+                        }];
+                      }
+                    }
+
+                    const CardHeader = () => (
+                      <div className="flex justify-between items-start mb-3">
+                        <div className="flex-1 flex items-center gap-1.5 min-w-0 pr-4">
+                          <div className="text-[14px] text-slate-900 font-medium leading-snug truncate">
                             {p.name}
                           </div>
-                          {!isClosed && (
-                            <button 
-                              onClick={(e) => toggleWatch(Number(p.id), e)}
-                              className="p-1 -mt-1 -mr-1 text-slate-300 hover:text-amber-400 transition-colors"
-                            >
-                              <svg className={`w-5 h-5 ${isWatched ? "fill-amber-400 text-amber-400" : "fill-transparent"}`} stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
-                                <path strokeLinecap="round" strokeLinejoin="round" d="M11.049 2.927c.3-.921 1.603-.921 1.902 0l1.519 4.674a1 1 0 00.95.69h4.915c.969 0 1.371 1.24.588 1.81l-3.976 2.888a1 1 0 00-.363 1.118l1.518 4.674c.3.922-.755 1.688-1.538 1.118l-3.976-2.888a1 1 0 00-1.176 0l-3.976 2.888c-.783.57-1.838-.197-1.538-1.118l1.518-4.674a1 1 0 00-.363-1.118l-3.976-2.888c-.784-.57-.38-1.81.588-1.81h4.914a1 1 0 00.951-.69l1.519-4.674z" />
-                              </svg>
-                            </button>
+                          {isClosed && batches.length > 0 && (
+                            <span className="flex-shrink-0 bg-slate-100 text-slate-500 text-[9px] px-1.5 py-0.5 rounded font-medium">
+                              {batches.length}次
+                            </span>
                           )}
                         </div>
+                        {!isClosed && (
+                          <button onClick={(e) => toggleWatch(Number(p.id), e)} className="p-1 -mt-1 -mr-1 text-slate-300 hover:text-amber-400 transition-colors">
+                            <svg className={`w-5 h-5 ${isWatched ? "fill-amber-400 text-amber-400" : "fill-transparent"}`} stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M11.049 2.927c.3-.921 1.603-.921 1.902 0l1.519 4.674a1 1 0 00.95.69h4.915c.969 0 1.371 1.24.588 1.81l-3.976 2.888a1 1 0 00-.363 1.118l1.518 4.674c.3.922-.755 1.688-1.538 1.118l-3.976-2.888a1 1 0 00-1.176 0l-3.976 2.888c-.783.57-1.838-.197-1.538-1.118l1.518-4.674a1 1 0 00-.363-1.118l-3.976-2.888c-.784-.57-.38-1.81.588-1.81h4.914a1 1 0 00.951-.69l1.519-4.674z" /></svg>
+                          </button>
+                        )}
+                      </div>
+                    );
+
+                    if (!isClosed || batches.length <= 1) {
+                       const hold = getHoldingMarketValue(h);
+                       const today = allNavs.length >= 2 ? Number(h.shares||0) * (allNavs[allNavs.length-1].nav - allNavs[allNavs.length-2].nav) : 0;
+                       const annual = calcAnnualizedFromNav(allNavs, annualPeriod);
+                       
+                       let displayPurchaseAmount = Number(h.purchase_amount || 0);
+                       let displayProfit = Number(h.closed_amount || 0) - displayPurchaseAmount;
+                       let displayDays = daysHeld(h.hold_date);
+                       let displayAnnualized = 0;
+                       
+                       if (isClosed && batches.length === 1) {
+                         displayPurchaseAmount = batches[0].amount;
+                         displayProfit = batches[0].profit;
+                         displayDays = batches[0].days;
+                         displayAnnualized = batches[0].annualized;
+                       }
+
+                       const gridCols = isClosed ? "grid-cols-[1.2fr_1fr_1.2fr_1fr_0.8fr]" : "grid-cols-[1.2fr_1fr_1fr_1fr_0.8fr]";
+
+                       return (
+                         <Link key={h.id} href={`/product/${p.id}`} className="block px-5 py-4 border-b divider last:border-b-0 hover:bg-slate-50 transition-colors">
+                           <CardHeader />
+                           <div className={`grid ${gridCols} gap-1`}>
+                             <div>
+                               <div className="text-[10px] text-slate-400 mb-1">{isClosed ? "本金" : "市值"}</div>
+                               <div className="font-mono font-bold text-[14px] text-slate-900 truncate">
+                                 {privacy ? "••••" : (isClosed ? displayPurchaseAmount : hold).toLocaleString("zh-CN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                               </div>
+                             </div>
+                             
+                             {!isClosed && (
+                               <div className="text-right">
+                                 <div className="text-[10px] text-slate-400 mb-1 flex items-center justify-end gap-1">
+                                   今日
+                                   {p.nav_date && <span className="text-[10px] text-amber-500 font-medium font-mono">{String(p.nav_date).slice(5)}</span>}
+                                 </div>
+                                 <div className={`font-mono font-semibold text-[14px] ${today > 0 ? "text-rose-500" : today < 0 ? "text-emerald-500" : "text-slate-300"}`}>
+                                   {(today >= 0 ? "+" : "") + (privacy ? "••" : today.toFixed(2))}
+                                 </div>
+                               </div>
+                             )}
+
+                             <div className="text-right">
+                               <div className="text-[10px] text-slate-400 mb-1 truncate">万收</div>
+                               <div className={`font-mono font-semibold text-[14px] ${wanfen > 0 ? "text-rose-500" : wanfen < 0 ? "text-emerald-500" : "text-slate-300"}`}>
+                                 {allNavs.length < 2 ? "-" : (wanfen >= 0 ? "+" : "") + wanfen.toFixed(2)}
+                               </div>
+                             </div>
+
+                             <div className="text-right">
+                               <div className="text-[10px] text-slate-400 mb-1 truncate">{isClosed ? "累计收益" : `年化(${periodLabel})`}</div>
+                               <div className={`font-mono font-semibold text-[14px] ${isClosed ? (displayProfit > 0 ? "text-rose-500" : "text-emerald-500") : annual > 0 ? "text-rose-500" : annual < 0 ? "text-emerald-500" : "text-slate-300"}`}>
+                                 {isClosed ? fmtProfit(displayProfit) : (annual > 0 ? "+" : "") + annual.toFixed(2) + "%"}
+                               </div>
+                             </div>
+
+                             {isClosed && (
+                               <div className="text-right">
+                                 <div className="text-[10px] text-slate-400 mb-1 truncate">年化</div>
+                                 <div className={`font-mono font-semibold text-[14px] ${displayAnnualized > 0 ? "text-rose-500" : "text-emerald-500"}`}>
+                                   {fmtPercent(displayAnnualized)}
+                                 </div>
+                               </div>
+                             )}
+
+                             <div className="text-right">
+                               <div className="text-[10px] text-slate-400 mb-1">天数</div>
+                               <div className="font-mono font-medium text-[12px] text-slate-500 mt-0.5">{displayDays}天</div>
+                             </div>
+                           </div>
+                         </Link>
+                       );
+                    }
+
+                    // ★ 渲染多次清仓：汇总行完美对齐 + 明细4列
+                    return (
+                      <div key={h.id} className="border-b divider last:border-b-0 bg-white">
+                        <Link href={`/product/${p.id}`} className="block px-5 pt-4 pb-3 hover:bg-slate-50 transition-colors">
+                          <CardHeader />
+                          {/* 汇总行：本金靠左，累计收益和万收靠右对齐 */}
+                          <div className="flex justify-between items-center text-[11px] mb-1">
+                             <div className="text-slate-400">
+                               本金 {privacy ? "••••" : totalPurchaseAmount.toLocaleString("zh-CN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                             </div>
+                             <div className="flex items-center gap-4">
+                               <div className="flex items-center gap-1 justify-end">
+                                 <span className="text-slate-400">累计收益</span>
+                                 <span className={`font-mono font-semibold ${totalProfit > 0 ? "text-rose-500" : "text-emerald-500"}`}>
+                                   {fmtProfit(totalProfit)}
+                                 </span>
+                               </div>
+                               <div className="flex items-center gap-1 justify-end">
+                                 <span className="text-slate-400">万收</span>
+                                 <span className={`font-mono font-semibold ${wanfen > 0 ? "text-rose-500" : wanfen < 0 ? "text-emerald-500" : "text-slate-300"}`}>
+                                   {allNavs.length < 2 ? "-" : (wanfen >= 0 ? "+" : "") + wanfen.toFixed(2)}
+                                 </span>
+                               </div>
+                             </div>
+                          </div>
+                        </Link>
                         
-                        <div className="grid grid-cols-[1.2fr_1fr_1fr_1fr_0.8fr] gap-1">
-                          <div>
-                            <div className="text-[10px] text-slate-400 mb-1">{isClosed ? "卖出金额" : "市值"}</div>
-                            <div className="font-mono font-bold text-[14px] text-slate-900 truncate">
-                              {privacy ? "••••" : hold.toLocaleString("zh-CN", { minimumFractionDigits: 2 })}
+                        <div className="bg-slate-50/50">
+                          {batches.map((b) => (
+                            <div key={b.id} className="px-5 py-3 border-t border-slate-100/60 flex flex-col gap-1.5">
+                              <div className="flex justify-between items-center">
+                                <div className="flex items-center gap-2">
+                                  <span className="bg-slate-200/70 text-slate-600 text-[10px] px-1.5 py-0.5 rounded font-medium">第{b.index}次</span>
+                                  <span className="text-[11px] text-slate-400 font-mono">{b.date}</span>
+                                </div>
+                              </div>
+                              {/* 明细行：4列，完美对齐 */}
+                              <div className="grid grid-cols-[1.2fr_1fr_1fr_0.8fr] gap-1">
+                                <div>
+                                  <div className="text-[10px] text-slate-400 mb-0.5">本金</div>
+                                  <div className="font-mono font-bold text-[13px] text-slate-700">
+                                    {privacy ? "••••" : b.amount.toLocaleString("zh-CN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                  </div>
+                                </div>
+                                <div className="text-right">
+                                  <div className="text-[10px] text-slate-400 mb-0.5">收益</div>
+                                  <div className={`font-mono font-bold text-[13px] ${b.profit > 0 ? "text-rose-500" : "text-emerald-500"}`}>
+                                    {privacy ? "••" : `${b.profit >= 0 ? "+" : ""}${b.profit.toFixed(2)}`}
+                                  </div>
+                                </div>
+                                <div className="text-right">
+                                  <div className="text-[10px] text-slate-400 mb-0.5">年化</div>
+                                  <div className={`font-mono font-bold text-[13px] ${b.annualized > 0 ? "text-rose-500" : "text-emerald-500"}`}>
+                                    {privacy ? "••" : `${b.annualized >= 0 ? "+" : ""}${b.annualized.toFixed(2)}%`}
+                                  </div>
+                                </div>
+                                <div className="text-right">
+                                  <div className="text-[10px] text-slate-400 mb-0.5">天数</div>
+                                  <div className="font-mono font-medium text-[12px] text-slate-500 mt-0.5">{b.days}天</div>
+                                </div>
+                              </div>
                             </div>
-                          </div>
-                          
-                          <div className="text-right">
-                            <div className="text-[10px] text-slate-400 mb-1 flex items-center justify-end gap-1">
-                              今日
-                              {!isClosed && p.nav_date && (
-                                <span className="text-[10px] text-amber-500 font-medium font-mono">
-                                  {String(p.nav_date).slice(5)}
-                                </span>
-                              )}
-                            </div>
-                            <div className={`font-mono font-semibold text-[14px] ${today > 0 ? "text-rose-500" : today < 0 ? "text-emerald-500" : "text-slate-300"}`}>
-                              {isClosed ? "-" : (today >= 0 ? "+" : "") + (privacy ? "••" : today.toFixed(2))}
-                            </div>
-                          </div>
-
-                          <div className="text-right">
-                            <div className="text-[10px] text-slate-400 mb-1 truncate">万收</div>
-                            <div className={`font-mono font-semibold text-[14px] ${wanfen > 0 ? "text-rose-500" : wanfen < 0 ? "text-emerald-500" : "text-slate-300"}`}>
-                              {isClosed || allNavs.length < 2 ? "-" : (wanfen >= 0 ? "+" : "") + wanfen.toFixed(2)}
-                            </div>
-                          </div>
-
-                          <div className="text-right">
-                            <div className="text-[10px] text-slate-400 mb-1 truncate">{isClosed ? "累计收益" : `年化(${periodLabel})`}</div>
-                            <div className={`font-mono font-semibold text-[14px] ${isClosed ? (Number(h.closed_amount||0) > Number(h.purchase_amount||0) ? "text-rose-500" : "text-emerald-500") : annual > 0 ? "text-rose-500" : annual < 0 ? "text-emerald-500" : "text-slate-300"}`}>
-                              {isClosed 
-                                ? fmtProfit(Number(h.closed_amount || 0) - Number(h.purchase_amount || 0))
-                                : (annual > 0 ? "+" : "") + annual.toFixed(2) + "%"}
-                            </div>
-                          </div>
-
-                          <div className="text-right">
-                            <div className="text-[10px] text-slate-400 mb-1">天数</div>
-                            <div className="font-mono font-medium text-[12px] text-slate-500 mt-0.5">
-                              {daysHeld(h.hold_date)}天
-                            </div>
-                          </div>
+                          ))}
                         </div>
-                      </Link>
+                      </div>
                     );
                   })}
                 </div>
 
                 {group.totalPages > 1 && (
                   <div className="flex items-center justify-between px-5 py-3 bg-white border-t border-slate-100">
-                    <button 
-                      onClick={() => handlePageChange(group.bank, group.currentPage - 1)}
-                      disabled={group.currentPage === 1}
-                      className="px-4 py-1.5 text-[12px] font-medium bg-white border border-slate-200 rounded-xl text-slate-600 disabled:opacity-40 disabled:cursor-not-allowed hover:bg-slate-50 transition-colors shadow-sm"
-                    >
-                      上一页
-                    </button>
-                    <span className="text-[12px] text-slate-500">
-                      第 <span className="text-purple-600 font-bold mx-0.5">{group.currentPage}</span> / {group.totalPages} 页
-                    </span>
-                    <button 
-                      onClick={() => handlePageChange(group.bank, group.currentPage + 1)}
-                      disabled={group.currentPage === group.totalPages}
-                      className="px-4 py-1.5 text-[12px] font-medium bg-white border border-slate-200 rounded-xl text-slate-600 disabled:opacity-40 disabled:cursor-not-allowed hover:bg-slate-50 transition-colors shadow-sm"
-                    >
-                      下一页
-                    </button>
+                    <button onClick={() => handlePageChange(group.bank, group.currentPage - 1)} disabled={group.currentPage === 1} className="px-4 py-1.5 text-[12px] font-medium bg-white border border-slate-200 rounded-xl text-slate-600 disabled:opacity-40">上一页</button>
+                    <span className="text-[12px] text-slate-500">第 <span className="text-purple-600 font-bold mx-0.5">{group.currentPage}</span> / {group.totalPages} 页</span>
+                    <button onClick={() => handlePageChange(group.bank, group.currentPage + 1)} disabled={group.currentPage === group.totalPages} className="px-4 py-1.5 text-[12px] font-medium bg-white border border-slate-200 rounded-xl text-slate-600 disabled:opacity-40">下一页</button>
                   </div>
                 )}
               </div>

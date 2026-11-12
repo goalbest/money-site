@@ -1,77 +1,34 @@
-"use client";
+import { useState, useEffect } from "react";
 
-import { useEffect, useRef, useState } from "react";
-
-type Options = {
-  /**
-   * 首次启动延迟（毫秒）
-   * 用于等首屏渲染稳定后再开始动画，避免主线程繁忙时动画被"跑完"
-   * 推荐 100~200ms
-   */
-  startDelay?: number;
-};
-
-/**
- * 数字滚动动画
- * - 从"当前值"平滑过渡到目标值（不是永远从 0）
- * - 目标值没变时不重播
- * - 支持延迟启动，避免首屏卡顿
- */
-export function useCountUp(target: number, duration = 1000, options: Options = {}) {
-  const { startDelay = 0 } = options;
-  const [value, setValue] = useState(0);
-  const fromRef = useRef(0);
-  const rafRef = useRef<number | null>(null);
+export function useCountUp(target: number, duration = 800) {
+  const [displayValue, setDisplayValue] = useState(0);
 
   useEffect(() => {
-    // 取消上一次未完成的动画
-    if (rafRef.current !== null) {
-      cancelAnimationFrame(rafRef.current);
-      rafRef.current = null;
-    }
+    if (displayValue === target) return;
 
-    const from = fromRef.current;
-    const to = target;
+    let start = displayValue;
+    let end = target;
+    let startTime: number | null = null;
+    let animationFrame: number;
 
-    // 值几乎没变 → 直接落值，不播动画
-    if (Math.abs(to - from) < 0.005) {
-      fromRef.current = to;
-      setValue(to);
-      return;
-    }
+    const animate = (time: number) => {
+      if (!startTime) startTime = time;
+      const progress = Math.min((time - startTime) / duration, 1);
+      
+      // easeOutQuart 缓动，顺滑无比
+      const ease = 1 - Math.pow(1 - progress, 4);
+      setDisplayValue(start + (end - start) * ease);
 
-    const startAt = performance.now() + startDelay;
-    const total = Math.max(1, duration);
-
-    const tick = (now: number) => {
-      const elapsed = now - startAt;
-      if (elapsed < 0) {
-        rafRef.current = requestAnimationFrame(tick);
-        return;
-      }
-      const t = Math.min(elapsed / total, 1);
-      const eased = 1 - Math.pow(1 - t, 3);
-      const next = from + (to - from) * eased;
-      fromRef.current = next;
-      setValue(next);
-      if (t < 1) {
-        rafRef.current = requestAnimationFrame(tick);
-      } else {
-        fromRef.current = to;
-        setValue(to);
-        rafRef.current = null;
+      if (progress < 1) {
+        animationFrame = requestAnimationFrame(animate);
       }
     };
 
-    rafRef.current = requestAnimationFrame(tick);
+    animationFrame = requestAnimationFrame(animate);
+    return () => cancelAnimationFrame(animationFrame);
+    // 依赖项只有 target 和 duration，绝不多余触发
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [target, duration]); 
 
-    return () => {
-      if (rafRef.current !== null) {
-        cancelAnimationFrame(rafRef.current);
-        rafRef.current = null;
-      }
-    };
-  }, [target, duration, startDelay]);
-
-  return value;
+  return displayValue;
 }

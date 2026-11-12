@@ -12,6 +12,37 @@ type Props = {
   onSuccess: () => void;
 };
 
+// ★ 复制过来的智能推断函数，防止数据库里没存银行导致空白
+function guessBank(name: string, code?: string): string {
+  const n = name || "";
+  if (/中邮|邮储|鸿运|鸿锦|优盛|福瑞|灵活添利|财富鑫鑫|鸿业远图/.test(n)) return "中邮理财";
+  if (/交银/.test(n)) return "交银理财";
+  if (/招银|招睿/.test(n)) return "招银理财";
+  if (/工银|工行/.test(n)) return "工银理财";
+  if (/建信|建行/.test(n)) return "建信理财";
+  if (/农银|农行/.test(n)) return "农银理财";
+  if (/中银|中行/.test(n)) return "中银理财";
+  if (/兴银|兴业/.test(n)) return "兴银理财";
+  if (/浦银|浦发/.test(n)) return "浦银理财";
+  if (/信银|中信/.test(n)) return "信银理财";
+  if (/光大/.test(n)) return "光大理财";
+  if (/民生/.test(n)) return "民生理财";
+  if (/平安/.test(n)) return "平安理财";
+  if (/华夏/.test(n)) return "华夏理财";
+  if (/广银|广发/.test(n)) return "广银理财";
+  if (/上银|上海银行/.test(n)) return "上银理财";
+  if (/苏银|江苏银行/.test(n)) return "苏银理财";
+  if (/宁银|宁波银行/.test(n)) return "宁银理财";
+  if (/南银|南京银行/.test(n)) return "南银理财";
+  if (/杭银|杭州银行/.test(n)) return "杭银理财";
+  if (code) {
+    if (/^2401NB/i.test(code)) return "中邮理财";
+    if (/^JY/i.test(code)) return "交银理财";
+    if (/^ZY/i.test(code)) return "招银理财";
+  }
+  return "其他";
+}
+
 export default function EditHoldingModal({ open, holding, onClose, onSuccess }: Props) {
   const [editAmount, setEditAmount] = useState("");
   const [editShares, setEditShares] = useState("");
@@ -23,7 +54,7 @@ export default function EditHoldingModal({ open, holding, onClose, onSuccess }: 
   const [msg, setMsg] = useState("");
   const [navLoading, setNavLoading] = useState(false);
 
-  /* 打开时初始化：份额为 0 则自动算 */
+  /* 打开时初始化：份额为 0 则自动算，银行为空则智能推断 */
   useEffect(() => {
     if (!open || !holding) return;
 
@@ -35,8 +66,15 @@ export default function EditHoldingModal({ open, holding, onClose, onSuccess }: 
     setEditAmount(initAmount);
     setEditNav(initNav);
     setEditDate(holding.hold_date || "");
-    setEditBank(holding.products?.bank || "");
     setMsg("");
+
+    // ★ 银行兜底逻辑
+    let finalBank = holding.products?.bank || "";
+    if (!finalBank || finalBank === "其他") {
+      const guessed = guessBank(holding.products?.name || "", holding.products?.code || "");
+      if (guessed !== "其他") finalBank = guessed;
+    }
+    setEditBank(finalBank);
 
     const rawShares = Number(holding.shares || 0);
 

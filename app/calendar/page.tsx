@@ -544,7 +544,7 @@ export default function CalendarPage() {
               {privacy
                 ? "••••••"
                 : `${displayTotalProfit >= 0 ? "+" : ""}${animatedTotal.toLocaleString("zh-CN", {
-                    minimumFractionDigits: 2,
+                    minimumFractionDigits: 2, maximumFractionDigits: 2,
                     maximumFractionDigits: 2,
                   })}`}
             </div>

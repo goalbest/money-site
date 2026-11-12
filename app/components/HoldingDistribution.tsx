@@ -10,7 +10,6 @@ export default function HoldingDistribution({
   holdings: any[];
   privacy: boolean;
 }) {
-  // 仅保留按银行统计
   const bankStats = useMemo(() => {
     const map = new Map<string, number>();
     let total = 0;
@@ -60,7 +59,7 @@ export default function HoldingDistribution({
                 <div className="flex items-center gap-6 tabular">
                   <span className="text-slate-400 font-mono text-[11px]">{b.percent.toFixed(1)}%</span>
                   <span className="font-mono font-bold text-slate-900 w-24 text-right">
-                    {privacy ? "••••" : b.amount.toLocaleString("zh-CN", { minimumFractionDigits: 2 })}
+                    {privacy ? "••••" : b.amount.toLocaleString("zh-CN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                   </span>
                 </div>
               </div>
