@@ -9,7 +9,7 @@ import { getHoldingMarketValue } from "../../lib/holdings";
 const SORTS = [
   { key: "value", label: "市值" },
   { key: "today", label: "今日" },
-  { key: "dailyReturn", label: "日涨幅" },
+  { key: "wanfen", label: "万收" },
   { key: "annual", label: "年化" },
   { key: "days", label: "天数" },
 ];
@@ -137,11 +137,17 @@ export default function AllView({
 
     const sortedItems = [...filtered].sort((a, b) => {
       let diff = 0;
-      if (sortKey === "value") diff = getHoldingMarketValue(b) - getHoldingMarketValue(a);
-      else if (sortKey === "today") {
+      if (sortKey === "value") {
+        diff = getHoldingMarketValue(b) - getHoldingMarketValue(a);
+      } else if (sortKey === "today") {
         const navsA = navHistory[a.products?.id] || []; const navsB = navHistory[b.products?.id] || [];
         diff = (navsB.length >= 2 ? b.shares * (navsB[navsB.length-1].nav - navsB[navsB.length-2].nav) : 0) - 
                (navsA.length >= 2 ? a.shares * (navsA[navsA.length-1].nav - navsA[navsA.length-2].nav) : 0);
+      } else if (sortKey === "wanfen") {
+        const navsA = navHistory[a.products?.id] || []; const navsB = navHistory[b.products?.id] || [];
+        const wanfenA = navsA.length >= 2 ? (navsA[navsA.length-1].nav - navsA[navsA.length-2].nav) * 10000 : 0;
+        const wanfenB = navsB.length >= 2 ? (navsB[navsB.length-1].nav - navsB[navsB.length-2].nav) * 10000 : 0;
+        diff = wanfenB - wanfenA;
       } else if (sortKey === "annual") {
         diff = calcAnnualizedFromNav(navHistory[b.products?.id] || [], annualPeriod) - calcAnnualizedFromNav(navHistory[a.products?.id] || [], annualPeriod);
       } else if (sortKey === "days") {
@@ -323,6 +329,7 @@ export default function AllView({
                     const hold = getHoldingMarketValue(h);
                     const allNavs = navHistory[p.id] || [];
                     const today = allNavs.length >= 2 ? Number(h.shares||0) * (allNavs[allNavs.length-1].nav - allNavs[allNavs.length-2].nav) : 0;
+                    const wanfen = allNavs.length >= 2 ? (allNavs[allNavs.length-1].nav - allNavs[allNavs.length-2].nav) * 10000 : 0;
                     const annual = calcAnnualizedFromNav(allNavs, annualPeriod);
                     const isClosed = statusFilter === "closed";
                     const isWatched = watchList.has(Number(p.id));
@@ -345,7 +352,7 @@ export default function AllView({
                           )}
                         </div>
                         
-                        <div className="grid grid-cols-[1.3fr_1fr_1fr_0.8fr] gap-1">
+                        <div className="grid grid-cols-[1.2fr_1fr_1fr_1fr_0.8fr] gap-1">
                           <div>
                             <div className="text-[10px] text-slate-400 mb-1">{isClosed ? "卖出金额" : "市值"}</div>
                             <div className="font-mono font-bold text-[14px] text-slate-900 truncate">
@@ -364,6 +371,13 @@ export default function AllView({
                             </div>
                             <div className={`font-mono font-semibold text-[14px] ${today > 0 ? "text-rose-500" : today < 0 ? "text-emerald-500" : "text-slate-300"}`}>
                               {isClosed ? "-" : (today >= 0 ? "+" : "") + (privacy ? "••" : today.toFixed(2))}
+                            </div>
+                          </div>
+
+                          <div className="text-right">
+                            <div className="text-[10px] text-slate-400 mb-1 truncate">万收</div>
+                            <div className={`font-mono font-semibold text-[14px] ${wanfen > 0 ? "text-rose-500" : wanfen < 0 ? "text-emerald-500" : "text-slate-300"}`}>
+                              {isClosed || allNavs.length < 2 ? "-" : (wanfen >= 0 ? "+" : "") + wanfen.toFixed(2)}
                             </div>
                           </div>
 
@@ -388,7 +402,6 @@ export default function AllView({
                   })}
                 </div>
 
-                {/* 独立的分页按钮 */}
                 {group.totalPages > 1 && (
                   <div className="flex items-center justify-between px-5 py-3 bg-white border-t border-slate-100">
                     <button 

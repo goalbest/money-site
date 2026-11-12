@@ -9,7 +9,7 @@ import AssetCard from "./components/AssetCard";
 // ★ 核心优化：按需懒加载列表、日历、监控，不阻塞首页第一屏渲染
 const AllView = dynamic(() => import("./components/AllView"), { 
   ssr: false,
-  loading: () => <div className="h-64 flex items-center justify-center text-slate-400 text-sm animate-pulse">正在加载持仓列表...</div>
+  loading: () => <div className="h-40 flex items-center justify-center text-slate-400 text-sm animate-pulse">正在加载持仓列表...</div>
 });
 const CalendarView = dynamic(() => import("./components/CalendarView"), { ssr: false });
 const MonitorPanel = dynamic(() => import("./components/MonitorPanel"), { ssr: false });
@@ -58,6 +58,7 @@ export default function HomePage() {
     
     async function fetchData() {
       try {
+        // 第一步：拿到用户的持仓基本信息（这个请求极小，极快）
         const { data, error } = await supabase.from("user_holdings")
           .select("id, holding_amount, in_transit_amount, purchase_amount, shares, hold_date, closed_at, closed_amount, status, products(id, name, bank, category, unit_nav, nav_date)")
           .eq("user_id", userId).in("status", ["active", "closed"]);
@@ -66,29 +67,35 @@ export default function HomePage() {
         if (!data) return;
 
         setAllHoldings(data);
-        setLoading(false); // ★ 核心：拿到持仓后立刻关闭 loading，先渲染资产卡片和 Tab
+        setLoading(false); // 此时大卡片和 Tab 已经渲染出来了！用户不会觉得卡了。
 
-        // 后台静默拉取历史净值，拉完自动更新盈亏数字
+        // 第二步：后台静默拉取历史净值（只拉最近 30 天，足够算今天和这个月的收益了）
         const activeIds = data.filter((h: any) => h.status === "active").map((h: any) => h.products?.id).filter(Boolean);
         if (activeIds.length > 0) {
           const allGrouped: Record<number, {nav: number, date: string}[]> = {};
           await Promise.all(activeIds.map(async (id: number) => {
-            const { data: navData } = await supabase.from("nav_history").select("nav_date, unit_nav").eq("product_id", id).gte("nav_date", daysAgoStr(400)).order("nav_date", { ascending: true });
+            const { data: navData } = await supabase.from("nav_history")
+              .select("nav_date, unit_nav")
+              .eq("product_id", id)
+              .gte("nav_date", daysAgoStr(30)) // ★ 提速核心：从 400 天缩减到 30 天
+              .order("nav_date", { ascending: true });
             if (navData && navData.length > 0) {
               allGrouped[id] = navData.map((r: any) => ({ nav: Number(r.unit_nav), date: r.nav_date }));
             }
           }));
-          setNavHistory(allGrouped);
+          setNavHistory(allGrouped); // 拉取完后，收益数字会自动跳动更新
         }
       } catch (err) {
         console.error("加载数据失败:", err);
       } finally {
-        // ★ 绝对兜底：不管成功还是报错，都要关掉 loading
         setLoading(false);
       }
     }
     fetchData();
   }, []);
+
+  // 切换 Tab 时，如果切到“全部”，且净值历史还没拉完，可以显示一个轻量级的 Loading
+  const isNavLoading = Object.keys(navHistory).length === 0 && allHoldings.length > 0;
 
   function switchView(v: View) {
     setView(v);
@@ -171,6 +178,13 @@ export default function HomePage() {
               <button onClick={() => switchView("all")} className={`flex-1 py-2.5 text-[13px] font-bold relative z-10 transition-colors duration-300 rounded-2xl ${view === "all" ? "text-slate-900" : "text-slate-500 hover:text-slate-700"}`}>全部</button>
               <button onClick={() => switchView("monitor")} className={`flex-1 py-2.5 text-[13px] font-bold relative z-10 transition-colors duration-300 rounded-2xl ${view === "monitor" ? "text-slate-900" : "text-slate-500 hover:text-slate-700"}`}>监控</button>
             </div>
+
+            {/* 如果净值历史还在后台拉取，给列表一个极简的提示，不卡白屏 */}
+            {isNavLoading && view === "all" && (
+              <div className="text-center text-[12px] text-slate-400 mb-2 animate-pulse">
+                正在计算最新收益...
+              </div>
+            )}
 
             {view === "calendar" && <CalendarView />}
             {view === "all" && <AllView allHoldings={allHoldings} navHistory={navHistory} globalStats={globalStats} privacy={privacy} />}
