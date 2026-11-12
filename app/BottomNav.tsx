@@ -40,13 +40,7 @@ export default function BottomNav() {
     tab.href === "/" ? pathname === "/" : pathname?.startsWith(tab.href)
   );
 
-  if (
-    pathname?.startsWith("/product/") ||
-    pathname?.startsWith("/login") ||
-    pathname?.startsWith("/add") ||
-    (pathname?.startsWith("/holdings/") && pathname.length > "/holdings/".length)
-  ) return null;
-
+  // ★ 修复：所有的 Hook 必须在任何条件 return 之前执行！
   useEffect(() => {
     lastYRef.current = window.scrollY;
 
@@ -80,9 +74,16 @@ export default function BottomNav() {
     return () => window.removeEventListener("scroll", throttledScroll);
   }, []);
 
+  // ★ 所有的 Hook 执行完之后，再进行条件判断并返回 null 隐藏导航栏
+  if (
+    pathname?.startsWith("/product/") ||
+    pathname?.startsWith("/login") ||
+    pathname?.startsWith("/add") ||
+    (pathname?.startsWith("/holdings/") && pathname.length > "/holdings/".length)
+  ) return null;
+
   return (
     <>
-      {/* 隐藏全局滚动条，防止计算偏移 */}
       <style>{`
         ::-webkit-scrollbar { display: none !important; width: 0 !important; height: 0 !important; }
         ::-webkit-scrollbar-track { background: transparent !important; }
@@ -90,45 +91,35 @@ export default function BottomNav() {
         * { scrollbar-width: none !important; -ms-overflow-style: none !important; }
       `}</style>
 
-    <div
-      className="fixed left-0 right-0 z-50 pointer-events-none"
-      style={{
-        bottom: 0,
-        paddingBottom: "calc(16px + env(safe-area-inset-bottom))",
-        // ★ 只保留位移，去掉 opacity（透明度）动画
-        transform: hidden ? "translateY(150%)" : "translateY(0)",
-        // ★ 加上 will-change 让浏览器提前准备好硬件加速
-        willChange: "transform", 
-        // ★ 动画曲线微调，0.3s 更干脆利落，没有透明度参与，完全同步
-        transition: "transform 0.3s cubic-bezier(0.16, 1, 0.3, 1)",
-      }}
-    >
+      <div
+        className="fixed left-0 right-0 z-50 pointer-events-none"
+        style={{
+          bottom: 0,
+          paddingBottom: "calc(16px + env(safe-area-inset-bottom))",
+          transform: hidden ? "translateY(150%)" : "translateY(0)",
+          willChange: "transform",
+          transition: "transform 0.3s cubic-bezier(0.16, 1, 0.3, 1)",
+        }}
+      >
         <div className="max-w-md mx-auto px-6">
           <div
-            className="pointer-events-auto
-                       rounded-full
-                       border border-white/20
-                       flex items-center justify-around
-                       h-[60px]
-                       relative overflow-hidden"
+            className="pointer-events-auto rounded-full border border-white/20 flex items-center justify-around h-[60px] relative overflow-hidden"
             style={{
-              background: "rgba(255, 255, 255, 0.01)", 
+              background: "rgba(255, 255, 255, 0.01)",
               backdropFilter: "blur(10px) saturate(200%)",
               WebkitBackdropFilter: "blur(32px) saturate(200%)",
-              boxShadow: "0 8px 32px rgba(0,0,0,0.05), inset 0 1px 1px rgba(255,255,255,0.3)", 
+              boxShadow: "0 8px 32px rgba(0,0,0,0.05), inset 0 1px 1px rgba(255,255,255,0.3)",
             }}
           >
-            {/* ★ 去掉父级 padding，严格 25% 宽度 */}
             {activeIndex !== -1 && (
               <div
                 className="absolute top-0 bottom-0 transition-transform duration-500 ease-[cubic-bezier(0.34,1.56,0.64,1)] pointer-events-none"
                 style={{
-                  width: "25%", 
+                  width: "25%",
                   left: 0,
-                  transform: `translateX(${activeIndex * 100}%)`, 
+                  transform: `translateX(${activeIndex * 100}%)`,
                 }}
               >
-                {/* 内部留白，确保不贴边且绝对居中 */}
                 <div className="absolute inset-y-1.5 inset-x-3 bg-purple-500/10 rounded-full" />
               </div>
             )}
@@ -140,8 +131,7 @@ export default function BottomNav() {
                 <Link
                   key={tab.key}
                   href={tab.href}
-                  className="flex-1 flex flex-col items-center justify-center gap-0.5 py-1
-                             transition-all duration-300 active:scale-90 relative z-10"
+                  className="flex-1 flex flex-col items-center justify-center gap-0.5 py-1 transition-all duration-300 active:scale-90 relative z-10"
                 >
                   <svg
                     className={`w-[21px] h-[21px] transition-all duration-300 ${

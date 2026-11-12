@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useMemo, useRef } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { supabase } from "../../../lib/supabase";
 import { getBankInfo } from "../../../lib/banks";
@@ -26,7 +26,8 @@ const RANGES: { key: Range; label: string; days: number }[] = [
 export default function ProductPage() {
   const params = useParams();
   const router = useRouter();
-  const productId = Number(params.id);
+  // ★ 加一层安全判断
+  const productId = params?.id ? Number(params.id) : 0;
 
   const [loading, setLoading] = useState(true);
   const [product, setProduct] = useState<any>(null);
@@ -40,60 +41,62 @@ export default function ProductPage() {
   const [copied, setCopied] = useState(false);
   const [inWatchlist, setInWatchlist] = useState(false);
 
-  useEffect(() => {
-    if (loading) return;
-    if (typeof window === "undefined") return;
-    const searchParams = new URLSearchParams(window.location.search);
-    const action = searchParams.get("action");
-    if (!action) return;
-    if (action === "buy" && myHolding) setQuickBuyOpen(true);
-    else if (action === "sell" && myHolding) setQuickSellOpen(true);
-    else if (action === "edit" && myHolding) setEditHoldingOpen(true);
-  }, [loading, myHolding]);
-
   const { order: productOrder, hydrated: productLayoutHydrated } = useProductLayout();
 
   useEffect(() => {
+    if (!productId) return;
+    
     async function load() {
       setLoading(true);
-      const userId = localStorage.getItem("user_id");
+      const userId = typeof window !== "undefined" ? localStorage.getItem("user_id") : null;
 
-      let prod: any = null;
-      const { data: p1 } = await supabase.from("products").select("*").eq("id", productId).maybeSingle();
-      if (p1) prod = p1;
-      else {
-        const { data: hd } = await supabase.from("user_holdings").select("products(*)").eq("product_id", productId).limit(1).maybeSingle();
-        prod = hd?.products || null;
-      }
+      try {
+        let prod: any = null;
+        const { data: p1 } = await supabase.from("products").select("*").eq("id", productId).maybeSingle();
+        if (p1) prod = p1;
+        else {
+          const { data: hd } = await supabase.from("user_holdings").select("products(*)").eq("product_id", productId).limit(1).maybeSingle();
+          prod = hd?.products || null;
+        }
 
-      setProduct(prod);
+        setProduct(prod);
 
-      if (prod) {
-        const { data: navs } = await supabase
-          .from("nav_history").select("nav_date, unit_nav, accum_nav").eq("product_id", productId).order("nav_date", { ascending: true });
-        setNavList(navs || []);
-      }
+        if (prod) {
+          const { data: navs } = await supabase
+            .from("nav_history").select("nav_date, unit_nav, accum_nav").eq("product_id", productId).order("nav_date", { ascending: true });
+          setNavList(navs || []);
+        }
 
-      if (userId) {
-        const { data: hd } = await supabase
-          .from("user_holdings")
-          .select("id, holding_amount, in_transit_amount, shares, hold_date, status, products(id, name, unit_nav, risk_level, redeem_arrival_days, redeem_confirm_days, redeem_cutoff_time)")
-          .eq("user_id", userId).eq("product_id", productId).in("status", ["active", "closed"]).order("id", { ascending: false }).limit(1).maybeSingle();
-        setMyHolding(hd || null);
+        if (userId) {
+          const { data: hd } = await supabase
+            .from("user_holdings")
+            .select("id, holding_amount, in_transit_amount, shares, hold_date, status, products(id, name, unit_nav, risk_level, redeem_arrival_days, redeem_confirm_days, redeem_cutoff_time)")
+            .eq("user_id", userId).eq("product_id", productId).in("status", ["active", "closed"]).order("id", { ascending: false }).limit(1).maybeSingle();
+          setMyHolding(hd || null);
 
-        const { data: rules } = await supabase.from("watch_rules").select("*").eq("user_id", userId).eq("product_id", productId);
-        setWatchRules(rules || []);
+          const { data: rules } = await supabase.from("watch_rules").select("*").eq("user_id", userId).eq("product_id", productId);
+          setWatchRules(rules || []);
 
-        try {
           const { data: wl } = await supabase.from("watchlist").select("id").eq("user_id", userId).eq("product_id", productId).maybeSingle();
           setInWatchlist(!!wl);
-        } catch { setInWatchlist(false); }
+        }
+      } catch (error) {
+        console.error("加载产品详情失败:", error);
+      } finally {
+        setLoading(false);
       }
-
-      setLoading(false);
     }
     load();
   }, [productId]);
+
+  useEffect(() => {
+    if (loading || !myHolding || typeof window === "undefined") return;
+    const searchParams = new URLSearchParams(window.location.search);
+    const action = searchParams.get("action");
+    if (action === "buy") setQuickBuyOpen(true);
+    else if (action === "sell") setQuickSellOpen(true);
+    else if (action === "edit") setEditHoldingOpen(true);
+  }, [loading, myHolding]);
 
   const filteredNav = useMemo(() => {
     if (navList.length === 0) return [];
@@ -170,8 +173,9 @@ export default function ProductPage() {
   }
 
   const hasHolding = myHolding && myHolding.status === "active";
-  const holdAmount = getHoldingMarketValue(myHolding); 
+  const holdAmount = hasHolding ? getHoldingMarketValue(myHolding) : 0;
   const holdShares = (() => {
+    if (!hasHolding) return 0;
     const raw = Number(myHolding?.shares || 0);
     if (raw > 0) return raw;
     const nav = Number(product?.unit_nav || 0);
@@ -245,6 +249,7 @@ export default function ProductPage() {
             <TransactionList productId={productId} disabled={false} />
           </div>
         );
+      default: return null;
     }
   }
 
@@ -254,7 +259,8 @@ export default function ProductPage() {
         <div className="flex items-center gap-2 mb-5">
           <button
             onClick={() => {
-              if (typeof window !== "undefined" && window.history.length > 2) {
+              // ★ 优化返回逻辑，防止死循环
+              if (typeof window !== "undefined" && document.referrer) {
                 router.back();
               } else {
                 router.push("/");
