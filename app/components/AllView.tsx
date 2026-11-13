@@ -237,7 +237,11 @@ export default function AllView({
   if (!mounted) return <div className="min-h-[200px] flex items-center justify-center text-slate-400 text-sm animate-pulse">加载中...</div>;
 
   return (
-    <div className="animate-fade-in space-y-4" onTouchStart={handleTouchStart} onTouchEnd={handleTouchEnd}>
+    <div 
+      className="animate-fade-in space-y-4 min-h-[70vh]" // ★ 加上 min-h-[70vh]
+      onTouchStart={handleTouchStart} 
+      onTouchEnd={handleTouchEnd}
+    >
       <div className="relative flex bg-slate-100/60 p-1 rounded-full mb-4 shadow-sm border border-slate-200/50 overflow-hidden">
         <div className="absolute top-1 bottom-1 bg-white rounded-full shadow-sm transition-transform duration-300 ease-out" 
              style={{ width: "calc(25% - 2px)", transform: `translateX(${activeSubTabIndex * 100}%)`, left: "4px" }} />

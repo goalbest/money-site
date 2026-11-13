@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useLayoutEffect, useMemo, useCallback } from "react";
+import { useState, useEffect, useLayoutEffect, useMemo, useCallback, useRef } from "react";
 import dynamic from "next/dynamic";
 import { supabase } from "../lib/supabase";
 import { getHoldingMarketValue } from "../lib/holdings";
@@ -25,6 +25,8 @@ type View = "calendar" | "all";
 
 export default function HomePage() {
   const [mounted, setMounted] = useState(false);
+  // ★ 新增：日历页全屏滑动的 Refs
+  const touchStartRef = useRef<{ x: number, y: number } | null>(null);
 
   const [allHoldings, setAllHoldings] = useState<any[]>(() => {
     if (typeof window !== "undefined") {
@@ -92,7 +94,6 @@ export default function HomePage() {
         .order("id", { ascending: false })
         .limit(1000);
 
-      // ★ 获取所有产品（含清仓）的历史净值
       const allProductIds = (hd || []).map((h: any) => h.products?.id).filter(Boolean);
       const uniqueProductIds = [...new Set(allProductIds)] as number[];
       
@@ -162,6 +163,25 @@ export default function HomePage() {
     setView(v);
     if (typeof window !== "undefined") window.history.replaceState(null, "", v === "all" ? "/" : `/?view=${v}`);
   }
+
+  // ★ 新增：处理日历页的触摸滑动
+  const handleCalendarTouchStart = (e: React.TouchEvent) => {
+    touchStartRef.current = { x: e.touches[0].clientX, y: e.touches[0].clientY };
+  };
+
+  const handleCalendarTouchEnd = (e: React.TouchEvent) => {
+    if (!touchStartRef.current) return;
+    const endX = e.changedTouches[0].clientX;
+    const endY = e.changedTouches[0].clientY;
+    const dx = touchStartRef.current.x - endX;
+    const dy = touchStartRef.current.y - endY;
+    touchStartRef.current = null;
+
+    // 向右滑动（dx < 0），且横向滑动幅度大于纵向
+    if (dx < -50 && Math.abs(dx) > Math.abs(dy) * 1.5) {
+      switchView("all");
+    }
+  };
 
   const holdings = useMemo(() => allHoldings.filter(h => h.status === "active"), [allHoldings]);
 
@@ -255,7 +275,17 @@ export default function HomePage() {
                 onSwipeLeft={() => switchView("calendar")} 
               />
             )}
-            {view === "calendar" && <CalendarView />}
+            
+            {/* ★ 日历页外面包一层触摸监听 */}
+            {view === "calendar" && (
+              <div 
+                className="min-h-[75vh]"
+                onTouchStart={handleCalendarTouchStart}
+                onTouchEnd={handleCalendarTouchEnd}
+              >
+                <CalendarView />
+              </div>
+            )}
           </>
         )}
       </div>

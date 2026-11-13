@@ -1,5 +1,5 @@
 // crawler/fetch_funds.mjs
-// 基金/股票 每日净值更新脚本 (使用天天基金公开接口)
+// 基金/股票 每日净值更新脚本 (使用天天基金官方历史净值接口)
 
 import { createClient } from '@supabase/supabase-js';
 import { readFileSync, existsSync } from 'fs';
@@ -28,7 +28,7 @@ const __dirname = dirname(__filename);
 })();
 
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL;
-const SUPABASE_KEY = process.env.SUPABASE_SERVICE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+const SUPABASE_KEY = process.env.SUPABASE_SERVICE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || process.env.SUPABASE_URL;
 if (!SUPABASE_URL || !SUPABASE_KEY) { console.error('❌ env 缺失'); process.exit(1); }
 const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
 const sleep = ms => new Promise(r => setTimeout(r, ms));
@@ -49,26 +49,37 @@ for (const p of prods) {
     if (p.type === 'fund') {
       console.log(`→ [基金] ${p.code} ${p.name}`);
       
-      // 天天基金实时估值接口
-      const res = await fetch(`http://fundgz.1234567.com.cn/js/${p.code}.js?rt=${Date.now()}`, {
+      // ★ 换用天天基金官方历史净值接口，极度稳定
+      const url = `https://api.fund.eastmoney.com/f10/lsjz?fundCode=${p.code}&pageIndex=1&pageSize=2`;
+      const res = await fetch(url, {
         headers: {
-          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/120.0.0.0 Safari/537.36',
-          'Referer': 'http://fund.eastmoney.com/'
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120.0.0.0 Safari/537.36',
+          'Referer': `http://fundf10.eastmoney.com/`,
+          'Accept': 'application/json, text/javascript, */*; q=0.01'
         }
       });
+      
       const text = await res.text();
       
-      // 解析 JSONP: jsonpgz({...});
-      const match = text.match(/jsonpgz\((.*)\);/);
-      if (!match) {
+      // 拦截器：如果被拦截，通常返回空或报错
+      if (!text || text.includes('Forbidden')) {
+        console.log(`   ⚠️ 接口被拦截，无法获取数据\n`);
+        continue;
+      }
+
+      const json = JSON.parse(text);
+      const list = json.Data?.LSJZList || [];
+      
+      if (list.length === 0) {
         console.log(`   ⚠️ 未获取到数据，可能代码错误或停牌\n`);
         continue;
       }
-      
-      const data = JSON.parse(match[1]);
-      const navDate = data.jzrq; // 净值日期 (e.g., "2023-11-13")
-      const dwjz = parseFloat(data.dwjz); // 单位净值
-      
+
+      const latest = list[0];
+      const navDate = latest.FSRQ; // 净值日期
+      const dwjz = parseFloat(latest.DWJZ); // 单位净值
+      const prevDwjz = list.length > 1 ? parseFloat(list[1].DWJZ) : dwjz; // 昨日净值
+
       if (!navDate || isNaN(dwjz)) {
         console.log(`   ⚠️ 数据解析异常\n`);
         continue;
@@ -80,12 +91,9 @@ for (const p of prods) {
         continue;
       }
 
-      // 拿昨天的净值 (用于前端算今日收益)
-      const prevPrice = p.current_price || dwjz;
-
       // 更新主表
       await supabase.from('fund_stocks').update({
-        prev_price: prevPrice,
+        prev_price: prevDwjz,
         current_price: dwjz,
         nav_date: navDate
       }).eq('id', p.id);
@@ -97,16 +105,15 @@ for (const p of prods) {
         price: dwjz
       }, { onConflict: 'product_id, nav_date' });
 
-      console.log(`   ✅ 更新成功: 净值 ${dwjz} @ ${navDate}\n`);
+      console.log(`   ✅ 更新成功: 净值 ${dwjz} @ ${navDate} (昨日: ${prevDwjz})\n`);
       updatedCount++;
 
     } else if (p.type === 'stock') {
-      // ── 股票抓取逻辑（预留，后续可接新浪/腾讯行情） ──
       console.log(`→ [股票] ${p.code} ${p.name} (暂未接入股票行情源)\n`);
       continue;
     }
     
-    await sleep(500); // 稍微延迟，防封 IP
+    await sleep(1000); // 稍微延迟，防封 IP
   } catch (err) {
     console.log(`   ❌ 失败: ${err.message}\n`);
   }
