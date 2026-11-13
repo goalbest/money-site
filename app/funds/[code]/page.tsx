@@ -20,53 +20,115 @@ export default function AssetDetailPage() {
   const code = params?.code as string;
   const type = searchParams?.get("type") || "fund";
 
+  const CACHE_KEY = `cache_asset_detail_v1_${code}`;
+
+  const [mounted, setMounted] = useState(false);
   const [loading, setLoading] = useState(true);
-  const [data, setData] = useState<any>(null);
-  const [history, setHistory] = useState<any[]>([]);
   const [range, setRange] = useState<Range>("3m"); 
-  
   const [viewType, setViewType] = useState<"daily" | "minute">("daily");
-  const [minuteData, setMinuteData] = useState<{ time: string, price: number }[]>([]);
-  const [availableDates, setAvailableDates] = useState<string[]>([]);
+  
   const [selectedMinuteDate, setSelectedMinuteDate] = useState<string>("");
+  const [availableDates, setAvailableDates] = useState<string[]>([]);
+  const [hoverData, setHoverData] = useState<{ time: string, value: number } | null>(null);
 
   const chartContainerRef = useRef<HTMLDivElement>(null);
 
+  // ★ 核心优化：从缓存初始化，实现秒开
+  const [data, setData] = useState<any>(() => {
+    if (typeof window !== "undefined") {
+      const c = localStorage.getItem(CACHE_KEY);
+      if (c) return JSON.parse(c).data || null;
+    }
+    return null;
+  });
+  
+  const [history, setHistory] = useState<any[]>(() => {
+    if (typeof window !== "undefined") {
+      const c = localStorage.getItem(CACHE_KEY);
+      if (c) return JSON.parse(c).history || [];
+    }
+    return [];
+  });
+  
+  const [minuteData, setMinuteData] = useState<{ time: string, price: number }[]>(() => {
+    if (typeof window !== "undefined") {
+      const c = localStorage.getItem(CACHE_KEY);
+      if (c) return JSON.parse(c).minuteData || [];
+    }
+    return [];
+  });
+
   useEffect(() => {
-    if (!code) return;
+    setMounted(true);
+    if (typeof window !== "undefined") {
+      // 如果没缓存，才显示全屏 loading
+      setLoading(!localStorage.getItem(CACHE_KEY));
+    }
+  }, [CACHE_KEY]);
+
+  // ★ 核心优化：并行拉取，后台静默更新
+  useEffect(() => {
+    if (!mounted || !code) return;
     const userId = localStorage.getItem("user_id");
 
     async function load() {
-      const { data: stock } = await supabase.from("fund_stocks").select("*").eq("code", code).maybeSingle();
-      if (!stock) { setLoading(false); return; }
+      try {
+        // 并行请求基本信息
+        const [stockRes, holdingRes] = await Promise.all([
+          supabase.from("fund_stocks").select("*").eq("code", code).maybeSingle(),
+          userId ? supabase.from("fund_stock_holdings").select("*").eq("user_id", userId).eq("product_id", (await supabase.from("fund_stocks").select("id").eq("code", code).single()).data?.id).maybeSingle() : Promise.resolve({ data: null })
+        ]);
 
-      const { data: holding } = await supabase.from("fund_stock_holdings").select("*").eq("user_id", userId).eq("product_id", stock.id).maybeSingle();
-      const { data: navs } = await supabase.from("fund_stock_history").select("nav_date, price").eq("product_id", stock.id).order("nav_date", { ascending: true }).limit(10000);
+        const stock = stockRes.data;
+        if (!stock) { setLoading(false); return; }
 
-      setData({ ...stock, holding });
-      setHistory(navs || []);
-      
-      if (type === "stock") {
-        const { data: dates } = await supabase.from("stock_minute_data").select("trade_date").eq("product_id", stock.id).order("trade_date", { ascending: false }).limit(100);
-        if (dates && dates.length > 0) {
-          const uniqueDates = [...new Set(dates.map(d => d.trade_date))];
-          setAvailableDates(uniqueDates);
-          if (uniqueDates.length > 0) setSelectedMinuteDate(uniqueDates[0]);
+        const holding = holdingRes.data;
+        
+        // 请求历史数据
+        const { data: navs } = await supabase.from("fund_stock_history").select("nav_date, price").eq("product_id", stock.id).order("nav_date", { ascending: true }).limit(10000);
+
+        // 请求分时数据 (仅股票)
+        let mins = [];
+        let dates = [];
+        if (type === "stock") {
+          const { data: dateData } = await supabase.from("stock_minute_data").select("trade_date").eq("product_id", stock.id).order("trade_date", { ascending: false }).limit(100);
+          if (dateData && dateData.length > 0) {
+            dates = [...new Set(dateData.map(d => d.trade_date))];
+            setAvailableDates(dates);
+            
+            const targetDate = selectedMinuteDate || dates[0];
+            if (!selectedMinuteDate && dates[0]) setSelectedMinuteDate(dates[0]);
+
+            if (targetDate) {
+              const { data: mData } = await supabase.from("stock_minute_data").select("time_str, price").eq("product_id", stock.id).eq("trade_date", targetDate).order("time_str", { ascending: true });
+              if (mData) mins = mData.map(m => ({ time: m.time_str, price: Number(m.price) }));
+            }
+          }
         }
+
+        const newData = { ...stock, holding };
+        const newHistory = navs || [];
+
+        setData(newData);
+        setHistory(newHistory);
+        if (mins.length > 0) setMinuteData(mins);
+        setLoading(false);
+
+        // 更新缓存
+        localStorage.setItem(CACHE_KEY, JSON.stringify({
+          data: newData,
+          history: newHistory,
+          minuteData: mins
+        }));
+      } catch (error) {
+        console.error("加载失败:", error);
+        setLoading(false);
       }
-      setLoading(false);
     }
     load();
-  }, [code, type]);
+  }, [code, type, mounted, CACHE_KEY, selectedMinuteDate]);
 
-  useEffect(() => {
-    if (viewType === "minute" && selectedMinuteDate && data?.id) {
-      supabase.from("stock_minute_data").select("time_str, price").eq("product_id", data.id).eq("trade_date", selectedMinuteDate).order("time_str", { ascending: true }).then(({ data: mins }) => {
-        if (mins) setMinuteData(mins.map(m => ({ time: m.time_str, price: Number(m.price) })));
-      });
-    }
-  }, [viewType, selectedMinuteDate, data?.id]);
-
+  // 计算图表视口数据
   const filteredHistory = useMemo(() => {
     if (history.length === 0) return [];
     if (range === "all") return history;
@@ -78,13 +140,33 @@ export default function AssetDetailPage() {
     return filtered.length >= 2 ? filtered : history.slice(-30);
   }, [history, range]);
 
-  // 初始化 lightweight-charts
+  const activeChartData = useMemo(() => {
+    if (viewType === "daily") {
+      return filteredHistory.map(h => ({ time: h.nav_date, value: Number(h.price) }));
+    } else {
+      const tDate = selectedMinuteDate || new Date().toISOString().split("T")[0];
+      return minuteData.map(m => ({ time: `${tDate} ${m.time}`, value: m.price }));
+    }
+  }, [viewType, filteredHistory, minuteData, selectedMinuteDate]);
+
+  // 渲染图表
   useEffect(() => {
-    if (!chartContainerRef.current || loading) return;
+    if (!chartContainerRef.current || loading || !data) return;
     
     chartContainerRef.current.innerHTML = ""; 
+    setHoverData(null);
 
-    const isProfit = filteredHistory.length > 0 && filteredHistory[filteredHistory.length - 1].price >= filteredHistory[0].price;
+    const isDaily = viewType === "daily";
+    // 图表底层使用全量数据，保证拖动时前后能衔接
+    let chartRenderData = isDaily 
+      ? history.map(h => ({ time: h.nav_date, value: Number(h.price) }))
+      : minuteData.map(m => ({ time: `${selectedMinuteDate || new Date().toISOString().split("T")[0]} ${m.time}`, value: m.price }));
+
+    // 深度去重
+    chartRenderData = chartRenderData.filter((v, i, a) => i === 0 || v.time !== a[i-1].time);
+    if (chartRenderData.length === 0) return;
+
+    const isProfit = chartRenderData[chartRenderData.length - 1].value >= chartRenderData[0].value;
     const color = isProfit ? "#f43f5e" : "#10b981";
 
     const chart = createChart(chartContainerRef.current, {
@@ -93,62 +175,57 @@ export default function AssetDetailPage() {
         textColor: "#94a3b8",
         attributionLogo: false, 
       },
-      localization: {
-        locale: "zh-CN",
-        timeFormatter: (time: any) => {
-          if (typeof time === "string" && time.includes("-")) {
-            const parts = time.split("-");
-            if (parts.length === 3) return `${parseInt(parts[1], 10)}.${parseInt(parts[2], 10)}`;
-          }
-          if (typeof time === "string" && time.includes(" ")) return time.split(" ")[1]; 
-          return time;
-        }
-      },
-      grid: { vertLines: { visible: false }, horzLines: { color: "#f1f5f9" } },
+      grid: { vertLines: { visible: false }, horzLines: { visible: false } },
       width: chartContainerRef.current.clientWidth,
       height: 220,
-      timeScale: { 
-        borderVisible: false, 
-        timeVisible: viewType === "minute",
-        tickMarkFormatter: (time: any) => {
-          if (typeof time === "string" && time.includes(" ")) return time.split(" ")[1]; 
-          if (typeof time === "string" && time.includes("-")) {
-            const parts = time.split("-");
-            return `${parseInt(parts[1], 10)}.${parseInt(parts[2], 10)}`; 
-          }
-          return time;
-        }
-      },
+      rightPriceScale: { visible: true, borderVisible: false },
+      timeScale: { visible: false },
+      // ★ 核心：彻底关闭十字光标（不显示横竖虚线）
       crosshair: { 
-        vertLine: { color: "#94a3b8", style: LineStyle.Dashed, labelBackgroundColor: "#0f172a" },
-        horzLine: { color: "#94a3b8", style: LineStyle.Dashed, labelBackgroundColor: "#0f172a" }
+        vertLine: { visible: false }, 
+        horzLine: { visible: false } 
       },
-      handleScroll: true,
-      handleScale: true,
+      handleScroll: true, 
+      handleScale: true,  
     });
 
     const series = chart.addSeries(AreaSeries, {
       lineColor: color,
-      topColor: `${color}40`,
+      topColor: `${color}30`,
       bottomColor: `${color}00`,
       lineWidth: 2,
-      crosshairMarkerVisible: true,
-      crosshairMarkerRadius: 4,
+      crosshairMarkerVisible: false, // 隐藏原点
+      priceLineVisible: true,       
+      priceLineColor: color,
+      priceLineStyle: LineStyle.Dashed,
     });
 
-    let chartData: any[] = [];
-    if (viewType === "daily") {
-      chartData = filteredHistory.map(h => ({ time: h.nav_date, value: Number(h.price) }));
+    series.setData(chartRenderData);
+    
+    // 框选视口
+    if (isDaily && range !== "all" && filteredHistory.length > 0) {
+      const startTime = filteredHistory[0].nav_date;
+      const startIndex = Math.max(0, chartRenderData.findIndex(d => d.time === startTime));
+      chart.timeScale().setVisibleLogicalRange({
+        from: startIndex,
+        to: chartRenderData.length + 4
+      });
     } else {
-      const tDate = selectedMinuteDate || new Date().toISOString().split("T")[0];
-      chartData = minuteData.map(m => ({ time: `${tDate} ${m.time}`, value: m.price }));
+      chart.timeScale().fitContent();
     }
 
-    const uniqueData = chartData.filter((v, i, a) => i === 0 || v.time !== a[i-1].time);
-    series.setData(uniqueData);
-    chart.timeScale().fitContent();
+    // 监听滑动，只更新顶部气泡，不渲染坐标线
+    chart.subscribeCrosshairMove((param) => {
+      if (!param.time || !param.seriesData.size) {
+        setHoverData(null);
+        return;
+      }
+      const price = param.seriesData.get(series)?.value;
+      if (price !== undefined) {
+        setHoverData({ time: param.time as string, value: price });
+      }
+    });
 
-    // 监听图表点击事件
     chart.subscribeClick((param) => {
       if (viewType === "daily" && param.time && type === "stock") {
         const clickedDate = param.time as string; 
@@ -168,9 +245,9 @@ export default function AssetDetailPage() {
       window.removeEventListener("resize", handleResize);
       chart.remove();
     };
-  }, [loading, filteredHistory, viewType, minuteData, availableDates]); 
+  }, [loading, history, filteredHistory, range, viewType, minuteData, selectedMinuteDate, availableDates, type, data]); 
 
-  if (loading) return <div className="min-h-screen bg-slate-50 flex items-center justify-center text-slate-400 text-sm animate-pulse">加载中...</div>;
+  if (!mounted || (loading && !data)) return <div className="min-h-screen bg-slate-50 flex items-center justify-center text-slate-400 text-sm animate-pulse">加载中...</div>;
   if (!data) return <div className="min-h-screen flex items-center justify-center text-slate-500">未找到该产品</div>;
 
   const p = data;
@@ -186,6 +263,10 @@ export default function AssetDetailPage() {
   const todayProfit = hasHolding ? (currentPrice - prevPrice) * shares : 0;
   const changePercent = prevPrice > 0 ? ((currentPrice - prevPrice) / prevPrice) * 100 : 0;
 
+  const formatDate = (t: string) => t.includes(" ") ? t.split(" ")[1] : t.slice(5);
+  const startDate = activeChartData.length > 0 ? formatDate(activeChartData[0].time) : "";
+  const endDate = activeChartData.length > 0 ? formatDate(activeChartData[activeChartData.length - 1].time) : "";
+
   return (
     <div className="min-h-screen bg-slate-50 pb-24">
       <div className="bg-white px-5 pt-12 pb-4 sticky top-0 z-30 shadow-sm flex items-center gap-3">
@@ -200,26 +281,24 @@ export default function AssetDetailPage() {
 
       <div className="container mx-auto px-4 mt-4 max-w-3xl space-y-4">
         
-        {/* ★ 核心合并大卡片 */}
         <div className="bg-white rounded-3xl p-5 shadow-sm border border-slate-100 flex flex-col items-center justify-center pt-6">
           <div className="text-[12px] text-slate-500 mb-1 flex items-center gap-2">
             {type === "stock" ? "当前股价（元）" : "最新净值（元）"}
             <span className="text-[10px] text-slate-400 bg-slate-50 px-1.5 py-0.5 rounded">{p.nav_date}</span>
           </div>
           
-          <div className={`text-[40px] font-mono font-bold leading-none mb-2 tracking-tight ${type === "stock" ? (changePercent > 0 ? "text-rose-500" : changePercent < 0 ? "text-emerald-500" : "text-slate-900") : "text-slate-900"}`}>
+          <div className={`text-[40px] font-mono font-bold leading-none mb-2 tracking-tight ${type === "stock" ? (changePercent > 0 ? "text-red-500" : changePercent < 0 ? "text-green-500" : "text-slate-900") : "text-slate-900"}`}>
             {currentPrice.toFixed(type === "stock" ? 2 : 4)}
           </div>
           
           {type === "stock" && (
-            <div className={`text-[13px] font-mono font-bold mb-4 ${changePercent > 0 ? "text-rose-500" : changePercent < 0 ? "text-emerald-500" : "text-slate-500"}`}>
+            <div className={`text-[13px] font-mono font-bold mb-4 ${changePercent > 0 ? "text-red-500" : changePercent < 0 ? "text-green-500" : "text-slate-500"}`}>
               {changePercent > 0 ? "+" : ""}{changePercent.toFixed(2)}%
             </div>
           )}
 
           {hasHolding && (
             <div className="w-full mt-2">
-              {/* 上排：成本 / 股数 / 市值 */}
               <div className="grid grid-cols-3 gap-2 w-full pt-4 border-t border-slate-100">
                 <div className="text-center">
                   <div className="text-[11px] text-slate-400 mb-1">持仓成本</div>
@@ -241,17 +320,16 @@ export default function AssetDetailPage() {
                 </div>
               </div>
               
-              {/* 下排：今日盈亏 / 累计盈亏 */}
               <div className="grid grid-cols-2 gap-4 w-full pt-4 mt-2 border-t border-slate-100/60 bg-slate-50/50 rounded-xl py-2">
                 <div className="text-center">
                   <div className="text-[11px] text-slate-400 mb-1">今日盈亏</div>
-                  <div className={`font-mono font-bold text-[15px] ${todayProfit > 0 ? "text-rose-500" : todayProfit < 0 ? "text-emerald-500" : "text-slate-800"}`}>
+                  <div className={`font-mono font-bold text-[15px] ${todayProfit > 0 ? "text-red-500" : todayProfit < 0 ? "text-green-500" : "text-slate-800"}`}>
                     {todayProfit > 0 ? "+" : ""}{todayProfit.toFixed(2)}
                   </div>
                 </div>
                 <div className="text-center border-l border-slate-100">
                   <div className="text-[11px] text-slate-400 mb-1">累计盈亏</div>
-                  <div className={`font-mono font-bold text-[15px] ${profit > 0 ? "text-rose-500" : profit < 0 ? "text-emerald-500" : "text-slate-800"}`}>
+                  <div className={`font-mono font-bold text-[15px] ${profit > 0 ? "text-red-500" : profit < 0 ? "text-green-500" : "text-slate-800"}`}>
                     {profit > 0 ? "+" : ""}{profit.toFixed(2)}
                   </div>
                 </div>
@@ -260,28 +338,26 @@ export default function AssetDetailPage() {
           )}
         </div>
 
-        {/* 走势图卡片 */}
         <div className="bg-white rounded-3xl p-5 shadow-sm border border-slate-100">
           <div className="flex items-center justify-between mb-4">
             <div className="text-[15px] font-bold text-slate-900">{type === "stock" ? "走势图" : "业绩走势"}</div>
             
-            {type === "stock" ? (
+            <div className="flex items-center gap-2">
+              {type === "stock" && (
+                <div className="flex bg-slate-100 p-0.5 rounded-lg">
+                  <button onClick={() => setViewType("minute")} className={`px-2.5 py-1 text-[11px] font-medium rounded-md transition-all ${viewType === "minute" ? "bg-white text-rose-500 shadow-sm" : "text-slate-500"}`}>分时</button>
+                  <button onClick={() => setViewType("daily")} className={`px-2.5 py-1 text-[11px] font-medium rounded-md transition-all ${viewType === "daily" ? "bg-white text-rose-500 shadow-sm" : "text-slate-500"}`}>日K</button>
+                </div>
+              )}
               <div className="flex bg-slate-100 p-0.5 rounded-lg">
-                <button onClick={() => setViewType("minute")} className={`px-2.5 py-1 text-[11px] font-medium rounded-md transition-all ${viewType === "minute" ? "bg-white text-rose-500 shadow-sm" : "text-slate-500"}`}>分时</button>
-                <button onClick={() => setViewType("daily")} className={`px-2.5 py-1 text-[11px] font-medium rounded-md transition-all ${viewType === "daily" ? "bg-white text-rose-500 shadow-sm" : "text-slate-500"}`}>日K</button>
+                {RANGES.map(r => (
+                  <button key={r.key} onClick={() => setRange(r.key)} className={`px-2.5 py-1 text-[11px] font-medium rounded-md transition-all ${range === r.key ? "bg-white text-rose-500 shadow-sm" : "text-slate-500"}`}>
+                    {r.label}
+                  </button>
+                ))}
               </div>
-            ) : null}
+            </div>
           </div>
-
-          {type === "stock" && viewType === "daily" && (
-             <div className="flex bg-slate-100 p-0.5 rounded-lg mb-4 w-max ml-auto">
-               {RANGES.map(r => (
-                 <button key={r.key} onClick={() => setRange(r.key)} className={`px-2.5 py-1 text-[11px] font-medium rounded-md transition-all ${range === r.key ? "bg-white text-rose-500 shadow-sm" : "text-slate-500"}`}>
-                   {r.label}
-                 </button>
-               ))}
-             </div>
-          )}
 
           {type === "stock" && viewType === "minute" && (
             <div className="flex gap-2 overflow-x-auto no-scrollbar mb-2 pb-1">
@@ -290,13 +366,32 @@ export default function AssetDetailPage() {
                     {date.slice(5)}
                   </button>
                 )) : (
-                <button className="px-2 py-1 text-[10px] font-mono rounded whitespace-nowrap bg-slate-50 text-slate-400 border border-dashed border-slate-200" onClick={() => window.location.reload()}>今天 (暂无数据)</button>
+                <div className="text-[11px] text-slate-400 py-1 bg-slate-50 px-2 rounded-lg">今天暂无分时数据，请等待脚本抓取</div>
               )}
             </div>
           )}
           
-          <div ref={chartContainerRef} className="w-full h-[220px] relative" />
-          
+          <div className="relative w-full pt-10">
+            {hoverData && (
+              <div className="absolute top-0 left-1/2 -translate-x-1/2 bg-[#1e293b] text-white px-3.5 py-1.5 rounded-xl text-[13px] font-mono shadow-xl pointer-events-none flex gap-2 z-10 border border-slate-700/50">
+                <span>{hoverData.time.includes(' ') ? hoverData.time.split(' ')[0] : hoverData.time}</span>
+                <span className="font-bold text-white">{hoverData.value.toFixed(type === 'stock' ? 2 : 4)}</span>
+              </div>
+            )}
+            <div ref={chartContainerRef} className="w-full h-[220px] relative cursor-crosshair" />
+
+            {activeChartData.length === 0 && (
+              <div className="absolute inset-0 flex items-center justify-center text-slate-300 text-xs bg-slate-50/50">
+                暂无走势数据
+              </div>
+            )}
+            
+            <div className="flex justify-between text-[10px] text-slate-400 font-mono mt-2 px-1">
+              <span>{startDate}</span>
+              <span>{endDate}</span>
+            </div>
+          </div>
+
           {type === "stock" && viewType === "daily" && (
              <div className="text-center text-[10px] text-slate-400 mt-2">
                提示：点击日K线上任意一点，可直接跳转查看当天的分时走势
