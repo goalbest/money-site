@@ -28,7 +28,13 @@ const STATUS_TABS = [
 export default function AllView({ 
   allHoldings, allProducts = [], navHistory, transactions = [], globalStats, privacy, onSwipeLeft
 }: any) {
-  const [statusFilter, setStatusFilter] = useState("hold");
+  const [statusFilter, setStatusFilter] = useState(() => {
+    if (typeof window !== "undefined") {
+      return sessionStorage.getItem("all_view_tab") || "hold";
+    }
+    return "hold";
+  });
+
   const [sortKey, setSortKey] = useState("annual");
   const [sortDesc, setSortDesc] = useState(true);
   const [annualPeriod, setAnnualPeriod] = useState("1m");
@@ -37,51 +43,23 @@ export default function AllView({
   const [watchList, setWatchList] = useState<Set<number>>(new Set());
   const [mounted, setMounted] = useState(false);
 
-  // ★ 手势滑动 refs
   const touchStartRef = useRef<{ x: number, y: number } | null>(null);
+  const isRestoringRef = useRef(true); // 滚动位置恢复锁
+  const hasUserClickedTab = useRef(false); // 区分是点 Tab 还是页面初次挂载
 
   const userId = typeof window !== "undefined" ? localStorage.getItem("user_id") : null;
 
   useEffect(() => {
     setMounted(true);
-    const savedTab = sessionStorage.getItem("all_view_tab");
-    if (savedTab) setStatusFilter(savedTab);
-    const savedScroll = sessionStorage.getItem("all_view_scroll");
-    if (savedScroll) setTimeout(() => window.scrollTo(0, parseInt(savedScroll)), 100);
-    const handleScroll = () => { sessionStorage.setItem("all_view_scroll", window.scrollY.toString()); };
+    
+    const handleScroll = () => { 
+      // ★ 核心修复：如果正在恢复位置，绝不覆盖 sessionStorage
+      if (isRestoringRef.current) return;
+      sessionStorage.setItem("all_view_scroll", window.scrollY.toString()); 
+    };
     window.addEventListener("scroll", handleScroll);
     return () => window.removeEventListener("scroll", handleScroll);
   }, []);
-
-  useEffect(() => {
-    sessionStorage.setItem("all_view_tab", statusFilter);
-    setPageMap({});
-    setGlobalPage(1);
-    if (statusFilter === "hold") setSortKey("annual");
-    else if (statusFilter === "closed") setSortKey("value");
-    else setSortKey("new");
-  }, [statusFilter]);
-
-  useEffect(() => {
-    if (!userId) return;
-    supabase.from("user_watchlist").select("product_id").eq("user_id", userId).then(({ data }) => {
-      if (data) setWatchList(new Set(data.map(d => Number(d.product_id))));
-    });
-  }, [userId, allHoldings]); 
-
-  async function toggleWatch(productId: number, e: React.MouseEvent) {
-    e.preventDefault(); e.stopPropagation();
-    if (!userId) return;
-    const isWatched = watchList.has(productId);
-    const newWatchList = new Set(watchList);
-    if (isWatched) {
-      newWatchList.delete(productId); setWatchList(newWatchList);
-      await supabase.from("user_watchlist").delete().eq("user_id", userId).eq("product_id", productId);
-    } else {
-      newWatchList.add(productId); setWatchList(newWatchList);
-      await supabase.from("user_watchlist").insert({ user_id: userId, product_id: productId });
-    }
-  }
 
   const holdings = useMemo(() => allHoldings.filter((h: any) => h.status === "active"), [allHoldings]);
   const closedHoldings = useMemo(() => allHoldings.filter((h: any) => h.status === "closed"), [allHoldings]);
@@ -158,6 +136,69 @@ export default function AllView({
     });
   }, [statusFilter, sortKey, sortDesc, navHistory, allHoldings, allProducts, watchList]);
 
+  const isDataReady = (statusFilter === "hold" || statusFilter === "closed") 
+    ? groupedSummary.length > 0 
+    : flatList.length > 0;
+
+  // ★ 核心修复 2：等列表数据完全撑开 DOM 后，再瞬间恢复滚动位置
+  useEffect(() => {
+    if (!mounted || !isRestoringRef.current) return;
+    if (!isDataReady) return;
+
+    const savedScroll = sessionStorage.getItem("all_view_scroll");
+    const scrollPos = savedScroll ? parseInt(savedScroll) : 0;
+
+    if (scrollPos > 0) {
+      requestAnimationFrame(() => {
+        requestAnimationFrame(() => {
+          window.scrollTo({ top: scrollPos, behavior: "instant" });
+          // 延迟解锁，防止 Layout Shift 触发的 scroll 事件把位置覆盖成 0
+          setTimeout(() => { isRestoringRef.current = false; }, 100);
+        });
+      });
+    } else {
+      isRestoringRef.current = false;
+    }
+  }, [mounted, isDataReady, statusFilter]);
+
+  useEffect(() => {
+    sessionStorage.setItem("all_view_tab", statusFilter);
+    setPageMap({});
+    setGlobalPage(1);
+    
+    // ★ 核心修复 3：只有用户主动点击/滑动 Tab 时，才把滚动位置重置为 0
+    // 页面初次挂载返回时，绝不能清空
+    if (hasUserClickedTab.current) {
+      sessionStorage.setItem("all_view_scroll", "0");
+    }
+    hasUserClickedTab.current = true;
+
+    if (statusFilter === "hold") setSortKey("annual");
+    else if (statusFilter === "closed") setSortKey("value");
+    else setSortKey("new");
+  }, [statusFilter]);
+
+  useEffect(() => {
+    if (!userId) return;
+    supabase.from("user_watchlist").select("product_id").eq("user_id", userId).then(({ data }) => {
+      if (data) setWatchList(new Set(data.map(d => Number(d.product_id))));
+    });
+  }, [userId, allHoldings]); 
+
+  async function toggleWatch(productId: number, e: React.MouseEvent) {
+    e.preventDefault(); e.stopPropagation();
+    if (!userId) return;
+    const isWatched = watchList.has(productId);
+    const newWatchList = new Set(watchList);
+    if (isWatched) {
+      newWatchList.delete(productId); setWatchList(newWatchList);
+      await supabase.from("user_watchlist").delete().eq("user_id", userId).eq("product_id", productId);
+    } else {
+      newWatchList.add(productId); setWatchList(newWatchList);
+      await supabase.from("user_watchlist").insert({ user_id: userId, product_id: productId });
+    }
+  }
+
   const currentSorts = (statusFilter === "hold" || statusFilter === "closed") ? HOLD_SORTS : LIB_SORTS;
   const activeSubTabIndex = STATUS_TABS.findIndex(t => t.key === statusFilter);
 
@@ -166,12 +207,8 @@ export default function AllView({
   const paginatedFlatItems = flatList.slice((globalPage - 1) * ITEMS_PER_PAGE, globalPage * ITEMS_PER_PAGE);
   const periodLabel = ANNUAL_PERIODS.find(x => x.key === annualPeriod)?.label || "1月";
 
-  // ★ 处理触摸滑动逻辑
   const handleTouchStart = (e: React.TouchEvent) => {
-    touchStartRef.current = {
-      x: e.touches[0].clientX,
-      y: e.touches[0].clientY,
-    };
+    touchStartRef.current = { x: e.touches[0].clientX, y: e.touches[0].clientY };
   };
 
   const handleTouchEnd = (e: React.TouchEvent) => {
@@ -182,18 +219,14 @@ export default function AllView({
     const dy = touchStartRef.current.y - endY;
     touchStartRef.current = null;
 
-    // 判断是否为横向滑动 (横向位移 > 50 且 大于纵向位移，避免影响上下滚动)
     if (Math.abs(dx) > 50 && Math.abs(dx) > Math.abs(dy) * 1.5) {
       if (dx > 0) {
-        // 向左滑：切下一个二级 Tab
         if (activeSubTabIndex < STATUS_TABS.length - 1) {
           setStatusFilter(STATUS_TABS[activeSubTabIndex + 1].key);
         } else if (onSwipeLeft) {
-          // 如果已经是最后一个二级 Tab，触发一级 Tab 滑动回调
           onSwipeLeft();
         }
       } else if (dx < 0) {
-        // 向右滑：切上一个二级 Tab
         if (activeSubTabIndex > 0) {
           setStatusFilter(STATUS_TABS[activeSubTabIndex - 1].key);
         }
@@ -204,12 +237,7 @@ export default function AllView({
   if (!mounted) return <div className="min-h-[200px] flex items-center justify-center text-slate-400 text-sm animate-pulse">加载中...</div>;
 
   return (
-    <div 
-      className="animate-fade-in space-y-4" 
-      onTouchStart={handleTouchStart} 
-      onTouchEnd={handleTouchEnd}
-    >
-      {/* Tab 切换 */}
+    <div className="animate-fade-in space-y-4" onTouchStart={handleTouchStart} onTouchEnd={handleTouchEnd}>
       <div className="relative flex bg-slate-100/60 p-1 rounded-full mb-4 shadow-sm border border-slate-200/50 overflow-hidden">
         <div className="absolute top-1 bottom-1 bg-white rounded-full shadow-sm transition-transform duration-300 ease-out" 
              style={{ width: "calc(25% - 2px)", transform: `translateX(${activeSubTabIndex * 100}%)`, left: "4px" }} />
@@ -221,7 +249,6 @@ export default function AllView({
         ))}
       </div>
 
-      {/* 排序工具栏 */}
       <div className="px-1">
         <div className="segment-group flex">
           {currentSorts.map(s => (

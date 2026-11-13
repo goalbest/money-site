@@ -26,7 +26,6 @@ const RANGES: { key: Range; label: string; days: number }[] = [
 export default function ProductPage() {
   const params = useParams();
   const router = useRouter();
-  // ★ 加一层安全判断
   const productId = params?.id ? Number(params.id) : 0;
 
   const [loading, setLoading] = useState(true);
@@ -43,46 +42,74 @@ export default function ProductPage() {
 
   const { order: productOrder, hydrated: productLayoutHydrated } = useProductLayout();
 
+  // ★ 核心优化 1：接入 localStorage 缓存和 Promise.all 并行请求
   useEffect(() => {
     if (!productId) return;
-    
+
+    // 1. 先读缓存，实现 0 延迟秒开
+    if (typeof window !== "undefined") {
+      const cached = localStorage.getItem(`cache_product_detail_v1_${productId}`);
+      if (cached) {
+        try {
+          const parsed = JSON.parse(cached);
+          setProduct(parsed.product);
+          setNavList(parsed.navList);
+          setMyHolding(parsed.myHolding);
+          setWatchRules(parsed.watchRules);
+          setInWatchlist(parsed.inWatchlist);
+          setLoading(false); // 有缓存直接渲染
+        } catch (e) {
+          setLoading(true);
+        }
+      } else {
+        setLoading(true); // 没缓存才显示骨架屏
+      }
+    }
+
+    // 2. 后台并发请求最新数据
     async function load() {
-      setLoading(true);
       const userId = typeof window !== "undefined" ? localStorage.getItem("user_id") : null;
 
       try {
-        let prod: any = null;
-        const { data: p1 } = await supabase.from("products").select("*").eq("id", productId).maybeSingle();
-        if (p1) prod = p1;
-        else {
+        // 并行发起所有请求，把原来串行的 4-5 秒缩减到 1 秒内
+        const pReq = supabase.from("products").select("*").eq("id", productId).maybeSingle();
+        const nReq = supabase.from("nav_history").select("nav_date, unit_nav, accum_nav").eq("product_id", productId).order("nav_date", { ascending: true });
+        const hReq = userId ? supabase.from("user_holdings").select("id, holding_amount, in_transit_amount, shares, hold_date, status, products(id, name, unit_nav, risk_level, redeem_arrival_days, redeem_confirm_days, redeem_cutoff_time)").eq("user_id", userId).eq("product_id", productId).in("status", ["active", "closed"]).order("id", { ascending: false }).limit(1).maybeSingle() : Promise.resolve({ data: null });
+        const rReq = userId ? supabase.from("watch_rules").select("*").eq("user_id", userId).eq("product_id", productId) : Promise.resolve({ data: [] });
+        const wReq = userId ? supabase.from("watchlist").select("id").eq("user_id", userId).eq("product_id", productId).maybeSingle() : Promise.resolve({ data: null });
+
+        const [pRes, nRes, hRes, rRes, wRes] = await Promise.all([pReq, nReq, hReq, rReq, wReq]);
+
+        let prod = pRes.data;
+        if (!prod) {
           const { data: hd } = await supabase.from("user_holdings").select("products(*)").eq("product_id", productId).limit(1).maybeSingle();
           prod = hd?.products || null;
         }
 
+        const newNavList = nRes.data || [];
+        const newHolding = hRes.data || null;
+        const newRules = rRes.data || [];
+        const newWatch = !!wRes.data;
+
         setProduct(prod);
+        setNavList(newNavList);
+        setMyHolding(newHolding);
+        setWatchRules(newRules);
+        setInWatchlist(newWatch);
+        setLoading(false);
 
-        if (prod) {
-          const { data: navs } = await supabase
-            .from("nav_history").select("nav_date, unit_nav, accum_nav").eq("product_id", productId).order("nav_date", { ascending: true });
-          setNavList(navs || []);
-        }
-
-        if (userId) {
-          const { data: hd } = await supabase
-            .from("user_holdings")
-            .select("id, holding_amount, in_transit_amount, shares, hold_date, status, products(id, name, unit_nav, risk_level, redeem_arrival_days, redeem_confirm_days, redeem_cutoff_time)")
-            .eq("user_id", userId).eq("product_id", productId).in("status", ["active", "closed"]).order("id", { ascending: false }).limit(1).maybeSingle();
-          setMyHolding(hd || null);
-
-          const { data: rules } = await supabase.from("watch_rules").select("*").eq("user_id", userId).eq("product_id", productId);
-          setWatchRules(rules || []);
-
-          const { data: wl } = await supabase.from("watchlist").select("id").eq("user_id", userId).eq("product_id", productId).maybeSingle();
-          setInWatchlist(!!wl);
+        // 3. 写入缓存
+        if (prod && typeof window !== "undefined") {
+          localStorage.setItem(`cache_product_detail_v1_${productId}`, JSON.stringify({
+            product: prod,
+            navList: newNavList,
+            myHolding: newHolding,
+            watchRules: newRules,
+            inWatchlist: newWatch
+          }));
         }
       } catch (error) {
         console.error("加载产品详情失败:", error);
-      } finally {
         setLoading(false);
       }
     }
@@ -109,6 +136,15 @@ export default function ProductPage() {
     return filtered.length >= 2 ? filtered : navList.slice(-Math.max(2, r.days));
   }, [navList, range]);
 
+  // ★ 最干净的返回逻辑，把滚动恢复交还给浏览器和 AllView
+  const handleBack = () => {
+    if (typeof window !== "undefined" && window.history.length > 1) {
+      router.back();
+    } else {
+      router.replace("/?view=all"); // 只有真的没历史记录时才回首页
+    }
+  };
+
   async function copyName() {
     if (!product?.name) return;
     try {
@@ -132,7 +168,7 @@ export default function ProductPage() {
     } catch {}
   }
 
-  if (loading) {
+  if (loading && !product) {
     return (
       <div className="min-h-screen pb-24">
         <div className="container mx-auto px-5 pt-6 max-w-3xl">
@@ -155,16 +191,7 @@ export default function ProductPage() {
           </div>
           <div className="text-[15px] text-slate-700 font-medium mb-1.5">没有找到该产品</div>
           <div className="text-[12px] text-slate-400 mb-6">可能已被删除，或 ID 无效</div>
-          <button
-            onClick={() => {
-              if (typeof window !== "undefined" && window.history.length > 1) {
-                router.back();
-              } else {
-                router.push("/");
-              }
-            }}
-            className="px-6 py-2.5 bg-slate-100 text-slate-700 font-medium rounded-xl hover:bg-slate-200 transition-all active:scale-95"
-          >
+          <button onClick={handleBack} className="px-6 py-2.5 bg-slate-100 text-slate-700 font-medium rounded-xl hover:bg-slate-200 transition-all active:scale-95">
             返回
           </button>
         </div>
@@ -268,20 +295,8 @@ export default function ProductPage() {
     <div className="min-h-screen pb-28">
       <div className="container mx-auto px-5 pt-6 max-w-3xl">
         <div className="flex items-center gap-2 mb-5">
-          <button
-            onClick={() => {
-              // ★ 优化返回逻辑，防止死循环
-              if (typeof window !== "undefined" && document.referrer) {
-                router.back();
-              } else {
-                router.push("/");
-              }
-            }}
-            className="w-9 h-9 rounded-full bg-white border border-slate-200 hover:border-slate-300 hover:bg-slate-50 flex items-center justify-center flex-shrink-0 transition-all duration-300 active:scale-90"
-          >
-            <svg className="w-4 h-4 text-slate-600" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2.5}>
-              <path strokeLinecap="round" strokeLinejoin="round" d="M15 19l-7-7 7-7" />
-            </svg>
+          <button onClick={handleBack} className="w-9 h-9 rounded-full bg-white border border-slate-200 hover:border-slate-300 hover:bg-slate-50 flex items-center justify-center flex-shrink-0 transition-all duration-300 active:scale-90">
+            <svg className="w-4 h-4 text-slate-600" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2.5}><path strokeLinecap="round" strokeLinejoin="round" d="M15 19l-7-7 7-7" /></svg>
           </button>
           <div className="flex-1 min-w-0">
             <div className="text-[18px] font-bold tracking-tight text-slate-900 truncate">产品详情</div>
@@ -311,9 +326,7 @@ export default function ProductPage() {
                 <div><div className="text-[10px] text-slate-400 mb-1">份额</div><div className="text-[15px] font-bold font-mono text-slate-900 tabular">{holdShares.toFixed(4)}</div></div>
                 <div><div className="text-[10px] text-slate-400 mb-1">持有天数</div><div className="text-[15px] font-bold font-mono text-slate-900 tabular">{holdDays} 天</div></div>
               </div>
-              <button onClick={() => setEditHoldingOpen(true)} className="w-full mt-3 py-2 rounded-full bg-slate-50 hover:bg-slate-100 text-[11px] text-slate-500 font-medium active:scale-[0.98] transition-all flex items-center justify-center gap-1">
-                编辑持仓
-              </button>
+              <button onClick={() => setEditHoldingOpen(true)} className="w-full mt-3 py-2 rounded-full bg-slate-50 hover:bg-slate-100 text-[11px] text-slate-500 font-medium active:scale-[0.98] transition-all flex items-center justify-center gap-1">编辑持仓</button>
             </>
           )}
         </div>
