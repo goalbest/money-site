@@ -10,6 +10,9 @@ export default function LibraryCard({ h, navHistory, onToggleWatch }: any) {
   const wanfen = allNavs.length >= 2 ? (allNavs[allNavs.length-1].nav - allNavs[allNavs.length-2].nav) * 10000 : 0;
   const navValue = Number(p.unit_nav || 0).toFixed(4);
   const annual1m = Number(p.annualized_1m || 0);
+  
+  // ★ 提取并截取日期格式 (如：2026-11-13 截取为 11-13)
+  const navDateStr = p.nav_date ? String(p.nav_date).slice(5) : "";
 
   return (
     <Link href={`/product/${p.id}`} className="card mb-3 overflow-hidden block hover:bg-slate-50 transition-colors">
@@ -29,7 +32,11 @@ export default function LibraryCard({ h, navHistory, onToggleWatch }: any) {
       </div>
       <div className="px-4 py-3 grid grid-cols-3 gap-2">
         <div>
-          <div className="text-[10px] text-slate-400 mb-1">最新净值</div>
+          {/* ★ 最新净值 加上日期 */}
+          <div className="flex items-center gap-1 mb-1">
+            <span className="text-[10px] text-slate-400">最新净值</span>
+            {navDateStr && <span className="text-[9px] text-amber-500 font-mono">{navDateStr}</span>}
+          </div>
           <div className="font-mono font-bold text-[14px] text-slate-900 truncate">{navValue}</div>
         </div>
         <div className="text-center">

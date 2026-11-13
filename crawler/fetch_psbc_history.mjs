@@ -1,6 +1,4 @@
 // crawler/fetch_psbc_history.mjs
-// 一次性补全邮储/中邮产品的全部历史净值 + 规则
-
 import { createClient } from '@supabase/supabase-js';
 import https from 'https';
 import crypto from 'crypto';
@@ -88,29 +86,21 @@ function fmtDate(d) {
   return `${s.slice(0, 4)}-${s.slice(4, 6)}-${s.slice(6, 8)}`;
 }
 
-// ── 解析 SFRULE 文本（中邮"赎回规则"字段）──
+// ── 解析 SFRULE 文本 ──
 function parseSFRule(sfrule) {
   if (!sfrule) return { arrival: null, cutoff: null };
-
   let arrival = null;
-  // "下个交易日" → 1
   if (/下+个?交易日/.test(sfrule)) arrival = 1;
-  // "T+2" → 2
   const tMatch = sfrule.match(/T\+?(\d+)/);
   if (tMatch) arrival = parseInt(tMatch[1], 10);
-  // "3个工作日内" → 3
   const wMatch = sfrule.match(/(\d+)\s*个工作日/);
   if (wMatch) arrival = parseInt(wMatch[1], 10);
-
   let cutoff = null;
-  // 只有"XX:XX前/之前"才当截止时间（避免把"12点到账"误判）
   const cMatch = sfrule.match(/(\d{1,2}):(\d{2})\s*(?:前|之前)/);
   if (cMatch) cutoff = `${cMatch[1].padStart(2, '0')}:${cMatch[2]}`;
-
   return { arrival, cutoff };
 }
 
-// ══════════════ 主流程 ══════════════
 console.log('═══════════════════════════════');
 console.log('邮储/中邮历史净值补全');
 console.log('═══════════════════════════════\n');
@@ -135,7 +125,6 @@ for (const p of prods) {
   console.log(`   bank_code: ${p.bank_code}`);
 
   try {
-    // ① 搜索拿 wp_code
     const s = await search(p.bank_code);
     const hit = (s.data?.list || []).find(x => x.wp_code === p.bank_code);
 
@@ -144,18 +133,11 @@ for (const p of prods) {
       continue;
     }
 
-    // ★ Bug 1 修复：补回 wpCode 定义
     const wpCode = hit.wp_code;
-
-    // 从 search 接口读规则
     const riskLevel = hit.RISKLEVEL ? `R${hit.RISKLEVEL}` : null;
     const sfrule = hit.SFRULE || '';
     const { arrival: arrivalDays, cutoff: cutoffTime } = parseSFRule(sfrule);
 
-    console.log(`   规则: 风险${riskLevel || '?'}, 到账T+${arrivalDays || '?'}, 截止${cutoffTime || '?'}`);
-    console.log(`   SFRULE原文: "${sfrule}"`);
-
-    // ★ Bug 2 修复：无论有没有新净值，先更新规则
     await supabase.from('products').update({
       risk_level: riskLevel,
       redeem_arrival_days: arrivalDays,
@@ -163,7 +145,11 @@ for (const p of prods) {
       redeem_cutoff_time: cutoffTime,
     }).eq('id', p.id);
 
-    // ② 读数据库里该产品的最新日期
+    const { count: navCount } = await supabase
+      .from('nav_history')
+      .select('*', { count: 'exact', head: true })
+      .eq('product_id', p.id);
+
     const { data: latestRow } = await supabase
       .from('nav_history')
       .select('nav_date')
@@ -171,31 +157,47 @@ for (const p of prods) {
       .order('nav_date', { ascending: false })
       .limit(1)
       .maybeSingle();
+      
     const lastNavDate = latestRow?.nav_date || '1970-01-01';
-    console.log(`   数据库最新: ${lastNavDate}`);
+    const needFullFetch = (navCount || 0) < 20; 
 
-    // ③ 抓第 1 页（探针）
+    if (needFullFetch) {
+      console.log(`   现有数据仅 ${navCount || 0} 条，触发【全量补全模式】`);
+    } else {
+      console.log(`   数据库最新: ${lastNavDate} (共 ${navCount} 条)`);
+    }
+
     const first = await nvlist(wpCode, 1);
     const totalPage = first.data?.totalPage || 0;
-    const totalRow = first.data?.totalRow || 0;
-    console.log(`   共 ${totalRow} 条 / ${totalPage} 页`);
-
+    
     if (totalPage === 0) { console.log('   ⚠️ 无历史\n'); continue; }
 
-    // ④ 翻页抓（增量：遇到旧数据就停）
     const allRows = [];
     for (let page = 1; page <= totalPage; page++) {
       const res = page === 1 ? first : await nvlist(wpCode, page);
       const list = res.data?.list || [];
       if (list.length === 0) break;
 
+      // ★ 加入调试日志，看看接口到底返回了什么字段
+      if (page === 1 && list.length > 0) {
+        console.log(`   [调试] 接口返回第一条数据字段:`, JSON.stringify(list[0]));
+      }
+
       let hitOld = false;
       for (const x of list) {
-        const navDate = fmtDate(x.update_date);
-        if (navDate <= lastNavDate) { hitOld = true; break; }
+        // ★ 核心修复：尝试找真正的净值日期字段，如果都没有，才用 update_date
+        const rawDate = x.nav_date || x.net_date || x.value_date || x.update_date;
+        const navDate = fmtDate(rawDate);
+        
+        if (!needFullFetch && navDate <= lastNavDate) { 
+          hitOld = true; 
+          break; 
+        }
+        
         const nav = parseFloat(x.nav);
         const accum = parseFloat(x.accumulative_nav);
         if (!isFinite(nav) || nav <= 0) continue;
+        
         allRows.push({
           product_id: p.id,
           nav_date: navDate,
@@ -205,39 +207,31 @@ for (const p of prods) {
       }
 
       if (hitOld) {
-        console.log(`     翻到已知区域（${list[0].update_date}），停止`);
+        console.log(`     翻到已知区域，停止增量抓取`);
         break;
-      }
-      if (page % 10 === 0 || page === totalPage) {
-        console.log(`     页 ${page}/${totalPage} → 累计 ${allRows.length}`);
       }
       await sleep(300);
     }
 
-    // ⑤ 批量 upsert nav_history
     let ok = 0;
     for (let i = 0; i < allRows.length; i += 30) {
       const batch = allRows.slice(i, i + 30);
       const { error: upErr } = await supabase
         .from('nav_history')
         .upsert(batch, { onConflict: 'product_id,nav_date' });
-      if (upErr) {
-        console.log(`     ⚠️ 批次失败: ${upErr.message}`);
-      } else {
-        ok += batch.length;
-      }
+      if (upErr) console.log(`     ⚠️ 批次失败: ${upErr.message}`);
+      else ok += batch.length;
       await sleep(100);
     }
     totalUpserted += ok;
 
-    // ⑥ 有净值时，更新 products 最新净值
     if (allRows.length > 0) {
       const latest = allRows[0];
       await supabase.from('products').update({
         unit_nav: latest.unit_nav,
         nav_date: latest.nav_date,
       }).eq('id', p.id);
-      console.log(`   📝 products: ${latest.unit_nav} @ ${latest.nav_date}`);
+      console.log(`   📝 products 已更新: ${latest.unit_nav} @ ${latest.nav_date}`);
     }
 
     console.log(`   ✅ 写入 ${ok} 条\n`);
@@ -246,7 +240,6 @@ for (const p of prods) {
   } catch (e) {
     console.log(`   ❌ 失败: ${e.message}\n`);
   }
-
   await sleep(500);
 }
 
