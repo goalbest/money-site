@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { supabase } from "../../lib/supabase";
 import { useCountUp } from "../../lib/useCountUp";
@@ -33,7 +33,15 @@ export default function FundsPage() {
   const router = useRouter();
   const [mounted, setMounted] = useState(false);
   const [loading, setLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState("all");
+  
+  // ★ 1. 从 sessionStorage 初始化 Tab
+  const [activeTab, setActiveTab] = useState(() => {
+    if (typeof window !== "undefined") {
+      return sessionStorage.getItem("funds_view_tab") || "all";
+    }
+    return "all";
+  });
+
   const [data, setData] = useState<HoldingData[]>([]);
   const [isModalOpen, setIsModalOpen] = useState(false);
 
@@ -46,6 +54,9 @@ export default function FundsPage() {
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   const userId = typeof window !== "undefined" ? localStorage.getItem("user_id") : null;
+
+  // ★ 滚动恢复锁
+  const hasRestoredScroll = useRef(false);
 
   const fetchData = async () => {
     if (!userId) return;
@@ -69,6 +80,48 @@ export default function FundsPage() {
     setMounted(true);
     fetchData();
   }, [userId]);
+
+  // ★ 2. 保存 Tab 状态
+  useEffect(() => {
+    sessionStorage.setItem("funds_view_tab", activeTab);
+  }, [activeTab]);
+
+  // ★ 3. 监听滚动，保存位置
+  useEffect(() => {
+    const handleScroll = () => {
+      // 只有在恢复完毕后才开始记录，防止覆盖
+      if (hasRestoredScroll.current) {
+        sessionStorage.setItem("funds_view_scroll", window.scrollY.toString());
+      }
+    };
+    window.addEventListener("scroll", handleScroll, { passive: true });
+    return () => window.removeEventListener("scroll", handleScroll);
+  }, []);
+
+  // ★ 4. 数据加载完后，恢复滚动位置
+  useEffect(() => {
+    if (loading || hasRestoredScroll.current) return;
+    
+    const savedScroll = sessionStorage.getItem("funds_view_scroll");
+    if (savedScroll) {
+      // 使用双层 requestAnimationFrame 确保 DOM 完全渲染，撑开了页面高度
+      requestAnimationFrame(() => {
+        requestAnimationFrame(() => {
+          window.scrollTo({ top: parseInt(savedScroll, 10), behavior: "instant" });
+          setTimeout(() => { hasRestoredScroll.current = true; }, 100);
+        });
+      });
+    } else {
+      hasRestoredScroll.current = true;
+    }
+  }, [loading]);
+
+  // ★ 切换 Tab 时，重置滚动位置
+  const handleTabChange = (key: string) => {
+    setActiveTab(key);
+    sessionStorage.setItem("funds_view_scroll", "0");
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  };
 
   const stats = useMemo(() => {
     let fundValue = 0, fundProfit = 0;
@@ -232,7 +285,12 @@ export default function FundsPage() {
         <div className="relative flex bg-slate-200/60 backdrop-blur-md p-1 rounded-2xl mb-6 border border-white/60 shadow-sm overflow-hidden">
           <div className="absolute top-1 bottom-1 bg-white rounded-xl shadow-md transition-transform duration-300 ease-out" style={{ width: "calc(33.33% - 2px)", transform: `translateX(${activeTabIndex * 100}%)`, left: "4px" }} />
           {TABS.map((t) => (
-            <button key={t.key} onClick={() => setActiveTab(t.key)} className={`flex-1 py-2 text-[13px] font-bold relative z-10 transition-colors rounded-xl ${activeTab === t.key ? "text-slate-900" : "text-slate-500 hover:text-slate-700"}`}>
+            <button 
+              key={t.key} 
+              // ★ 这里调用了重置滚动的 handleTabChange
+              onClick={() => handleTabChange(t.key)} 
+              className={`flex-1 py-2 text-[13px] font-bold relative z-10 transition-colors rounded-xl ${activeTab === t.key ? "text-slate-900" : "text-slate-500 hover:text-slate-700"}`}
+            >
               {t.label}
             </button>
           ))}
@@ -251,8 +309,8 @@ export default function FundsPage() {
             filteredData.map((item) => {
               const p = item.fund_stocks;
               const marketValue = item.shares * p.current_price;
-              const profit = marketValue - (item.shares * item.cost_price);
-              const profitRate = (profit / (item.shares * item.cost_price)) * 100;
+              const profit = marketValue - (item.shares * p.cost_price);
+              const profitRate = (profit / (item.shares * p.cost_price)) * 100;
               const prevPrice = p.prev_price || p.current_price;
               const todayProfit = (p.current_price - prevPrice) * item.shares;
 
@@ -268,7 +326,6 @@ export default function FundsPage() {
                     <span className="text-[12px] text-slate-400 font-mono">{p.code}</span>
                   </div>
 
-                  {/* ★ 改为 4 列布局：市值、今日收益、累计收益、收益率 */}
                   <div className="grid grid-cols-[1.3fr_1fr_1fr_1fr] gap-1 mt-2">
                     <div>
                       <div className="text-[10px] text-slate-400 mb-1 truncate">持仓市值</div>

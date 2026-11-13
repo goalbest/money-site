@@ -33,7 +33,7 @@ const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 
 console.log('═══════════════════════════════');
-console.log('基金 / 股票 净值更新（全量补全模式）');
+console.log('基金 / 股票 净值更新');
 console.log('═══════════════════════════════\n');
 
 const { data: prods, error } = await supabase.from('fund_stocks').select('*');
@@ -47,7 +47,13 @@ for (const p of prods) {
     if (p.type === 'fund') {
       console.log(`→ [基金] ${p.code} ${p.name}`);
       
-      // 1. 查询数据库里该基金的最早记录日期，用于判断是否停止翻页
+      // 1. 检查数据库现有的历史记录数
+      const { count: recordCount } = await supabase
+        .from('fund_stock_history')
+        .select('*', { count: 'exact', head: true })
+        .eq('product_id', p.id);
+
+      // 2. 查询数据库里最早的一条记录日期
       const { data: earliestData } = await supabase
         .from('fund_stock_history')
         .select('nav_date')
@@ -58,12 +64,18 @@ for (const p of prods) {
       
       const earliestDate = earliestData?.nav_date || '1970-01-01';
       
+      // ★ 核心修复：如果记录数少于 100 条，视为不全量，强制忽略已存在的数据，一翻到底！
+      const isIncomplete = (recordCount || 0) < 100;
+      if (isIncomplete) {
+        console.log(`   现有数据仅 ${recordCount || 0} 条，开启【全量补全模式】`);
+      }
+      
       let pageIndex = 1;
       let hasMore = true;
       let allRows = [];
       let latestRow = null;
 
-      // 2. 循环翻页
+      // 3. 循环翻页
       while (hasMore) {
         const url = `https://api.fund.eastmoney.com/f10/lsjz?fundCode=${p.code}&pageIndex=${pageIndex}&pageSize=20`;
         const res = await fetch(url, {
@@ -83,7 +95,10 @@ for (const p of prods) {
         const json = JSON.parse(text);
         const list = json.Data?.LSJZList || [];
         
-        if (list.length === 0) break; // 没有更多数据了
+        if (list.length === 0) {
+          console.log(`   翻到最后一页，停止`);
+          break; // 没有更多数据了
+        }
 
         if (!latestRow) latestRow = list[0]; // 保存最新的一条用于更新主表
 
@@ -93,8 +108,9 @@ for (const p of prods) {
           const dwjz = parseFloat(item.DWJZ);
           
           if (!navDate || isNaN(dwjz)) continue;
-          // 如果抓到的日期 <= 数据库已有最早日期，说明历史数据已经补全了
-          if (navDate <= earliestDate) {
+          
+          // ★ 如果不是全量补全模式，遇到已知旧数据就停
+          if (!isIncomplete && navDate <= earliestDate) {
             hitOld = true;
             break;
           }
@@ -107,7 +123,7 @@ for (const p of prods) {
         }
 
         if (hitOld) {
-          console.log(`   翻到已知历史区域，停止翻页 (共抓取 ${allRows.length} 条)`);
+          console.log(`   翻到已知区域，停止翻页`);
           break;
         }
         
@@ -115,24 +131,23 @@ for (const p of prods) {
         await sleep(500); // 翻页延迟，防封 IP
       }
 
-      // 3. 批量写入历史记录
+      // 4. 批量写入历史记录
       if (allRows.length > 0) {
-        // 分批写入，防止单次请求过大
         for (let i = 0; i < allRows.length; i += 100) {
           const batch = allRows.slice(i, i + 100);
           await supabase.from('fund_stock_history').upsert(batch, { onConflict: 'product_id, nav_date' });
         }
-        console.log(`   ✅ 补充历史数据 ${allRows.length} 条`);
+        console.log(`   ✅ 写入历史数据 ${allRows.length} 条`);
       } else {
         console.log(`   历史数据已是最全`);
       }
 
-      // 4. 更新主表最新数据
+      // 5. 更新主表最新数据
       if (latestRow) {
         const latestNavDate = latestRow.FSRQ;
         const latestDwjz = parseFloat(latestRow.DWJZ);
         
-        // 查昨日净值
+        // 重新查一下昨天（或者上一个交易日）的净值
         const { data: prevRows } = await supabase
           .from('fund_stock_history')
           .select('price')
