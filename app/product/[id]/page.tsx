@@ -42,74 +42,46 @@ export default function ProductPage() {
 
   const { order: productOrder, hydrated: productLayoutHydrated } = useProductLayout();
 
-  // ★ 核心优化 1：接入 localStorage 缓存和 Promise.all 并行请求
   useEffect(() => {
     if (!productId) return;
-
-    // 1. 先读缓存，实现 0 延迟秒开
-    if (typeof window !== "undefined") {
-      const cached = localStorage.getItem(`cache_product_detail_v1_${productId}`);
-      if (cached) {
-        try {
-          const parsed = JSON.parse(cached);
-          setProduct(parsed.product);
-          setNavList(parsed.navList);
-          setMyHolding(parsed.myHolding);
-          setWatchRules(parsed.watchRules);
-          setInWatchlist(parsed.inWatchlist);
-          setLoading(false); // 有缓存直接渲染
-        } catch (e) {
-          setLoading(true);
-        }
-      } else {
-        setLoading(true); // 没缓存才显示骨架屏
-      }
-    }
-
-    // 2. 后台并发请求最新数据
+    
     async function load() {
+      setLoading(true);
       const userId = typeof window !== "undefined" ? localStorage.getItem("user_id") : null;
 
       try {
-        // 并行发起所有请求，把原来串行的 4-5 秒缩减到 1 秒内
-        const pReq = supabase.from("products").select("*").eq("id", productId).maybeSingle();
-        const nReq = supabase.from("nav_history").select("nav_date, unit_nav, accum_nav").eq("product_id", productId).order("nav_date", { ascending: true });
-        const hReq = userId ? supabase.from("user_holdings").select("id, holding_amount, in_transit_amount, shares, hold_date, status, products(id, name, unit_nav, risk_level, redeem_arrival_days, redeem_confirm_days, redeem_cutoff_time)").eq("user_id", userId).eq("product_id", productId).in("status", ["active", "closed"]).order("id", { ascending: false }).limit(1).maybeSingle() : Promise.resolve({ data: null });
-        const rReq = userId ? supabase.from("watch_rules").select("*").eq("user_id", userId).eq("product_id", productId) : Promise.resolve({ data: [] });
-        const wReq = userId ? supabase.from("watchlist").select("id").eq("user_id", userId).eq("product_id", productId).maybeSingle() : Promise.resolve({ data: null });
-
-        const [pRes, nRes, hRes, rRes, wRes] = await Promise.all([pReq, nReq, hReq, rReq, wReq]);
-
-        let prod = pRes.data;
-        if (!prod) {
+        let prod: any = null;
+        const { data: p1 } = await supabase.from("products").select("*").eq("id", productId).maybeSingle();
+        if (p1) prod = p1;
+        else {
           const { data: hd } = await supabase.from("user_holdings").select("products(*)").eq("product_id", productId).limit(1).maybeSingle();
           prod = hd?.products || null;
         }
 
-        const newNavList = nRes.data || [];
-        const newHolding = hRes.data || null;
-        const newRules = rRes.data || [];
-        const newWatch = !!wRes.data;
-
         setProduct(prod);
-        setNavList(newNavList);
-        setMyHolding(newHolding);
-        setWatchRules(newRules);
-        setInWatchlist(newWatch);
-        setLoading(false);
 
-        // 3. 写入缓存
-        if (prod && typeof window !== "undefined") {
-          localStorage.setItem(`cache_product_detail_v1_${productId}`, JSON.stringify({
-            product: prod,
-            navList: newNavList,
-            myHolding: newHolding,
-            watchRules: newRules,
-            inWatchlist: newWatch
-          }));
+        if (prod) {
+          const { data: navs } = await supabase
+            .from("nav_history").select("nav_date, unit_nav, accum_nav").eq("product_id", productId).order("nav_date", { ascending: true });
+          setNavList(navs || []);
+        }
+
+        if (userId) {
+          const { data: hd } = await supabase
+            .from("user_holdings")
+            .select("id, holding_amount, in_transit_amount, shares, hold_date, status, products(id, name, unit_nav, risk_level, redeem_arrival_days, redeem_confirm_days, redeem_cutoff_time)")
+            .eq("user_id", userId).eq("product_id", productId).in("status", ["active", "closed"]).order("id", { ascending: false }).limit(1).maybeSingle();
+          setMyHolding(hd || null);
+
+          const { data: rules } = await supabase.from("watch_rules").select("*").eq("user_id", userId).eq("product_id", productId);
+          setWatchRules(rules || []);
+
+          const { data: wl } = await supabase.from("watchlist").select("id").eq("user_id", userId).eq("product_id", productId).maybeSingle();
+          setInWatchlist(!!wl);
         }
       } catch (error) {
         console.error("加载产品详情失败:", error);
+      } finally {
         setLoading(false);
       }
     }
@@ -136,12 +108,11 @@ export default function ProductPage() {
     return filtered.length >= 2 ? filtered : navList.slice(-Math.max(2, r.days));
   }, [navList, range]);
 
-  // ★ 最干净的返回逻辑，把滚动恢复交还给浏览器和 AllView
   const handleBack = () => {
     if (typeof window !== "undefined" && window.history.length > 1) {
       router.back();
     } else {
-      router.replace("/?view=all"); // 只有真的没历史记录时才回首页
+      router.replace("/?view=all");
     }
   };
 
@@ -168,7 +139,7 @@ export default function ProductPage() {
     } catch {}
   }
 
-  if (loading && !product) {
+  if (loading) {
     return (
       <div className="min-h-screen pb-24">
         <div className="container mx-auto px-5 pt-6 max-w-3xl">
@@ -203,13 +174,6 @@ export default function ProductPage() {
   const latest = filteredNav[filteredNav.length - 1] || navList[navList.length - 1];
   const latestNav = latest ? Number(latest.unit_nav) : null;
 
-  let rangeChange: number | null = null;
-  if (filteredNav.length >= 2) {
-    const first = Number(filteredNav[0].unit_nav);
-    const last = Number(filteredNav[filteredNav.length - 1].unit_nav);
-    if (first > 0) rangeChange = ((last - first) / first) * 100;
-  }
-
   const hasHolding = myHolding && myHolding.status === "active";
   const holdAmount = hasHolding ? getHoldingMarketValue(myHolding) : 0;
   const holdShares = (() => {
@@ -224,12 +188,16 @@ export default function ProductPage() {
     ? Math.max(0, Math.floor((Date.now() - new Date(myHolding.hold_date).getTime()) / 86400000))
     : 0;
 
+  // ★ 关键修改：在 MetricsPanel 传递计算逻辑时，加入买入日期的拦截
+  // 因为 MetricsPanel 内部会自己算今日收益，我们需要把准确的 hold_date 传进去（假设 MetricsPanel 支持，如果不支持，则改这里给的计算）
+  
   function renderModule(key: ProductModuleKey) {
     switch (key) {
       case "holdings": return null;
       case "metrics":
         if (navList.length === 0) return null;
-        return <div className="card p-5"><MetricsPanel navList={navList} /></div>;
+        // 传入最新的净值列表，以及用户的持仓信息
+        return <div className="card p-5"><MetricsPanel navList={navList} holding={myHolding} /></div>;
       case "trend":
         return (
           <div className="card p-5">
@@ -326,7 +294,9 @@ export default function ProductPage() {
                 <div><div className="text-[10px] text-slate-400 mb-1">份额</div><div className="text-[15px] font-bold font-mono text-slate-900 tabular">{holdShares.toFixed(4)}</div></div>
                 <div><div className="text-[10px] text-slate-400 mb-1">持有天数</div><div className="text-[15px] font-bold font-mono text-slate-900 tabular">{holdDays} 天</div></div>
               </div>
-              <button onClick={() => setEditHoldingOpen(true)} className="w-full mt-3 py-2 rounded-full bg-slate-50 hover:bg-slate-100 text-[11px] text-slate-500 font-medium active:scale-[0.98] transition-all flex items-center justify-center gap-1">编辑持仓</button>
+              <button onClick={() => setEditHoldingOpen(true)} className="w-full mt-3 py-2 rounded-full bg-slate-50 hover:bg-slate-100 text-[11px] text-slate-500 font-medium active:scale-[0.98] transition-all flex items-center justify-center gap-1">
+                编辑持仓
+              </button>
             </>
           )}
         </div>

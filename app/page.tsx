@@ -202,8 +202,15 @@ export default function HomePage() {
       
       const navs = navHistory[p.id] || [];
       if (navs.length >= 2) {
-        if (p.nav_date === latestNavDateStr) totalProfitToday += shares * (navs[navs.length - 1].nav - navs[navs.length - 2].nav);
-        for (let i = 1; i < navs.length; i++) { if (navs[i].date >= monthStart) monthProfit += shares * (navs[i].nav - navs[i - 1].nav); }
+        // ★ 核心修复：买入日期 <= 净值日期，才计算今天的收益
+        if (p.nav_date === latestNavDateStr && (!h.hold_date || h.hold_date <= p.nav_date)) {
+          totalProfitToday += shares * (navs[navs.length - 1].nav - navs[navs.length - 2].nav);
+        }
+        for (let i = 1; i < navs.length; i++) { 
+          if (navs[i].date >= monthStart) {
+            monthProfit += shares * (navs[i].nav - navs[i - 1].nav); 
+          }
+        }
       }
     });
 
