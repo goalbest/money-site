@@ -186,43 +186,59 @@ export default function DepositTab({
         {monthReport.map((m) => {
           const formatAmt = (val: number | null) => val !== null ? val.toLocaleString("zh-CN", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : "-";
           return (
-            <div key={m.month} onClick={() => openSnapshot(m.month)} className="flex flex-col px-5 py-4 hover:bg-slate-50/80 cursor-pointer transition-colors border-b border-slate-100 last:border-b-0">
-              <div className="flex justify-between items-center mb-2">
-                <span className="text-[15px] font-bold text-slate-800">{m.month.slice(5)}月</span>
-                <div className="flex items-baseline gap-2">
-                  <span className="text-[10px] text-slate-400 font-medium">月底</span>
-                  <span className="text-[18px] font-bold text-slate-900 font-mono tracking-tight">{m.calcEndBalance ? `¥${formatAmt(m.calcEndBalance)}` : "-"}</span>
+            <div key={m.month} onClick={() => openSnapshot(m.month)} className="flex justify-between items-start px-5 py-4 hover:bg-slate-50/80 cursor-pointer transition-colors border-b border-slate-100 last:border-b-0">
+              
+              {/* ── 左半边块 ── */}
+              <div className="flex flex-col gap-1.5">
+                {/* 第一行：月份 */}
+                <div className="text-[15px] font-bold text-slate-800 mb-0.5">
+                  {m.month.slice(5)}月
                 </div>
-              </div>
-              {/* ★ 月份数据：左右两列，组内紧凑 */}
-              <div className="grid grid-cols-2 gap-x-6 gap-y-2 mt-1.5 text-[11px] font-mono text-slate-400">
-                <div className="flex items-center gap-1.5">
-                  <span>进</span>
-                  <span className={m.income > 0 ? "text-rose-400" : "text-slate-300"}>
+                
+                {/* 第二行：进 */}
+                <div className="flex items-center">
+                  <span className="w-5 shrink-0 text-[11px] text-slate-400">进</span>
+                  <span className={`font-mono text-[12px] ${m.income > 0 ? "text-rose-400" : "text-slate-300"}`}>
                     {m.income > 0 ? `+${formatAmt(m.income)}` : "-"}
                   </span>
                 </div>
-                <div className="flex items-center gap-1.5">
-                  <span>月初</span>
-                  <span className="text-slate-500">{m.startBalance ? formatAmt(m.startBalance) : "-"}</span>
-                </div>
-                <div className="flex items-center gap-1.5">
-                  <span>出</span>
-                  <span className={m.expense > 0 ? "text-emerald-500" : "text-slate-300"}>
+                
+                {/* 第三行：出 */}
+                <div className="flex items-center">
+                  <span className="w-5 shrink-0 text-[11px] text-slate-400">出</span>
+                  <span className={`font-mono text-[12px] ${m.expense > 0 ? "text-emerald-500" : "text-slate-300"}`}>
                     {m.expense > 0 ? `-${formatAmt(m.expense)}` : "-"}
                   </span>
                 </div>
-                <div className="flex items-center gap-1.5">
-                  <span>差额</span>
-                  <span className={`font-bold ${
-                    m.diff !== null && m.diff !== 0
-                      ? (m.diff > 0 ? "text-rose-500" : "text-emerald-500") 
-                      : "text-slate-300"
-                  }`}>
+              </div>
+
+              {/* ── 右半边块 ── */}
+              <div className="flex flex-col gap-1.5">
+                {/* 第一行：月底 */}
+                <div className="flex items-baseline mb-0.5">
+                  <span className="w-[34px] shrink-0 text-[10px] text-slate-400 font-medium">月底</span>
+                  <span className="font-mono font-bold text-[17px] text-slate-900 tracking-tight">
+                    {m.calcEndBalance ? `¥${formatAmt(m.calcEndBalance)}` : "-"}
+                  </span>
+                </div>
+                
+                {/* 第二行：月初 */}
+                <div className="flex items-center">
+                  <span className="w-[34px] shrink-0 text-[11px] text-slate-400">月初</span>
+                  <span className="font-mono text-[12px] text-slate-500">
+                    {m.startBalance ? formatAmt(m.startBalance) : "-"}
+                  </span>
+                </div>
+                
+                {/* 第三行：差额 */}
+                <div className="flex items-center">
+                  <span className="w-[34px] shrink-0 text-[11px] text-slate-400">差额</span>
+                  <span className={`font-mono font-bold text-[12px] ${m.diff !== null && m.diff !== 0 ? (m.diff > 0 ? "text-rose-500" : "text-emerald-500") : "text-slate-300"}`}>
                     {m.diff !== null ? (m.diff > 0 ? `+${formatAmt(m.diff)}` : formatAmt(m.diff)) : "-"}
                   </span>
                 </div>
               </div>
+
             </div>
           );
         })}

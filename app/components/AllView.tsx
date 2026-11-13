@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useRef } from "react";
 import { supabase } from "../../lib/supabase";
 import { getHoldingMarketValue } from "../../lib/holdings";
 import { getBankInfo } from "../../lib/banks";
@@ -36,6 +36,9 @@ export default function AllView({
   const [globalPage, setGlobalPage] = useState(1);
   const [watchList, setWatchList] = useState<Set<number>>(new Set());
   const [mounted, setMounted] = useState(false);
+
+  // ★ 手势滑动 refs
+  const touchStartRef = useRef<{ x: number, y: number } | null>(null);
 
   const userId = typeof window !== "undefined" ? localStorage.getItem("user_id") : null;
 
@@ -163,10 +166,49 @@ export default function AllView({
   const paginatedFlatItems = flatList.slice((globalPage - 1) * ITEMS_PER_PAGE, globalPage * ITEMS_PER_PAGE);
   const periodLabel = ANNUAL_PERIODS.find(x => x.key === annualPeriod)?.label || "1月";
 
+  // ★ 处理触摸滑动逻辑
+  const handleTouchStart = (e: React.TouchEvent) => {
+    touchStartRef.current = {
+      x: e.touches[0].clientX,
+      y: e.touches[0].clientY,
+    };
+  };
+
+  const handleTouchEnd = (e: React.TouchEvent) => {
+    if (!touchStartRef.current) return;
+    const endX = e.changedTouches[0].clientX;
+    const endY = e.changedTouches[0].clientY;
+    const dx = touchStartRef.current.x - endX;
+    const dy = touchStartRef.current.y - endY;
+    touchStartRef.current = null;
+
+    // 判断是否为横向滑动 (横向位移 > 50 且 大于纵向位移，避免影响上下滚动)
+    if (Math.abs(dx) > 50 && Math.abs(dx) > Math.abs(dy) * 1.5) {
+      if (dx > 0) {
+        // 向左滑：切下一个二级 Tab
+        if (activeSubTabIndex < STATUS_TABS.length - 1) {
+          setStatusFilter(STATUS_TABS[activeSubTabIndex + 1].key);
+        } else if (onSwipeLeft) {
+          // 如果已经是最后一个二级 Tab，触发一级 Tab 滑动回调
+          onSwipeLeft();
+        }
+      } else if (dx < 0) {
+        // 向右滑：切上一个二级 Tab
+        if (activeSubTabIndex > 0) {
+          setStatusFilter(STATUS_TABS[activeSubTabIndex - 1].key);
+        }
+      }
+    }
+  };
+
   if (!mounted) return <div className="min-h-[200px] flex items-center justify-center text-slate-400 text-sm animate-pulse">加载中...</div>;
 
   return (
-    <div className="animate-fade-in space-y-4">
+    <div 
+      className="animate-fade-in space-y-4" 
+      onTouchStart={handleTouchStart} 
+      onTouchEnd={handleTouchEnd}
+    >
       {/* Tab 切换 */}
       <div className="relative flex bg-slate-100/60 p-1 rounded-full mb-4 shadow-sm border border-slate-200/50 overflow-hidden">
         <div className="absolute top-1 bottom-1 bg-white rounded-full shadow-sm transition-transform duration-300 ease-out" 
