@@ -62,7 +62,11 @@ for (const p of prods) {
     const earliestDate = earliestData?.nav_date || '1970-01-01';
     const isIncomplete = (recordCount || 0) < 100;
     
-    if (isIncomplete) console.log(`   现有数据仅 ${recordCount || 0} 条，开启【全量补全模式】`);
+    if (isIncomplete) {
+      console.log(`   现有数据仅 ${recordCount || 0} 条，开启【全量补全模式】`);
+    } else {
+      console.log(`   现有数据 ${recordCount} 条，开启【增量更新模式】（极速完成）`);
+    }
     
     let pageIndex = 1;
     let hasMore = true;
