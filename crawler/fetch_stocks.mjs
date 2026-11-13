@@ -3,6 +3,7 @@ import { createClient } from '@supabase/supabase-js';
 import { readFileSync, existsSync } from 'fs';
 import { resolve, dirname } from 'path';
 import { fileURLToPath } from 'url';
+import iconv from 'iconv-lite'; // ★ 引入编码转换
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -45,9 +46,11 @@ for (const p of prods) {
     console.log(`→ [股票] ${p.code} ${p.name}`);
     let marketCode = /^6/.test(p.code) ? `sh${p.code}` : `sz${p.code}`;
 
-    // ── 1. 实时行情 ──
+    // ── 1. 实时行情 (GBK 编码处理) ──
     const res = await fetch(`http://qt.gtimg.cn/q=${marketCode}`, { headers: { 'User-Agent': 'Mozilla/5.0', 'Referer': 'https://gu.qq.com/' } });
-    const text = await res.text();
+    const arrayBuffer = await res.arrayBuffer();
+    const text = iconv.decode(Buffer.from(arrayBuffer), 'gbk'); // ★ 用 GBK 解码
+    
     const match = text.match(/="([^"]+)"/);
     if (!match) { console.log(`   ⚠️ 行情失败`); continue; }
     
@@ -72,20 +75,21 @@ for (const p of prods) {
       await supabase.from('fund_stock_history').upsert(allRows, { onConflict: 'product_id, nav_date' });
     }
 
-    // ── 3. 抓取今日分时数据并入库 ──
+    // ── 3. 抓取今日分时数据 ──
     const todayStr = new Date().toISOString().split('T')[0];
     const minuteUrl = `http://data.gtimg.cn/flashdata/hushen/minute/${marketCode}.js?t=${Date.now()}`;
     const minuteRes = await fetch(minuteUrl, { headers: { 'User-Agent': 'Mozilla/5.0' } });
-    const minuteText = await minuteRes.text();
-    const minMatch = minuteText.match(/="([\s\S]+)"/);
+    const minuteArrayBuffer = await minuteRes.arrayBuffer();
+    const minuteText = iconv.decode(Buffer.from(minuteArrayBuffer), 'gbk');
     
+    const minMatch = minuteText.match(/="([\s\S]+)"/);
     if (minMatch) {
       const lines = minMatch[1].split('\\n');
       const minuteRows = [];
       for (let i = 1; i < lines.length; i++) {
         const parts = lines[i].trim().split(' ');
         if (parts.length >= 2) {
-          const t = parts[0]; // "0930"
+          const t = parts[0];
           const timeStr = `${t.slice(0, 2)}:${t.slice(2, 4)}`;
           const mPrice = parseFloat(parts[1]);
           if (!isNaN(mPrice)) {
@@ -99,9 +103,9 @@ for (const p of prods) {
       }
     }
 
-    // ── 4. 更新主表 ──
+    // ── 4. 更新主表 (★ 不再用乱码名字覆盖原有的名字) ──
     await supabase.from('fund_stocks').update({
-      name: fields[1], prev_price: prevPrice, current_price: currentPrice, nav_date: todayStr
+      prev_price: prevPrice, current_price: currentPrice, nav_date: todayStr
     }).eq('id', p.id);
 
     console.log(`   ✅ K线与行情已更新\n`);
