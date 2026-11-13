@@ -19,6 +19,7 @@ interface HoldingData {
     type: AssetType;
     current_price: number;
     prev_price: number;
+    nav_date: string | null;
   };
 }
 
@@ -53,7 +54,7 @@ export default function FundsPage() {
       .from("fund_stock_holdings")
       .select(`
         id, shares, cost_price, status,
-        fund_stocks ( id, code, name, type, current_price, prev_price )
+        fund_stocks ( id, code, name, type, current_price, prev_price, nav_date )
       `)
       .eq("user_id", userId)
       .eq("status", "active");
@@ -189,10 +190,7 @@ export default function FundsPage() {
               {animatedTotal.toLocaleString("zh-CN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
             </div>
 
-            {/* ★ 增加的独立额度区块 */}
             <div className="grid grid-cols-2 gap-3">
-              
-              {/* 基金额度 */}
               <div className="bg-white/[0.04] backdrop-blur-md rounded-2xl p-3.5 border border-white/[0.06] flex flex-col justify-between">
                 <div>
                   <div className="flex items-center gap-1.5 mb-2">
@@ -210,7 +208,6 @@ export default function FundsPage() {
                 </div>
               </div>
 
-              {/* 股票额度 */}
               <div className="bg-white/[0.04] backdrop-blur-md rounded-2xl p-3.5 border border-white/[0.06] flex flex-col justify-between">
                 <div>
                   <div className="flex items-center gap-1.5 mb-2">
@@ -227,7 +224,6 @@ export default function FundsPage() {
                   </span>
                 </div>
               </div>
-
             </div>
           </div>
         </div>
@@ -267,42 +263,37 @@ export default function FundsPage() {
                       <span className={`px-1.5 py-0.5 rounded text-[9px] font-bold ${p.type === "fund" ? "bg-blue-50 text-blue-600" : "bg-amber-50 text-amber-600"}`}>
                         {p.type === "fund" ? "基金" : "股票"}
                       </span>
-                      <span className="text-[14px] font-bold text-slate-900 truncate max-w-[180px]">{p.name}</span>
+                      <span className="text-[15px] font-bold text-slate-900 truncate max-w-[200px]">{p.name}</span>
                     </div>
-                    <span className="text-[11px] text-slate-400 font-mono">{p.code}</span>
+                    <span className="text-[12px] text-slate-400 font-mono">{p.code}</span>
                   </div>
 
-                  <div className="grid grid-cols-5 gap-1 mt-1">
+                  {/* ★ 改为 4 列布局：市值、今日收益、累计收益、收益率 */}
+                  <div className="grid grid-cols-[1.3fr_1fr_1fr_1fr] gap-1 mt-2">
                     <div>
-                      <div className="text-[9px] text-slate-400 mb-1 truncate">持仓市值</div>
-                      <div className="font-mono font-bold text-[12px] text-slate-900 truncate">{marketValue.toLocaleString("zh-CN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
+                      <div className="text-[10px] text-slate-400 mb-1 truncate">持仓市值</div>
+                      <div className="font-mono font-bold text-[13px] text-slate-900 truncate">
+                        {marketValue.toLocaleString("zh-CN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                      </div>
                     </div>
-                    <div>
-                      <div className="text-[9px] text-slate-400 mb-1 truncate">持有份额</div>
-                      <div className="font-mono font-medium text-[12px] text-slate-700 truncate">{item.shares.toLocaleString("zh-CN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
-                    </div>
-                    <div>
-                      <div className="text-[9px] text-slate-400 mb-1 truncate">现价</div>
-                      <div className="font-mono font-medium text-[12px] text-slate-700 truncate">{p.current_price.toFixed(4)}</div>
-                    </div>
-                    <div>
- <div className="flex items-center gap-1 mb-1">
-    <span className="text-[9px] text-slate-400 truncate">今日收益</span>
-    {p.nav_date && <span className="text-[8px] text-amber-500 font-mono">{String(p.nav_date).slice(5)}</span>}
-  </div>
-                      <div className={`font-mono font-bold text-[12px] truncate ${todayProfit > 0 ? "text-rose-500" : todayProfit < 0 ? "text-emerald-500" : "text-slate-400"}`}>
+                    <div className="text-right">
+                      <div className="flex items-center justify-end gap-1 mb-1">
+                        <span className="text-[10px] text-slate-400 truncate">今日收益</span>
+                      </div>
+                      <div className={`font-mono font-bold text-[13px] truncate ${todayProfit > 0 ? "text-rose-500" : todayProfit < 0 ? "text-emerald-500" : "text-slate-400"}`}>
                         {todayProfit > 0 ? "+" : ""}{todayProfit.toFixed(2)}
                       </div>
                     </div>
                     <div className="text-right">
-                      <div className="text-[9px] text-slate-400 mb-1 truncate">累计收益</div>
-                      <div className="flex flex-col items-end">
-                        <div className={`font-mono font-bold text-[12px] leading-tight ${profit > 0 ? "text-rose-500" : profit < 0 ? "text-emerald-500" : "text-slate-400"}`}>
-                          {profit > 0 ? "+" : ""}{profit.toFixed(2)}
-                        </div>
-                        <div className={`font-mono text-[10px] leading-tight ${profit > 0 ? "text-rose-400" : profit < 0 ? "text-emerald-400" : "text-slate-400"}`}>
-                          {profit >= 0 ? "+" : ""}{profitRate.toFixed(2)}%
-                        </div>
+                      <div className="text-[10px] text-slate-400 mb-1 truncate">累计收益</div>
+                      <div className={`font-mono font-bold text-[13px] truncate ${profit > 0 ? "text-rose-500" : profit < 0 ? "text-emerald-500" : "text-slate-400"}`}>
+                        {profit > 0 ? "+" : ""}{profit.toFixed(2)}
+                      </div>
+                    </div>
+                    <div className="text-right">
+                      <div className="text-[10px] text-slate-400 mb-1 truncate">收益率</div>
+                      <div className={`font-mono font-bold text-[13px] truncate ${profitRate > 0 ? "text-rose-500" : profitRate < 0 ? "text-emerald-500" : "text-slate-400"}`}>
+                        {profitRate >= 0 ? "+" : ""}{profitRate.toFixed(2)}%
                       </div>
                     </div>
                   </div>
