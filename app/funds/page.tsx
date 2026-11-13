@@ -1,40 +1,21 @@
 "use client";
 
 import { useState, useEffect, useMemo, useRef } from "react";
-import { useRouter } from "next/navigation";
 import { supabase } from "../../lib/supabase";
-import { useCountUp } from "../../lib/useCountUp";
+import AssetOverviewCard from "./components/AssetOverviewCard";
+import FundTabs from "./components/FundTabs";
+import HoldingCard from "./components/HoldingCard";
+import AddHoldingModal from "./components/AddHoldingModal";
+import UpdateCashModal from "./components/UpdateCashModal";
+import CashBanner from "./components/CashBanner";
 
-type AssetType = "fund" | "stock";
-
-interface HoldingData {
-  id: string;
-  shares: number;
-  cost_price: number;
-  status: string;
-  fund_stocks: {
-    id: string;
-    code: string;
-    name: string;
-    type: AssetType;
-    current_price: number;
-    prev_price: number;
-    nav_date: string | null;
-  };
-}
-
-const TABS = [
-  { key: "all", label: "全部" },
-  { key: "fund", label: "基金" },
-  { key: "stock", label: "股票" },
-];
+const TABS = ["all", "fund", "stock"];
 
 export default function FundsPage() {
-  const router = useRouter();
   const [mounted, setMounted] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [isRefreshing, setIsRefreshing] = useState(false); 
   
-  // ★ 1. 从 sessionStorage 初始化 Tab
   const [activeTab, setActiveTab] = useState(() => {
     if (typeof window !== "undefined") {
       return sessionStorage.getItem("funds_view_tab") || "all";
@@ -42,36 +23,68 @@ export default function FundsPage() {
     return "all";
   });
 
-  const [data, setData] = useState<HoldingData[]>([]);
+  const [data, setData] = useState<any[]>([]);
+  const [cashAmount, setCashAmount] = useState(0); 
+  const [historyMap, setHistoryMap] = useState<Record<string, any[]>>({});
+  
   const [isModalOpen, setIsModalOpen] = useState(false);
-
-  const [formType, setFormType] = useState<AssetType>("fund");
-  const [formCode, setFormCode] = useState("");
-  const [formName, setFormName] = useState("");
-  const [formShares, setFormShares] = useState("");
-  const [formCost, setFormCost] = useState("");
-  const [formCurrent, setFormCurrent] = useState("");
-  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isCashModalOpen, setIsCashModalOpen] = useState(false);
 
   const userId = typeof window !== "undefined" ? localStorage.getItem("user_id") : null;
-
-  // ★ 滚动恢复锁
   const hasRestoredScroll = useRef(false);
+  const touchStartRef = useRef<{ x: number, y: number } | null>(null);
 
   const fetchData = async () => {
     if (!userId) return;
     setLoading(true);
+    
     const { data: res, error } = await supabase
       .from("fund_stock_holdings")
       .select(`
-        id, shares, cost_price, status,
+        id, shares, cost_price, avg_cost, status,
         fund_stocks ( id, code, name, type, current_price, prev_price, nav_date )
       `)
       .eq("user_id", userId)
       .eq("status", "active");
 
     if (!error && res) {
-      setData(res as unknown as HoldingData[]);
+      let cash = 0;
+      const others: any[] = [];
+      
+      res.forEach((h: any) => {
+        const fs = Array.isArray(h.fund_stocks) ? h.fund_stocks[0] : h.fund_stocks;
+        if (fs?.type === "cash") {
+          cash = Number(fs.current_price || 0);
+        } else {
+          others.push(h);
+        }
+      });
+
+      setCashAmount(cash);
+      setData(others);
+
+      const productIds = others.map((h: any) => {
+        const fs = Array.isArray(h.fund_stocks) ? h.fund_stocks[0] : h.fund_stocks;
+        return fs?.id;
+      }).filter(Boolean);
+
+      if (productIds.length > 0) {
+        const { data: navs } = await supabase
+          .from("fund_stock_history")
+          .select("product_id, nav_date, price")
+          .in("product_id", productIds)
+          .order("nav_date", { ascending: true })
+          .limit(10000);
+
+        if (navs) {
+          const map: Record<string, any[]> = {};
+          navs.forEach((n: any) => {
+            if (!map[n.product_id]) map[n.product_id] = [];
+            map[n.product_id].push({ date: n.nav_date, price: Number(n.price) });
+          });
+          setHistoryMap(map);
+        }
+      }
     }
     setLoading(false);
   };
@@ -81,15 +94,12 @@ export default function FundsPage() {
     fetchData();
   }, [userId]);
 
-  // ★ 2. 保存 Tab 状态
   useEffect(() => {
     sessionStorage.setItem("funds_view_tab", activeTab);
   }, [activeTab]);
 
-  // ★ 3. 监听滚动，保存位置
   useEffect(() => {
     const handleScroll = () => {
-      // 只有在恢复完毕后才开始记录，防止覆盖
       if (hasRestoredScroll.current) {
         sessionStorage.setItem("funds_view_scroll", window.scrollY.toString());
       }
@@ -98,13 +108,10 @@ export default function FundsPage() {
     return () => window.removeEventListener("scroll", handleScroll);
   }, []);
 
-  // ★ 4. 数据加载完后，恢复滚动位置
   useEffect(() => {
     if (loading || hasRestoredScroll.current) return;
-    
     const savedScroll = sessionStorage.getItem("funds_view_scroll");
     if (savedScroll) {
-      // 使用双层 requestAnimationFrame 确保 DOM 完全渲染，撑开了页面高度
       requestAnimationFrame(() => {
         requestAnimationFrame(() => {
           window.scrollTo({ top: parseInt(savedScroll, 10), behavior: "instant" });
@@ -116,24 +123,63 @@ export default function FundsPage() {
     }
   }, [loading]);
 
-  // ★ 切换 Tab 时，重置滚动位置
   const handleTabChange = (key: string) => {
     setActiveTab(key);
     sessionStorage.setItem("funds_view_scroll", "0");
     window.scrollTo({ top: 0, behavior: "smooth" });
   };
 
+  // ★ 手势滑动逻辑
+  const handleTouchStart = (e: React.TouchEvent) => {
+    touchStartRef.current = { x: e.touches[0].clientX, y: e.touches[0].clientY };
+  };
+
+  const handleTouchEnd = (e: React.TouchEvent) => {
+    if (!touchStartRef.current) return;
+    const dx = touchStartRef.current.x - e.changedTouches[0].clientX;
+    const dy = touchStartRef.current.y - e.changedTouches[0].clientY;
+    touchStartRef.current = null;
+
+    // 横向滑动阈值，且横向大于纵向（防止误触上下滚动）
+    if (Math.abs(dx) > 50 && Math.abs(dx) > Math.abs(dy) * 1.5) {
+      const currentIndex = TABS.indexOf(activeTab);
+      if (dx > 0 && currentIndex < TABS.length - 1) {
+        // 向左滑，切下一个
+        handleTabChange(TABS[currentIndex + 1]);
+      } else if (dx < 0 && currentIndex > 0) {
+        // 向右滑，切上一个
+        handleTabChange(TABS[currentIndex - 1]);
+      }
+    }
+  };
+
+  const handleRefreshStocks = async () => {
+    setIsRefreshing(true);
+    try {
+      await fetch('/api/sync-stocks', { method: 'POST' });
+      await fetchData(); 
+    } catch (err) {
+      alert("行情刷新失败，请检查网络");
+    } finally {
+      setIsRefreshing(false);
+    }
+  };
+
   const stats = useMemo(() => {
     let fundValue = 0, fundProfit = 0;
-    let stockValue = 0, stockProfit = 0;
+    let stockValue = cashAmount, stockProfit = 0; 
 
     data.forEach((item) => {
-      if (!item.fund_stocks) return;
-      const { current_price, type } = item.fund_stocks;
-      const { shares, cost_price } = item;
+      const fs = Array.isArray(item.fund_stocks) ? item.fund_stocks[0] : item.fund_stocks;
+      if (!fs) return;
       
-      const marketValue = shares * current_price;
-      const totalCost = shares * cost_price;
+      const currentPrice = Number(fs.current_price || 0);
+      const shares = Number(item.shares || 0);
+      const costPrice = Number(item.avg_cost || item.cost_price || 0);
+      const type = fs.type;
+      
+      const marketValue = shares * currentPrice;
+      const totalCost = shares * costPrice;
       const profit = marketValue - totalCost;
 
       if (type === "fund") {
@@ -150,153 +196,52 @@ export default function FundsPage() {
       fund: { value: fundValue, profit: fundProfit },
       stock: { value: stockValue, profit: stockProfit },
     };
-  }, [data]);
-
-  const animatedTotal = useCountUp(stats.totalAssets, 1000);
-  const animatedFundValue = useCountUp(stats.fund.value, 1000);
-  const animatedFundProfit = useCountUp(stats.fund.profit, 1000);
-  const animatedStockValue = useCountUp(stats.stock.value, 1000);
-  const animatedStockProfit = useCountUp(stats.stock.profit, 1000);
+  }, [data, cashAmount]);
 
   const filteredData = useMemo(() => {
     if (activeTab === "all") return data;
-    return data.filter((d) => d.fund_stocks.type === activeTab);
+    return data.filter((d) => {
+      const fs = Array.isArray(d.fund_stocks) ? d.fund_stocks[0] : d.fund_stocks;
+      return fs?.type === activeTab;
+    });
   }, [data, activeTab]);
-
-  const activeTabIndex = TABS.findIndex((t) => t.key === activeTab);
-
-  const handleAdd = async () => {
-    if (!formCode || !formName || !formShares || !formCost || !formCurrent) {
-      alert("请填写完整信息"); return;
-    }
-    if (!userId) { alert("请先登录"); return; }
-
-    setIsSubmitting(true);
-    try {
-      const { data: prod, error: prodErr } = await supabase
-        .from("fund_stocks")
-        .upsert({
-          code: formCode,
-          name: formName,
-          type: formType,
-          current_price: Number(formCurrent),
-          prev_price: Number(formCurrent)
-        }, { onConflict: "code" })
-        .select("id")
-        .single();
-
-      if (prodErr || !prod) throw new Error("产品库保存失败：" + prodErr?.message);
-
-      const { error: holdErr } = await supabase
-        .from("fund_stock_holdings")
-        .upsert({
-          user_id: userId,
-          product_id: prod.id,
-          shares: Number(formShares),
-          cost_price: Number(formCost),
-          status: "active"
-        }, { onConflict: "user_id,product_id" });
-
-      if (holdErr) throw new Error("持仓保存失败：" + holdErr.message);
-
-      await supabase.from("fund_stock_transactions").insert({
-        user_id: userId,
-        product_id: prod.id,
-        type: "buy",
-        shares: Number(formShares),
-        price: Number(formCost),
-        amount: Number(formShares) * Number(formCost),
-        trade_date: new Date().toISOString().split("T")[0]
-      });
-
-      await fetchData();
-      setIsModalOpen(false);
-      setFormCode(""); setFormName(""); setFormShares(""); setFormCost(""); setFormCurrent("");
-    } catch (err: any) {
-      alert(err.message);
-    } finally {
-      setIsSubmitting(false);
-    }
-  };
 
   if (!mounted) return <div className="min-h-screen bg-slate-50" />;
 
   return (
-    <div className="min-h-screen pb-24 bg-slate-50 relative">
+    <div 
+      className="min-h-screen pb-24 bg-slate-50 relative"
+      onTouchStart={handleTouchStart}
+      onTouchEnd={handleTouchEnd}
+    >
       <div className="container mx-auto px-5 pt-8 max-w-3xl">
         
-        <div className="flex items-center justify-between mb-5">
+        <div className="flex items-stretch justify-between mb-5">
           <div>
             <div className="text-[22px] font-bold tracking-tight text-slate-900">基金 / 股票</div>
             <div className="text-[12px] text-slate-400 mt-0.5">资产配置 · 收益透视</div>
           </div>
+          <button 
+            onClick={handleRefreshStocks} 
+            disabled={isRefreshing}
+            className="w-9 h-9 rounded-full bg-white border border-slate-200 flex items-center justify-center active:scale-90 transition-all shadow-sm disabled:opacity-50"
+          >
+            <svg className={`w-4 h-4 text-slate-500 ${isRefreshing ? "animate-spin" : ""}`} fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+            </svg>
+          </button>
         </div>
 
-        {/* 黑金大卡片 */}
-        <div className="relative overflow-hidden rounded-[24px] bg-[#0A0A0A] p-5 shadow-xl shadow-black/20 mb-5 ring-1 ring-white/10">
-          <div className="absolute top-0 right-0 w-48 h-48 bg-indigo-500/10 rounded-full blur-3xl -mr-10 -mt-10 pointer-events-none"></div>
-          
-          <div className="relative z-10">
-            <div className="text-[12px] text-white/50 font-medium tracking-widest mb-1">总资产（元）</div>
-            <div className="text-white leading-none font-mono font-bold tracking-tight tabular flex items-baseline text-[36px] mb-5">
-              <span className="text-[20px] mr-1 font-sans text-amber-500/90 font-medium">¥</span>
-              {animatedTotal.toLocaleString("zh-CN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-            </div>
-
-            <div className="grid grid-cols-2 gap-3">
-              <div className="bg-white/[0.04] backdrop-blur-md rounded-2xl p-3.5 border border-white/[0.06] flex flex-col justify-between">
-                <div>
-                  <div className="flex items-center gap-1.5 mb-2">
-                    <span className="w-1.5 h-1.5 rounded-full bg-blue-400 shadow-[0_0_6px_rgba(96,165,250,0.8)]"></span>
-                    <span className="text-[11px] text-white/60">基金市值</span>
-                  </div>
-                  <div className="text-white font-mono font-bold text-[18px] mb-1">
-                    ¥{animatedFundValue.toLocaleString("zh-CN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                  </div>
-                </div>
-                <div className="text-[10px] text-white/40 font-mono">
-                  收益 <span className={animatedFundProfit > 0 ? "text-rose-400" : animatedFundProfit < 0 ? "text-emerald-400" : "text-white"}>
-                    {animatedFundProfit >= 0 ? "+" : ""}{animatedFundProfit.toLocaleString("zh-CN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                  </span>
-                </div>
-              </div>
-
-              <div className="bg-white/[0.04] backdrop-blur-md rounded-2xl p-3.5 border border-white/[0.06] flex flex-col justify-between">
-                <div>
-                  <div className="flex items-center gap-1.5 mb-2">
-                    <span className="w-1.5 h-1.5 rounded-full bg-amber-400 shadow-[0_0_6px_rgba(251,191,36,0.8)]"></span>
-                    <span className="text-[11px] text-white/60">股票市值</span>
-                  </div>
-                  <div className="text-white font-mono font-bold text-[18px] mb-1">
-                    ¥{animatedStockValue.toLocaleString("zh-CN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                  </div>
-                </div>
-                <div className="text-[10px] text-white/40 font-mono">
-                  收益 <span className={animatedStockProfit > 0 ? "text-rose-400" : animatedStockProfit < 0 ? "text-emerald-400" : "text-white"}>
-                    {animatedStockProfit >= 0 ? "+" : ""}{animatedStockProfit.toLocaleString("zh-CN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                  </span>
-                </div>
-              </div>
-            </div>
+        <AssetOverviewCard stats={stats} />
+        
+        {/* ★ 紧凑布局：Tab + 余额小方块 */}
+        <div className="flex items-center gap-2 mb-6">
+          <div className="flex-1">
+            <FundTabs activeTab={activeTab} onTabChange={handleTabChange} />
           </div>
+          <CashBanner amount={cashAmount} onEdit={() => setIsCashModalOpen(true)} />
         </div>
 
-        {/* Tab 切换 */}
-        <div className="relative flex bg-slate-200/60 backdrop-blur-md p-1 rounded-2xl mb-6 border border-white/60 shadow-sm overflow-hidden">
-          <div className="absolute top-1 bottom-1 bg-white rounded-xl shadow-md transition-transform duration-300 ease-out" style={{ width: "calc(33.33% - 2px)", transform: `translateX(${activeTabIndex * 100}%)`, left: "4px" }} />
-          {TABS.map((t) => (
-            <button 
-              key={t.key} 
-              // ★ 这里调用了重置滚动的 handleTabChange
-              onClick={() => handleTabChange(t.key)} 
-              className={`flex-1 py-2 text-[13px] font-bold relative z-10 transition-colors rounded-xl ${activeTab === t.key ? "text-slate-900" : "text-slate-500 hover:text-slate-700"}`}
-            >
-              {t.label}
-            </button>
-          ))}
-        </div>
-
-        {/* 列表区域 */}
         <div className="space-y-3">
           {loading ? (
             <div className="text-center py-10 text-slate-400 text-sm animate-pulse">加载中...</div>
@@ -307,55 +252,9 @@ export default function FundsPage() {
             </div>
           ) : (
             filteredData.map((item) => {
-              const p = item.fund_stocks;
-              const marketValue = item.shares * p.current_price;
-              const profit = marketValue - (item.shares * p.cost_price);
-              const profitRate = (profit / (item.shares * p.cost_price)) * 100;
-              const prevPrice = p.prev_price || p.current_price;
-              const todayProfit = (p.current_price - prevPrice) * item.shares;
-
-              return (
-                <div key={item.id} onClick={() => router.push(`/funds/${p.code}?type=${p.type}`)} className="bg-white/90 backdrop-blur-xl rounded-2xl p-4 shadow-sm border border-white/60 hover:shadow-md cursor-pointer transition-all active:scale-[0.98]">
-                  <div className="flex items-start justify-between mb-3">
-                    <div className="flex items-center gap-2">
-                      <span className={`px-1.5 py-0.5 rounded text-[9px] font-bold ${p.type === "fund" ? "bg-blue-50 text-blue-600" : "bg-amber-50 text-amber-600"}`}>
-                        {p.type === "fund" ? "基金" : "股票"}
-                      </span>
-                      <span className="text-[15px] font-bold text-slate-900 truncate max-w-[200px]">{p.name}</span>
-                    </div>
-                    <span className="text-[12px] text-slate-400 font-mono">{p.code}</span>
-                  </div>
-
-                  <div className="grid grid-cols-[1.3fr_1fr_1fr_1fr] gap-1 mt-2">
-                    <div>
-                      <div className="text-[10px] text-slate-400 mb-1 truncate">持仓市值</div>
-                      <div className="font-mono font-bold text-[13px] text-slate-900 truncate">
-                        {marketValue.toLocaleString("zh-CN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                      </div>
-                    </div>
-                    <div className="text-right">
-                      <div className="flex items-center justify-end gap-1 mb-1">
-                        <span className="text-[10px] text-slate-400 truncate">今日收益</span>
-                      </div>
-                      <div className={`font-mono font-bold text-[13px] truncate ${todayProfit > 0 ? "text-rose-500" : todayProfit < 0 ? "text-emerald-500" : "text-slate-400"}`}>
-                        {todayProfit > 0 ? "+" : ""}{todayProfit.toFixed(2)}
-                      </div>
-                    </div>
-                    <div className="text-right">
-                      <div className="text-[10px] text-slate-400 mb-1 truncate">累计收益</div>
-                      <div className={`font-mono font-bold text-[13px] truncate ${profit > 0 ? "text-rose-500" : profit < 0 ? "text-emerald-500" : "text-slate-400"}`}>
-                        {profit > 0 ? "+" : ""}{profit.toFixed(2)}
-                      </div>
-                    </div>
-                    <div className="text-right">
-                      <div className="text-[10px] text-slate-400 mb-1 truncate">收益率</div>
-                      <div className={`font-mono font-bold text-[13px] truncate ${profitRate > 0 ? "text-rose-500" : profitRate < 0 ? "text-emerald-500" : "text-slate-400"}`}>
-                        {profitRate >= 0 ? "+" : ""}{profitRate.toFixed(2)}%
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              );
+              const fs = Array.isArray(item.fund_stocks) ? item.fund_stocks[0] : item.fund_stocks;
+              if (!fs) return null;
+              return <HoldingCard key={item.id} item={item} history={historyMap[fs.id] || []} />;
             })
           )}
         </div>
@@ -365,33 +264,8 @@ export default function FundsPage() {
         <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2.5}><path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" /></svg>
       </button>
 
-      {isModalOpen && (
-        <div className="fixed inset-0 z-[100] flex items-end sm:items-center justify-center sm:px-6">
-          <div className="absolute inset-0 bg-black/40 backdrop-blur-sm animate-fade-in" onClick={() => setIsModalOpen(false)} />
-          <div className="relative bg-white w-full max-w-md rounded-t-[32px] sm:rounded-[32px] p-6 animate-slide-up border border-white/50 shadow-2xl">
-            <h3 className="text-[17px] font-bold text-slate-900 mb-5">添加持仓</h3>
-            <div className="space-y-4">
-              <div className="flex bg-slate-100 p-1 rounded-xl">
-                <button onClick={() => setFormType("fund")} className={`flex-1 py-2 text-[13px] font-medium rounded-lg transition-all ${formType === "fund" ? "bg-white shadow-sm text-blue-600" : "text-slate-500"}`}>基金</button>
-                <button onClick={() => setFormType("stock")} className={`flex-1 py-2 text-[13px] font-medium rounded-lg transition-all ${formType === "stock" ? "bg-white shadow-sm text-amber-600" : "text-slate-500"}`}>股票</button>
-              </div>
-              <div className="grid grid-cols-2 gap-3">
-                <div><label className="block text-[11px] text-slate-500 mb-1.5">代码</label><input type="text" value={formCode} onChange={e => setFormCode(e.target.value)} className="w-full px-3 py-2.5 text-[13px] rounded-xl bg-slate-50 border-none focus:ring-2 focus:ring-slate-200 outline-none" /></div>
-                <div><label className="block text-[11px] text-slate-500 mb-1.5">名称</label><input type="text" value={formName} onChange={e => setFormName(e.target.value)} className="w-full px-3 py-2.5 text-[13px] rounded-xl bg-slate-50 border-none focus:ring-2 focus:ring-slate-200 outline-none" /></div>
-              </div>
-              <div className="grid grid-cols-3 gap-3">
-                <div><label className="block text-[11px] text-slate-500 mb-1.5">持有份额</label><input type="number" value={formShares} onChange={e => setFormShares(e.target.value)} className="w-full px-3 py-2.5 text-[13px] rounded-xl bg-slate-50 border-none focus:ring-2 focus:ring-slate-200 outline-none" /></div>
-                <div><label className="block text-[11px] text-slate-500 mb-1.5">成本价</label><input type="number" value={formCost} onChange={e => setFormCost(e.target.value)} className="w-full px-3 py-2.5 text-[13px] rounded-xl bg-slate-50 border-none focus:ring-2 focus:ring-slate-200 outline-none" /></div>
-                <div><label className="block text-[11px] text-slate-500 mb-1.5">现价</label><input type="number" value={formCurrent} onChange={e => setFormCurrent(e.target.value)} className="w-full px-3 py-2.5 text-[13px] rounded-xl bg-slate-50 border-none focus:ring-2 focus:ring-slate-200 outline-none" /></div>
-              </div>
-            </div>
-            <div className="flex gap-2 mt-8">
-              <button disabled={isSubmitting} onClick={() => setIsModalOpen(false)} className="flex-1 py-3.5 bg-slate-100 text-slate-600 font-medium rounded-2xl active:scale-95 transition-all">取消</button>
-              <button disabled={isSubmitting} onClick={handleAdd} className="flex-[2] py-3.5 bg-slate-900 text-white rounded-2xl font-bold active:scale-95 transition-all">{isSubmitting ? "保存中..." : "保存"}</button>
-            </div>
-          </div>
-        </div>
-      )}
+      <AddHoldingModal isOpen={isModalOpen} onClose={() => setIsModalOpen(false)} userId={userId} onSuccess={fetchData} />
+      <UpdateCashModal isOpen={isCashModalOpen} onClose={() => setIsCashModalOpen(false)} userId={userId} currentAmount={cashAmount} onSuccess={fetchData} />
     </div>
   );
 }
