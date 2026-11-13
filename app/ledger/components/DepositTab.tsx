@@ -1,19 +1,32 @@
 "use client";
 
-import { useState, useMemo, useRef } from "react";
+import { useState, useMemo, useRef, useEffect } from "react";
 import { useCountUp } from "../../../lib/useCountUp";
 import Pagination from "./Pagination";
 
 export default function DepositTab({
-  transactions, snapshots, realWealthAmount, searchTerm, openSnapshot, openDetail
+  transactions, snapshots, realWealthAmount, fundStats, searchTerm, openSnapshot, openDetail
 }: any) {
   const [isAssetExpanded, setIsAssetExpanded] = useState(false);
   const [depositPage, setDepositPage] = useState(1);
   const pressTimer = useRef<NodeJS.Timeout | null>(null);
 
+  const [syncFund, setSyncFund] = useState(() => {
+    if (typeof window !== "undefined") return localStorage.getItem("sync_fund_ledger") === "true";
+    return false;
+  });
+  const [syncStock, setSyncStock] = useState(() => {
+    if (typeof window !== "undefined") return localStorage.getItem("sync_stock_ledger") === "true";
+    return false;
+  });
+
+  useEffect(() => {
+    localStorage.setItem("sync_fund_ledger", String(syncFund));
+    localStorage.setItem("sync_stock_ledger", String(syncStock));
+  }, [syncFund, syncStock]);
+
   const PAGE_SIZE = 20;
 
-  // --- 计算逻辑 ---
   const monthReport = useMemo(() => {
     const currentY = new Date().getFullYear();
     const currentM = new Date().getMonth() + 1;
@@ -35,7 +48,6 @@ export default function DepositTab({
     }
 
     const ascMonths = [...allMonths].reverse();
-    const map: Record<string, any> = {};
     let lastEndBalance = 0;
 
     const calculated = ascMonths.map((m) => {
@@ -47,9 +59,7 @@ export default function DepositTab({
       const trueTotal = snap ? Number(snap.total_assets) : null;
       
       let startBalance = lastEndBalance;
-      if (snap?.details?.start_balance) {
-        startBalance = Number(snap.details.start_balance);
-      }
+      if (snap?.details?.start_balance) startBalance = Number(snap.details.start_balance);
       
       let calcEndBalance = startBalance + income - expense;
       if (trueTotal !== null) calcEndBalance = trueTotal;
@@ -67,25 +77,32 @@ export default function DepositTab({
   const latestSnapshot = snapshots[0] || null;
 
   const displayDist = useMemo(() => {
-    if (!latestSnapshot) return {};
     let baseDist: Record<string, number> = {};
-    const detailObj = latestSnapshot.details || {};
-    const order = detailObj._order || Object.keys(detailObj).filter(k => k !== "start_balance" && k !== "_order" && k !== "_locked" && k !== "snapshotDate");
-    order.forEach((k: string) => { if (detailObj[k] !== undefined) baseDist[k] = Number(detailObj[k]); });
+    if (latestSnapshot) {
+      const detailObj = latestSnapshot.details || {};
+      const order = detailObj._order || Object.keys(detailObj).filter(k => k !== "start_balance" && k !== "_order" && k !== "_locked" && k !== "snapshotDate");
+      order.forEach((k: string) => { if (detailObj[k] !== undefined) baseDist[k] = Number(detailObj[k]); });
 
-    const snapDate = latestSnapshot.details?.snapshotDate || `${latestSnapshot.month}-01`;
-    transactions.forEach((t: any) => {
-      if (t.trade_date > snapDate) {
-        const acc = t.account || "余额";
-        if (baseDist[acc] === undefined) baseDist[acc] = 0; 
-        if (t.type === "转入") baseDist[acc] += Number(t.amount);
-        else baseDist[acc] -= Number(t.amount);
-      }
-    });
+      const snapDate = latestSnapshot.details?.snapshotDate || `${latestSnapshot.month}-01`;
+      transactions.forEach((t: any) => {
+        if (t.trade_date > snapDate) {
+          const acc = t.account || "余额";
+          if (baseDist[acc] === undefined) baseDist[acc] = 0; 
+          if (t.type === "转入") baseDist[acc] += Number(t.amount);
+          else baseDist[acc] -= Number(t.amount);
+        }
+      });
+    }
     
+    if (syncFund && fundStats) baseDist["基金"] = fundStats.fundValue;
+    else baseDist["基金"] = baseDist["基金"] || 0;
+
+    if (syncStock && fundStats) baseDist["股票"] = fundStats.stockValue;
+    else baseDist["股票"] = baseDist["股票"] || 0;
+
     baseDist["理财"] = realWealthAmount || 0;
     return baseDist;
-  }, [latestSnapshot, realWealthAmount, transactions]);
+  }, [latestSnapshot, realWealthAmount, transactions, syncFund, syncStock, fundStats]);
 
   const currentTotalAssets = useMemo(() => {
     let sum = 0;
@@ -146,19 +163,24 @@ export default function DepositTab({
         <div className="absolute bottom-0 left-0 w-48 h-48 bg-fuchsia-400/30 rounded-full blur-2xl -ml-10 -mb-10 pointer-events-none"></div>
         
         <div className="relative z-10">
-          <div className="flex items-center justify-between mb-2 cursor-pointer" onClick={(e) => { e.stopPropagation(); setIsAssetExpanded(!isAssetExpanded); }}>
-            <div>
+          <div className="flex items-start justify-between mb-2">
+            {/* 左侧：点击展开 */}
+            <div className="cursor-pointer flex-1" onClick={(e) => { e.stopPropagation(); setIsAssetExpanded(!isAssetExpanded); }}>
               <div className="text-[13px] text-white/80 font-medium tracking-widest mb-1">当前总资产（元）</div>
               <div className="text-white leading-none font-mono font-bold tracking-tight tabular flex items-baseline text-[36px] sm:text-[44px]">
                 <span className="text-[24px] mr-1 font-sans">¥</span>
                 {animatedAssets.toLocaleString("zh-CN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
               </div>
             </div>
-            <div 
-              className={`w-8 h-8 rounded-full bg-white/10 flex items-center justify-center backdrop-blur transition-transform duration-300 ${isAssetExpanded ? "rotate-180" : ""}`}
-              onMouseDown={(e) => e.stopPropagation()} onTouchStart={(e) => e.stopPropagation()}
-            >
-              <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" /></svg>
+            
+            {/* 右侧：只有箭头 */}
+            <div className="flex flex-col items-end gap-1.5 justify-center h-full pt-2">
+              <div 
+                className={`w-8 h-8 rounded-full bg-white/10 flex items-center justify-center backdrop-blur transition-transform duration-300 cursor-pointer z-20 ${isAssetExpanded ? "rotate-180" : ""}`}
+                onClick={(e) => { e.stopPropagation(); setIsAssetExpanded(!isAssetExpanded); }}
+              >
+                <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" /></svg>
+              </div>
             </div>
           </div>
           
@@ -167,70 +189,64 @@ export default function DepositTab({
               {Object.entries(displayDist).length === 0 ? (
                 <div className="col-span-2 text-[11px] text-white/60">暂无明细</div>
               ) : (
-                Object.entries(displayDist).map(([name, amount]) => (
-                  <div key={name} className="bg-white/10 rounded-xl p-3 flex flex-col justify-between border border-white/5 backdrop-blur-sm">
-                    <span className="text-[11px] text-white/70 mb-1">{name}</span>
-                    <span className="text-[15px] font-mono font-bold text-white">
-                      ¥{(Number(amount) || 0).toLocaleString("zh-CN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                    </span>
-                  </div>
-                ))
+                Object.entries(displayDist).map(([name, amount]) => {
+                  const isFund = name === "基金";
+                  const isStock = name === "股票";
+                  return (
+                    <div key={name} className="bg-white/10 rounded-xl p-3 flex flex-col justify-between border border-white/5 backdrop-blur-sm">
+                      <div className="flex justify-between items-center mb-1">
+                        <span className="text-[11px] text-white/70">{name}</span>
+                        {/* ★ 把开关放进基金和股票的卡片里 */}
+                        {(isFund || isStock) && (
+                          <div 
+                            className="flex items-center gap-1 cursor-pointer z-20"
+                            onClick={(e) => { e.stopPropagation(); isFund ? setSyncFund(!syncFund) : setSyncStock(!syncStock); }}
+                          >
+                            <span className="text-[8px] text-white/60">{(isFund ? syncFund : syncStock) ? "同步" : "固定"}</span>
+                            <div className={`w-5 h-3 rounded-full p-0.5 transition-colors ${(isFund ? syncFund : syncStock) ? "bg-emerald-400" : "bg-white/20"}`}>
+                              <div className={`w-2 h-2 rounded-full bg-white transition-transform ${(isFund ? syncFund : syncStock) ? "translate-x-2" : "translate-x-0"}`} />
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                      <span className="text-[15px] font-mono font-bold text-white">
+                        ¥{(Number(amount) || 0).toLocaleString("zh-CN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                      </span>
+                    </div>
+                  );
+                })
               )}
             </div>
           </div>
         </div>
       </div>
 
-      {/* 月报 - 完美田字格对齐 */}
+      {/* 月报 */}
       <div className="max-h-[320px] overflow-y-auto no-scrollbar relative bg-white rounded-2xl shadow-sm border border-slate-100">
         {monthReport.map((m) => {
           const formatAmt = (val: number | null) => val !== null ? val.toLocaleString("zh-CN", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : "-";
           return (
             <div key={m.month} onClick={() => openSnapshot(m.month)} className="flex justify-between items-start px-5 py-4 hover:bg-slate-50/80 cursor-pointer transition-colors border-b border-slate-100 last:border-b-0">
-              
-              {/* ── 左半边块 ── */}
               <div className="flex flex-col gap-1.5">
-                {/* 第一行：月份 */}
-                <div className="text-[15px] font-bold text-slate-800 mb-0.5">
-                  {m.month.slice(5)}月
-                </div>
-                
-                {/* 第二行：进 */}
+                <div className="text-[15px] font-bold text-slate-800 mb-0.5">{m.month.slice(5)}月</div>
                 <div className="flex items-center">
                   <span className="w-5 shrink-0 text-[11px] text-slate-400">进</span>
-                  <span className={`font-mono text-[12px] ${m.income > 0 ? "text-rose-400" : "text-slate-300"}`}>
-                    {m.income > 0 ? `+${formatAmt(m.income)}` : "-"}
-                  </span>
+                  <span className={`font-mono text-[12px] ${m.income > 0 ? "text-rose-400" : "text-slate-300"}`}>{m.income > 0 ? `+${formatAmt(m.income)}` : "-"}</span>
                 </div>
-                
-                {/* 第三行：出 */}
                 <div className="flex items-center">
                   <span className="w-5 shrink-0 text-[11px] text-slate-400">出</span>
-                  <span className={`font-mono text-[12px] ${m.expense > 0 ? "text-emerald-500" : "text-slate-300"}`}>
-                    {m.expense > 0 ? `-${formatAmt(m.expense)}` : "-"}
-                  </span>
+                  <span className={`font-mono text-[12px] ${m.expense > 0 ? "text-emerald-500" : "text-slate-300"}`}>{m.expense > 0 ? `-${formatAmt(m.expense)}` : "-"}</span>
                 </div>
               </div>
-
-              {/* ── 右半边块 ── */}
               <div className="flex flex-col gap-1.5">
-                {/* 第一行：月底 */}
                 <div className="flex items-baseline mb-0.5">
                   <span className="w-[34px] shrink-0 text-[10px] text-slate-400 font-medium">月底</span>
-                  <span className="font-mono font-bold text-[17px] text-slate-900 tracking-tight">
-                    {m.calcEndBalance ? `¥${formatAmt(m.calcEndBalance)}` : "-"}
-                  </span>
+                  <span className="font-mono font-bold text-[17px] text-slate-900 tracking-tight">{m.calcEndBalance ? `¥${formatAmt(m.calcEndBalance)}` : "-"}</span>
                 </div>
-                
-                {/* 第二行：月初 */}
                 <div className="flex items-center">
                   <span className="w-[34px] shrink-0 text-[11px] text-slate-400">月初</span>
-                  <span className="font-mono text-[12px] text-slate-500">
-                    {m.startBalance ? formatAmt(m.startBalance) : "-"}
-                  </span>
+                  <span className="font-mono text-[12px] text-slate-500">{m.startBalance ? formatAmt(m.startBalance) : "-"}</span>
                 </div>
-                
-                {/* 第三行：差额 */}
                 <div className="flex items-center">
                   <span className="w-[34px] shrink-0 text-[11px] text-slate-400">差额</span>
                   <span className={`font-mono font-bold text-[12px] ${m.diff !== null && m.diff !== 0 ? (m.diff > 0 ? "text-rose-500" : "text-emerald-500") : "text-slate-300"}`}>
@@ -238,7 +254,6 @@ export default function DepositTab({
                   </span>
                 </div>
               </div>
-
             </div>
           );
         })}

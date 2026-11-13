@@ -1,0 +1,29 @@
+name: Fund & Stock NAV Update
+
+on:
+  schedule:
+    # 每天北京时间 22:00 (UTC 14:00) 运行，此时基金净值基本更新完毕
+    - cron: '0 14 * * *'
+  workflow_dispatch: # 允许手动点击运行
+
+jobs:
+  update-funds:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Update Funds & Stocks
+        run: node crawler/fetch_funds.mjs
+        env:
+          # 这里假设你已经在 GitHub 仓库的 Settings -> Secrets 里配置了这两个变量
+          NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}

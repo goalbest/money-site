@@ -12,10 +12,11 @@ const TABS = [
     icon: "M3 12l9-9 9 9M5 10v10a1 1 0 001 1h3a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1h3a1 1 0 001-1V10",
   },
   {
-    key: "calendar",
-    href: "/calendar",
+    key: "funds", // ★ 修改 key
+    href: "/funds", // ★ 修改路径为基金页
     label: "基金",
-    icon: "M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z",
+    // ★ 换成了一个类似折线图/趋势的图标
+    icon: "M7 12l3-3 3 3 4-4M8 21l4-4 4 4M3 4h18M4 4h16v12a2 2 0 01-2 2H6a2 2 0 01-2-2V4z", 
   },
   {
     key: "holdings",
@@ -40,7 +41,6 @@ export default function BottomNav() {
     tab.href === "/" ? pathname === "/" : pathname?.startsWith(tab.href)
   );
 
-  // ★ 修复：所有的 Hook 必须在任何条件 return 之前执行！
   useEffect(() => {
     lastYRef.current = window.scrollY;
 
@@ -74,12 +74,13 @@ export default function BottomNav() {
     return () => window.removeEventListener("scroll", throttledScroll);
   }, []);
 
-  // ★ 所有的 Hook 执行完之后，再进行条件判断并返回 null 隐藏导航栏
+  // ★ 加上 /funds/ 的判断，以后做基金详情页时自动隐藏导航栏
   if (
     pathname?.startsWith("/product/") ||
     pathname?.startsWith("/login") ||
     pathname?.startsWith("/add") ||
-    (pathname?.startsWith("/holdings/") && pathname.length > "/holdings/".length)
+    (pathname?.startsWith("/holdings/") && pathname.length > "/holdings/".length) ||
+    (pathname?.startsWith("/funds/") && pathname.length > "/funds/".length)
   ) return null;
 
   return (
