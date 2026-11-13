@@ -149,8 +149,8 @@ export default function DepositTab({
           <div className="flex items-center justify-between mb-2 cursor-pointer" onClick={(e) => { e.stopPropagation(); setIsAssetExpanded(!isAssetExpanded); }}>
             <div>
               <div className="text-[13px] text-white/80 font-medium tracking-widest mb-1">当前总资产（元）</div>
-              <div className="text-white tracking-tight flex items-baseline text-[36px] sm:text-[44px]">
-                <span className="text-[24px] mr-1">¥</span>
+              <div className="text-white leading-none font-mono font-bold tracking-tight tabular flex items-baseline text-[36px] sm:text-[44px]">
+                <span className="text-[24px] mr-1 font-sans">¥</span>
                 {animatedAssets.toLocaleString("zh-CN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
               </div>
             </div>

@@ -11,10 +11,9 @@ const AllView = dynamic(() => import("./components/AllView"), {
   loading: () => <div className="h-40 flex items-center justify-center text-slate-400 text-sm animate-pulse">正在加载持仓列表...</div>
 });
 const CalendarView = dynamic(() => import("./components/CalendarView"), { ssr: false });
-const MonitorPanel = dynamic(() => import("./components/MonitorPanel"), { ssr: false });
 const AddModal = dynamic(() => import("./components/AddModal"), { ssr: false });
 
-const CACHE_KEY = "cache_home_data_v8";
+const CACHE_KEY = "cache_home_data_v10";
 
 function daysAgoStr(n: number): string {
   const d = new Date();
@@ -22,9 +21,11 @@ function daysAgoStr(n: number): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 }
 
-type View = "calendar" | "all" | "monitor";
+type View = "calendar" | "all";
 
 export default function HomePage() {
+  const [mounted, setMounted] = useState(false);
+
   const [allHoldings, setAllHoldings] = useState<any[]>(() => {
     if (typeof window !== "undefined") {
       const cached = localStorage.getItem(CACHE_KEY);
@@ -33,6 +34,14 @@ export default function HomePage() {
     return [];
   });
   
+  const [allProducts, setAllProducts] = useState<any[]>(() => {
+    if (typeof window !== "undefined") {
+      const cached = localStorage.getItem(CACHE_KEY);
+      if (cached) return JSON.parse(cached).allProducts || [];
+    }
+    return [];
+  });
+
   const [navHistory, setNavHistory] = useState<Record<number, any[]>>(() => {
     if (typeof window !== "undefined") {
       const cached = localStorage.getItem(CACHE_KEY);
@@ -41,7 +50,6 @@ export default function HomePage() {
     return {};
   });
 
-  // ★ 新增：存储交易流水
   const [transactions, setTransactions] = useState<any[]>(() => {
     if (typeof window !== "undefined") {
       const cached = localStorage.getItem(CACHE_KEY);
@@ -50,36 +58,48 @@ export default function HomePage() {
     return [];
   });
 
+  const [updatedAt, setUpdatedAt] = useState<string>(() => {
+    if (typeof window !== "undefined") {
+      const cached = localStorage.getItem(CACHE_KEY);
+      if (cached) return JSON.parse(cached).updatedAt || "";
+    }
+    return "";
+  });
+
   const [loading, setLoading] = useState(() => {
     if (typeof window !== "undefined") return !localStorage.getItem(CACHE_KEY);
     return true;
   });
 
+  const [refreshing, setRefreshing] = useState(false);
   const [privacy, setPrivacy] = useState(false);
   const [nowStr, setNowStr] = useState("");
   const [view, setView] = useState<View>("all");
   const [hideFab, setHideFab] = useState(false);
   const [showAddModal, setShowAddModal] = useState(false);
 
-  const fetchData = useCallback(async (userId: string) => {
+  const fetchData = useCallback(async (userId: string, isManual = false) => {
+    if (isManual) setRefreshing(true);
     try {
-      const { data, error } = await supabase.from("user_holdings")
+      const { data: hd } = await supabase.from("user_holdings")
         .select("id, holding_amount, in_transit_amount, purchase_amount, shares, hold_date, closed_at, closed_amount, status, products(id, name, bank, category, unit_nav, nav_date)")
         .eq("user_id", userId).in("status", ["active", "closed"]);
+
+      const { data: txs } = await supabase.from("transactions").select("product_id, type, amount, shares, trade_date").eq("user_id", userId);
+
+      const { data: prods } = await supabase.from("products")
+        .select("id, name, bank, code, unit_nav, nav_date, daily_return, annualized_1m")
+        .order("id", { ascending: false })
+        .limit(1000);
+
+      // ★ 获取所有产品（含清仓）的历史净值
+      const allProductIds = (hd || []).map((h: any) => h.products?.id).filter(Boolean);
+      const uniqueProductIds = [...new Set(allProductIds)] as number[];
       
-      if (error) throw error;
-      if (!data) return;
-
-      // 拉取流水
-      const { data: txs } = await supabase.from("transactions")
-        .select("product_id, type, amount, trade_date")
-        .eq("user_id", userId);
-
-      const allIds = data.map((h: any) => h.products?.id).filter(Boolean);
       let allGrouped: Record<number, {nav: number, date: string}[]> = {};
       
-      if (allIds.length > 0) {
-        await Promise.all(allIds.map(async (id: number) => {
+      if (uniqueProductIds.length > 0) {
+        await Promise.all(uniqueProductIds.map(async (id: number) => {
           const { data: navData } = await supabase.from("nav_history")
             .select("nav_date, unit_nav")
             .eq("product_id", id)
@@ -91,25 +111,35 @@ export default function HomePage() {
         }));
       }
 
-      setAllHoldings(data);
+      const now = new Date();
+      const timeStr = `${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}`;
+
+      setAllHoldings(hd || []);
+      setAllProducts(prods || []);
       setNavHistory(allGrouped);
       setTransactions(txs || []);
+      setUpdatedAt(timeStr);
       setLoading(false); 
 
       localStorage.setItem(CACHE_KEY, JSON.stringify({
-        allHoldings: data,
+        allHoldings: hd || [],
+        allProducts: prods || [],
         navHistory: allGrouped,
-        transactions: txs || []
+        transactions: txs || [],
+        updatedAt: timeStr
       }));
     } catch (err) {
       console.error("加载数据失败:", err);
       setLoading(false);
+    } finally {
+      if (isManual) setTimeout(() => setRefreshing(false), 500);
     }
   }, []);
 
   useEffect(() => {
+    setMounted(true);
     const d = new Date();
-    setNowStr(`${d.getFullYear()}年${d.getMonth() + 1}月${d.getDate()}日 ${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`);
+    setNowStr(`${d.getFullYear()}年${d.getMonth() + 1}月${d.getDate()}日`);
     const onScroll = () => setHideFab(window.scrollY > 150);
     window.addEventListener("scroll", onScroll, { passive: true });
     return () => window.removeEventListener("scroll", onScroll);
@@ -118,7 +148,7 @@ export default function HomePage() {
   useLayoutEffect(() => {
     if (typeof window !== "undefined") {
       const v = new URLSearchParams(window.location.search).get("view");
-      if (v === "monitor" || v === "calendar" || v === "all") setView(v as View);
+      if (v === "calendar" || v === "all") setView(v as View);
     }
   }, []);
 
@@ -158,12 +188,7 @@ export default function HomePage() {
     });
 
     return {
-      totalAssets: totalHolding + totalInTransit, 
-      totalHolding, 
-      totalInTransit, 
-      totalProfitToday, 
-      totalProfitCumulative, 
-      monthProfit,
+      totalAssets: totalHolding + totalInTransit, totalHolding, totalInTransit, totalProfitToday, totalProfitCumulative, monthProfit,
       todayWanfen: totalHolding > 0 ? (totalProfitToday / totalHolding) * 10000 : 0,
       totalRate: totalHolding - totalProfitCumulative > 0 ? (totalProfitCumulative / (totalHolding - totalProfitCumulative)) * 100 : 0,
       monthAnnual: totalHolding > 0 && d.getDate() > 0 ? (monthProfit / totalHolding) * (365 / d.getDate()) * 100 : 0,
@@ -177,8 +202,31 @@ export default function HomePage() {
         <div className="flex items-center gap-3 mb-5">
           <div className="flex-1">
             <div className="text-[22px] font-bold tracking-tight text-slate-900">理财助手</div>
-            <div className="text-[12px] text-slate-400 mt-0.5">{nowStr}</div>
+            <div className="flex items-center gap-2 mt-0.5">
+              <span className="text-[12px] text-slate-400">{nowStr}</span>
+              
+              {mounted && globalStats.latestNavDateStr && (
+                <span className="text-[10px] text-amber-600 bg-amber-50 px-1.5 py-0.5 rounded font-medium">
+                  净值至 {String(globalStats.latestNavDateStr).slice(5)}
+                </span>
+              )}
+              {mounted && updatedAt && (
+                <span className="text-[10px] text-slate-400 bg-slate-100 px-1.5 py-0.5 rounded">
+                  {updatedAt} 已同步
+                </span>
+              )}
+            </div>
           </div>
+          
+          <button 
+            onClick={() => { const userId = localStorage.getItem("user_id"); if(userId) fetchData(userId, true); }}
+            disabled={refreshing}
+            className="w-9 h-9 rounded-full bg-white border border-slate-200 flex items-center justify-center active:scale-90 transition-all shadow-sm disabled:opacity-50"
+          >
+            <svg className={`w-4 h-4 text-slate-500 ${refreshing ? "animate-spin" : ""}`} fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+            </svg>
+          </button>
           <button onClick={() => setPrivacy(p => !p)} className="w-9 h-9 rounded-full bg-white border border-slate-200 flex items-center justify-center active:scale-90 transition-all shadow-sm">
             {privacy ? <svg className="w-4 h-4 text-slate-500" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}><path d="M17.94 17.94A10.07 10.07 0 0112 20c-7 0-11-8-11-8a18.45 18.45 0 015.06-5.94M9.9 4.24A9.12 9.12 0 0112 4c7 0 11 8 11 8a18.5 18.5 0 01-2.16 3.19m-6.72-1.07a3 3 0 11-4.24-4.24M1 1l22 22" strokeLinecap="round" strokeLinejoin="round" /></svg> : <svg className="w-4 h-4 text-slate-500" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" strokeLinecap="round" strokeLinejoin="round" /><circle cx="12" cy="12" r="3" strokeLinecap="round" strokeLinejoin="round" /></svg>}
           </button>
@@ -190,56 +238,35 @@ export default function HomePage() {
           <>
             {holdings.length > 0 && <AssetCard stats={globalStats} privacy={privacy} />}
 
-            <div 
-              className="relative flex p-1.5 rounded-[22px] mb-6 overflow-hidden border border-white/60"
-              style={{
-                background: "linear-gradient(135deg, rgba(255,255,255,0.6) 0%, rgba(255,255,255,0.2) 100%)",
-                backdropFilter: "blur(24px) saturate(180%)",
-                WebkitBackdropFilter: "blur(24px) saturate(180%)",
-                boxShadow: "0 8px 32px rgba(31, 38, 135, 0.05), inset 0 1px 1px rgba(255, 255, 255, 0.8)"
-              }}
-            >
-              <div 
-                className="absolute top-1.5 bottom-1.5 rounded-2xl transition-transform duration-500 ease-[cubic-bezier(0.34,1.56,0.64,1)]" 
-                style={{ 
-                  width: "calc(33.33% - 4px)", 
-                  transform: `translateX(${view === "calendar" ? 0 : view === "all" ? 100 : 200}%)`, 
-                  left: "4px",
-                  background: "linear-gradient(to bottom, #ffffff, #f8fafc)",
-                  boxShadow: "0 2px 10px rgba(0,0,0,0.05), inset 0 1px 1px rgba(255,255,255,1)",
-                  border: "1px solid rgba(255,255,255,0.5)"
-                }} 
-              />
-              <button onClick={() => switchView("calendar")} className={`flex-1 py-2.5 text-[13px] font-bold relative z-10 transition-colors duration-300 rounded-2xl ${view === "calendar" ? "text-slate-900" : "text-slate-500 hover:text-slate-700"}`}>日历</button>
-              <button onClick={() => switchView("all")} className={`flex-1 py-2.5 text-[13px] font-bold relative z-10 transition-colors duration-300 rounded-2xl ${view === "all" ? "text-slate-900" : "text-slate-500 hover:text-slate-700"}`}>全部</button>
-              <button onClick={() => switchView("monitor")} className={`flex-1 py-2.5 text-[13px] font-bold relative z-10 transition-colors duration-300 rounded-2xl ${view === "monitor" ? "text-slate-900" : "text-slate-500 hover:text-slate-700"}`}>监控</button>
+            <div className="relative flex p-1.5 rounded-[22px] mb-6 overflow-hidden border border-white/60" style={{ background: "linear-gradient(135deg, rgba(255,255,255,0.6) 0%, rgba(255,255,255,0.2) 100%)", backdropFilter: "blur(24px) saturate(180%)", WebkitBackdropFilter: "blur(24px) saturate(180%)", boxShadow: "0 8px 32px rgba(31, 38, 135, 0.05), inset 0 1px 1px rgba(255, 255, 255, 0.8)" }}>
+              <div className="absolute top-1.5 bottom-1.5 rounded-2xl transition-transform duration-500 ease-[cubic-bezier(0.34,1.56,0.64,1)]" style={{ width: "calc(50% - 4px)", transform: `translateX(${view === "all" ? 0 : 100}%)`, left: "4px", background: "linear-gradient(to bottom, #ffffff, #f8fafc)", boxShadow: "0 2px 10px rgba(0,0,0,0.05), inset 0 1px 1px rgba(255,255,255,1)", border: "1px solid rgba(255,255,255,0.5)" }} />
+              <button onClick={() => switchView("all")} className={`flex-1 py-2.5 text-[13px] font-bold relative z-10 transition-colors duration-300 rounded-2xl ${view === "all" ? "text-slate-900" : "text-slate-500"}`}>全部</button>
+              <button onClick={() => switchView("calendar")} className={`flex-1 py-2.5 text-[13px] font-bold relative z-10 transition-colors duration-300 rounded-2xl ${view === "calendar" ? "text-slate-900" : "text-slate-500"}`}>日历</button>
             </div>
 
+            {view === "all" && (
+              <AllView 
+                allHoldings={allHoldings} 
+                allProducts={allProducts}
+                navHistory={navHistory} 
+                transactions={transactions} 
+                globalStats={globalStats} 
+                privacy={privacy} 
+                onSwipeLeft={() => switchView("calendar")} 
+              />
+            )}
             {view === "calendar" && <CalendarView />}
-            {/* ★ 传 transactions 给 AllView */}
-            {view === "all" && <AllView allHoldings={allHoldings} navHistory={navHistory} transactions={transactions} globalStats={globalStats} privacy={privacy} />}
-            {view === "monitor" && <MonitorPanel />}
           </>
         )}
       </div>
 
-      <button 
-        onClick={() => setShowAddModal(true)} 
-        className="fixed z-40 flex items-center justify-center w-14 h-14 rounded-full bg-gradient-to-br from-violet-500 to-purple-600 text-white shadow-xl shadow-purple-500/30 active:scale-90 transition-all duration-300" 
-        style={{ 
-          bottom: "calc(100px + env(safe-area-inset-bottom))", 
-          right: "20px",
-          opacity: hideFab ? 0 : 1, 
-          transform: hideFab ? "translateY(20px)" : "translateY(0)", 
-          pointerEvents: hideFab ? "none" : "auto" 
-        }}
-      >
+      <button onClick={() => setShowAddModal(true)} className="fixed z-40 flex items-center justify-center w-14 h-14 rounded-full bg-gradient-to-br from-violet-500 to-purple-600 text-white shadow-xl shadow-purple-500/30 active:scale-90 transition-all duration-300" style={{ bottom: "calc(100px + env(safe-area-inset-bottom))", right: "20px", opacity: hideFab ? 0 : 1, transform: hideFab ? "translateY(20px)" : "translateY(0)", pointerEvents: hideFab ? "none" : "auto" }}>
         <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2.5}><path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" /></svg>
       </button>
       
       {showAddModal && (
         <div className="fixed inset-0 z-[200] bg-white overflow-y-auto">
-          <AddModal onClose={() => { setShowAddModal(false); window.location.reload(); }} />
+          <AddModal onClose={() => { setShowAddModal(false); window.location.href = "/"; }} />
         </div>
       )}
     </div>

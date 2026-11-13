@@ -9,7 +9,7 @@ import DepositTab from "./components/DepositTab";
 import SocialTab from "./components/SocialTab";
 import GiftTab from "./components/GiftTab";
 import NotesTab from "./components/NotesTab";
-import LedgerModals from "./components/LedgerModals"; // ★ 注意这里是引用
+import LedgerModals from "./components/LedgerModals";
 
 const TABS = [
   { key: "deposit", label: "资金" },
@@ -17,6 +17,8 @@ const TABS = [
   { key: "gift", label: "心意" },
   { key: "notes", label: "随手记" },
 ];
+
+const CACHE_KEY = "cache_ledger_v1"; // ★ 新增缓存Key
 
 export default function LedgerPage() {
   const router = useRouter();
@@ -26,12 +28,55 @@ export default function LedgerPage() {
   const [isSearchOpen, setIsSearchOpen] = useState(false);
   const [searchTerm, setSearchTerm] = useState("");
 
-  const [transactions, setTransactions] = useState<any[]>([]);
-  const [socials, setSocials] = useState<any[]>([]);
-  const [gifts, setGifts] = useState<any[]>([]);
-  const [notes, setNotes] = useState<any[]>([]);
-  const [snapshots, setSnapshots] = useState<any[]>([]);
-  const [realWealthAmount, setRealWealthAmount] = useState(0);
+  // ★ 改造：从缓存初始化状态
+  const [transactions, setTransactions] = useState<any[]>(() => {
+    if (typeof window !== "undefined") {
+      const c = localStorage.getItem(CACHE_KEY);
+      if (c) return JSON.parse(c).transactions || [];
+    }
+    return [];
+  });
+  const [socials, setSocials] = useState<any[]>(() => {
+    if (typeof window !== "undefined") {
+      const c = localStorage.getItem(CACHE_KEY);
+      if (c) return JSON.parse(c).socials || [];
+    }
+    return [];
+  });
+  const [gifts, setGifts] = useState<any[]>(() => {
+    if (typeof window !== "undefined") {
+      const c = localStorage.getItem(CACHE_KEY);
+      if (c) return JSON.parse(c).gifts || [];
+    }
+    return [];
+  });
+  const [notes, setNotes] = useState<any[]>(() => {
+    if (typeof window !== "undefined") {
+      const c = localStorage.getItem(CACHE_KEY);
+      if (c) return JSON.parse(c).notes || [];
+    }
+    return [];
+  });
+  const [snapshots, setSnapshots] = useState<any[]>(() => {
+    if (typeof window !== "undefined") {
+      const c = localStorage.getItem(CACHE_KEY);
+      if (c) return JSON.parse(c).snapshots || [];
+    }
+    return [];
+  });
+  const [realWealthAmount, setRealWealthAmount] = useState(() => {
+    if (typeof window !== "undefined") {
+      const c = localStorage.getItem(CACHE_KEY);
+      if (c) return JSON.parse(c).realWealthAmount || 0;
+    }
+    return 0;
+  });
+
+  // ★ 如果缓存存在，就不需要显示 loading 骨架屏
+  const [loading, setLoading] = useState(() => {
+    if (typeof window !== "undefined") return !localStorage.getItem(CACHE_KEY);
+    return true;
+  });
 
   const [modalType, setModalType] = useState<"deposit" | "social" | "gift" | "notes" | "snapshot" | null>(null);
   const [viewingItem, setViewingItem] = useState<any>(null);
@@ -46,52 +91,84 @@ export default function LedgerPage() {
   }, [router]);
 
   async function fetchData(id: string) {
-    const [txRes, socRes, gftRes, noteRes, snapRes, holdingsRes] = await Promise.all([
-      supabase.from("ledger_transactions").select("*").eq("user_id", id).order("trade_date", { ascending: false }),
-      supabase.from("ledger_social").select("*").eq("user_id", id).order("trade_date", { ascending: false }),
-      supabase.from("ledger_gifts").select("*").eq("user_id", id).order("trade_date", { ascending: false }),
-      supabase.from("ledger_notes").select("*").eq("user_id", id).order("note_date", { ascending: false }),
-      supabase.from("ledger_snapshots").select("*").eq("user_id", id).order("month", { ascending: false }),
-      supabase.from("user_holdings").select("*, products(unit_nav)").eq("user_id", id).eq("status", "active")
-    ]);
-    
-    setTransactions(txRes.data || []); 
-    setSocials(socRes.data || []); 
-    setGifts(gftRes.data || []); 
-    setNotes(noteRes.data || []); 
-    setSnapshots(snapRes.data || []);
+    try {
+      const [txRes, socRes, gftRes, noteRes, snapRes, holdingsRes] = await Promise.all([
+        supabase.from("ledger_transactions").select("*").eq("user_id", id).order("trade_date", { ascending: false }),
+        supabase.from("ledger_social").select("*").eq("user_id", id).order("trade_date", { ascending: false }),
+        supabase.from("ledger_gifts").select("*").eq("user_id", id).order("trade_date", { ascending: false }),
+        supabase.from("ledger_notes").select("*").eq("user_id", id).order("note_date", { ascending: false }),
+        supabase.from("ledger_snapshots").select("*").eq("user_id", id).order("month", { ascending: false }),
+        supabase.from("user_holdings").select("*, products(unit_nav)").eq("user_id", id).eq("status", "active")
+      ]);
+      
+      const newTx = txRes.data || [];
+      const newSoc = socRes.data || [];
+      const newGft = gftRes.data || [];
+      const newNote = noteRes.data || [];
+      const newSnap = snapRes.data || [];
+      let newWealth = 0;
 
-    if (holdingsRes.data) {
-      const total = holdingsRes.data.reduce((sum, h) => sum + getHoldingMarketValue(h) + Number(h.in_transit_amount || 0), 0);
-      setRealWealthAmount(total);
+      if (holdingsRes.data) {
+        newWealth = holdingsRes.data.reduce((sum, h) => sum + getHoldingMarketValue(h) + Number(h.in_transit_amount || 0), 0);
+      }
+
+      setTransactions(newTx); 
+      setSocials(newSoc); 
+      setGifts(newGft); 
+      setNotes(newNote); 
+      setSnapshots(newSnap);
+      setRealWealthAmount(newWealth);
+      setLoading(false);
+
+      // ★ 写入缓存
+      localStorage.setItem(CACHE_KEY, JSON.stringify({
+        transactions: newTx,
+        socials: newSoc,
+        gifts: newGft,
+        notes: newNote,
+        snapshots: newSnap,
+        realWealthAmount: newWealth
+      }));
+
+    } catch (err) {
+      console.error("加载数据失败:", err);
+      setLoading(false);
     }
   }
 
+  // 打开详情/编辑
   function openDetail(item: any, type: "deposit" | "social" | "gift" | "notes") {
     setViewingItem(item);
     setIsEditing(false); 
     setModalType(type);
   }
 
+  // 打开新增（悬浮按钮）
   function openAdd() {
     setViewingItem(null);
     setIsEditing(true); 
     setModalType(activeTab);
   }
 
+  // 删除
   async function handleDelete(id: string, type: string) {
     if (!confirm("确认删除这条记录吗？")) return;
     const table = type === "deposit" ? "ledger_transactions" : type === "social" ? "ledger_social" : type === "gift" ? "ledger_gifts" : "ledger_notes";
     await supabase.from(table).delete().eq("id", id);
+    // 删除后清空缓存并重新拉取
+    localStorage.removeItem(CACHE_KEY);
     if (userId) fetchData(userId);
     setModalType(null);
   }
 
+  // 归档
   async function handleArchive(id: string) {
     await supabase.from("ledger_notes").update({ status: "已归档" }).eq("id", id);
+    localStorage.removeItem(CACHE_KEY);
     if (userId) fetchData(userId);
   }
 
+  // 打开对账
   function openSnapshot(monthStr: string) {
     setModalType("snapshot");
   }
@@ -122,28 +199,34 @@ export default function LedgerPage() {
           ))}
         </div>
 
-        {activeTab === "deposit" && (
-          <DepositTab 
-            transactions={transactions} snapshots={snapshots} realWealthAmount={realWealthAmount}
-            searchTerm={searchTerm} openSnapshot={openSnapshot} openDetail={openDetail}
-          />
-        )}
-        {activeTab === "social" && (
-          <SocialTab 
-            socials={socials} subTab={subTab} setSubTab={setSubTab} 
-            searchTerm={searchTerm} openDetail={openDetail} setViewingSocialPerson={setViewingSocialPerson}
-          />
-        )}
-        {activeTab === "gift" && (
-          <GiftTab 
-            gifts={gifts} subTab={subTab} setSubTab={setSubTab} 
-            searchTerm={searchTerm} openDetail={openDetail}
-          />
-        )}
-        {activeTab === "notes" && (
-          <NotesTab 
-            notes={notes} openDetail={openDetail} handleArchive={handleArchive} handleDelete={handleDelete}
-          />
+        {loading ? (
+          <div className="w-full h-[400px] rounded-3xl bg-slate-200/50 animate-pulse" />
+        ) : (
+          <>
+            {activeTab === "deposit" && (
+              <DepositTab 
+                transactions={transactions} snapshots={snapshots} realWealthAmount={realWealthAmount}
+                searchTerm={searchTerm} openSnapshot={openSnapshot} openDetail={openDetail}
+              />
+            )}
+            {activeTab === "social" && (
+              <SocialTab 
+                socials={socials} subTab={subTab} setSubTab={setSubTab} 
+                searchTerm={searchTerm} openDetail={openDetail} setViewingSocialPerson={setViewingSocialPerson}
+              />
+            )}
+            {activeTab === "gift" && (
+              <GiftTab 
+                gifts={gifts} subTab={subTab} setSubTab={setSubTab} 
+                searchTerm={searchTerm} openDetail={openDetail}
+              />
+            )}
+            {activeTab === "notes" && (
+              <NotesTab 
+                notes={notes} openDetail={openDetail} handleArchive={handleArchive} handleDelete={handleDelete}
+              />
+            )}
+          </>
         )}
       </div>
 
@@ -158,7 +241,7 @@ export default function LedgerPage() {
         userId={userId} activeTab={activeTab} subTab={subTab} 
         fetchData={fetchData} handleDelete={handleDelete}
         snapshots={snapshots} realWealthAmount={realWealthAmount}
-        transactions={transactions} // ★ 加上这一行，传入流水
+        transactions={transactions}
       />
     </div>
   );

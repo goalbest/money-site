@@ -155,7 +155,18 @@ export default function ProductPage() {
           </div>
           <div className="text-[15px] text-slate-700 font-medium mb-1.5">没有找到该产品</div>
           <div className="text-[12px] text-slate-400 mb-6">可能已被删除，或 ID 无效</div>
-          <button onClick={() => router.push("/")} className="btn-primary px-6 py-2.5 text-sm">返回首页</button>
+          <button
+            onClick={() => {
+              if (typeof window !== "undefined" && window.history.length > 1) {
+                router.back();
+              } else {
+                router.push("/");
+              }
+            }}
+            className="px-6 py-2.5 bg-slate-100 text-slate-700 font-medium rounded-xl hover:bg-slate-200 transition-all active:scale-95"
+          >
+            返回
+          </button>
         </div>
       </div>
     );
