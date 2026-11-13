@@ -2,9 +2,6 @@
 import { NextResponse } from 'next/server';
 import { supabase } from '@/lib/supabase';
 
-export const runtime = 'nodejs';
-export const maxDuration = 60;
-
 export async function POST(request: Request) {
   try {
     const { url } = await request.json();
@@ -13,6 +10,7 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: '缺少 url 参数' }, { status: 400 });
     }
 
+    // ── 1. 根据域名判断来源 ──
     const hostname = new URL(url).hostname;
     let product;
     let sourceType: string;
@@ -20,13 +18,13 @@ export async function POST(request: Request) {
     let bank = '';
 
     if (hostname.includes('psbc.com')) {
+      // 邮储银行 / 中邮理财（可能带短链）
       let finalUrl = url;
       if (hostname.includes('u.psbc.com')) {
         const { resolveShortLink } = await import('@/lib/psbc-parse');
         finalUrl = await resolveShortLink(url);
         console.log('短链解析后:', finalUrl);
       }
-      
       const u = new URL(finalUrl);
       const hashQuery = u.hash.split('?')[1] || '';
       const hashParams = new URLSearchParams(hashQuery);
@@ -36,7 +34,7 @@ export async function POST(request: Request) {
         u.searchParams.get('code');
 
       if (!productCode) {
-        return NextResponse.json({ error: '无法从链接提取 productId，请检查链接是否完整' }, { status: 400 });
+        return NextResponse.json({ error: '无法从链接提取 productId' }, { status: 400 });
       }
 
       const { fetchPsbcProduct } = await import('@/lib/psbc-parse');
@@ -45,6 +43,7 @@ export async function POST(request: Request) {
         return NextResponse.json({ error: `邮储接口未找到产品: ${productCode}` }, { status: 404 });
       }
 
+      // 中邮理财 vs 邮储银行（按 code 前缀判断）
       product = {
         code: psbcProd.code,
         name: psbcProd.name,
@@ -57,35 +56,81 @@ export async function POST(request: Request) {
       sourceType = 'zywm';
       bank = '中邮理财';
       params = { product_code: psbcProd.code };
-
     } else if (hostname.includes('boc.cn')) {
+      // 中国银行：只解析参数，不立即抓取（净值交给 Playwright 脚本）
       const u = new URL(url);
-      let productId = u.searchParams.get('productId') || (u.hash.split('?')[1] ? new URLSearchParams(u.hash.split('?')[1]).get('productId') : null);
-      if (!productId) return NextResponse.json({ error: '无法从链接中提取 productId' }, { status: 400 });
-      product = { code: productId, name: `中行产品 ${productId}`, unitNav: null, navDate: null, sevenYield: null, wfEarn: null, riskLevel: null };
-      sourceType = 'boc'; bank = '中国银行'; params = { product_id: productId };
+      let productId = null;
+      const hashQuery = u.hash.split('?')[1];
+      if (hashQuery) {
+        productId = new URLSearchParams(hashQuery).get('productId');
+      }
+      if (!productId) {
+        productId = u.searchParams.get('productId');
+      }
 
-    } else if (hostname.includes('abchina.com')) {
+      if (!productId) {
+        return NextResponse.json({ error: '无法从中国银行链接中提取 productId' }, { status: 400 });
+      }
+
+      product = {
+        code: productId,
+        name: `中行产品 ${productId}`,
+        unitNav: null,
+        navDate: null,
+        sevenYield: null,
+        wfEarn: null,
+        riskLevel: null,
+      };
+      sourceType = 'boc';
+      bank = '中国银行';
+      params = { product_id: productId };
+          } else if (hostname.includes('abchina.com')) {
+      // 农银理财：解析链接，写 product_sources（净值交给 Actions）
       const { parseAbcLink, ABC_DEFAULT_RULES } = await import('@/lib/abc-parse');
       const info = parseAbcLink(url);
-      if (!info) return NextResponse.json({ error: '无法从农行链接提取产品代码' }, { status: 400 });
-      product = { code: info.productCode, name: `农行产品 ${info.productCode}`, unitNav: null, navDate: null, sevenYield: null, wfEarn: null, riskLevel: ABC_DEFAULT_RULES.risk_level };
-      sourceType = 'abc'; bank = '农银理财'; params = { product_code: info.productCode };
+      if (!info) {
+        return NextResponse.json({ error: '无法从农行链接提取产品代码' }, { status: 400 });
+      }
 
+      product = {
+        code: info.productCode,
+        name: `农行产品 ${info.productCode}`,
+        unitNav: null,
+        navDate: null,
+        sevenYield: null,
+        wfEarn: null,
+        riskLevel: ABC_DEFAULT_RULES.risk_level,
+      };
+      sourceType = 'abc';
+      bank = '农银理财';
+      params = { product_code: info.productCode, raw_code: info.rawCode };
     } else if (hostname.includes('cmbchina.com')) {
+      // 招商银行：不立即抓，只提取参数（净值交给 Playwright workflow）
       const u = new URL(url);
       const ripInn = u.searchParams.get('XRIPINN');
       const saaCode = u.searchParams.get('XSAACOD');
-      if (!ripInn || !saaCode) return NextResponse.json({ error: '无法从链接提取参数' }, { status: 400 });
-      product = { code: ripInn, name: `招行产品 ${ripInn}`, unitNav: null, navDate: null, sevenYield: null, wfEarn: null, riskLevel: null };
-      sourceType = 'cmb'; bank = '招银理财'; params = { saaCode, ripInn };
-
+      if (!ripInn || !saaCode) {
+        return NextResponse.json({ error: '无法从链接提取 XRIPINN 或 XSAACOD' }, { status: 400 });
+      }
+      product = {
+        code: ripInn,
+        name: `招行产品 ${ripInn}`,
+        unitNav: null,
+        navDate: null,
+        sevenYield: null,
+        wfEarn: null,
+        riskLevel: null,
+      };
+      sourceType = 'cmb';
+      bank = '招银理财';
+      params = { saaCode, ripInn };
     } else {
       return NextResponse.json({ error: '暂不支持该银行链接' }, { status: 400 });
     }
 
     console.log('解析成功:', product.code, product.name, '银行:', bank);
 
+    // ── 2. 写入 products（upsert，bank_code 唯一）──
     const { data: prod, error: prodErr } = await supabase
       .from('products')
       .upsert(
@@ -105,9 +150,13 @@ export async function POST(request: Request) {
       .single();
 
     if (prodErr || !prod) {
-      return NextResponse.json({ error: `写入 products 失败: ${prodErr?.message}` }, { status: 500 });
+      return NextResponse.json(
+        { error: `写入 products 失败: ${prodErr?.message}` },
+        { status: 500 }
+      );
     }
 
+    // ── 3. 写入 product_sources ──
     const { error: srcErr } = await supabase
       .from('product_sources')
       .upsert(
@@ -122,16 +171,24 @@ export async function POST(request: Request) {
         { onConflict: 'product_id' }
       );
 
-    if (srcErr) return NextResponse.json({ ok: true, warning: `写入失败: ${srcErr.message}`, product: prod });
+    if (srcErr) {
+      return NextResponse.json({
+        ok: true,
+        warning: `product_sources 写入失败: ${srcErr.message}`,
+        product: prod,
+      });
+    }
 
     return NextResponse.json({
       ok: true,
       product: prod,
-      message: `✅ ${product.name} 已添加`,
+      message: `✅ ${product.name} 已添加（净值 ${product.unitNav ?? '—'}）`,
     });
-
   } catch (e: any) {
-    console.error('❌ 真实报错详情:', e);
-    return NextResponse.json({ error: `服务器错误: ${e.message}` }, { status: 500 });
+    console.error('parse-link 异常:', e);
+    return NextResponse.json(
+      { error: `服务器错误: ${e.message}` },
+      { status: 500 }
+    );
   }
 }
