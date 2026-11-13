@@ -1,5 +1,5 @@
 // crawler/fetch_funds.mjs
-// 基金/股票 每日净值更新脚本 (使用天天基金官方历史净值接口)
+// 基金/股票 净值更新脚本 (全量历史补全 + 增量每日更新)
 
 import { createClient } from '@supabase/supabase-js';
 import { readFileSync, existsSync } from 'fs';
@@ -9,7 +9,6 @@ import { fileURLToPath } from 'url';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
-// ── env ──
 (function loadEnv() {
   for (const p of [resolve(__dirname, '..', '.env.local'), resolve(process.cwd(), '.env.local')]) {
     if (existsSync(p)) {
@@ -34,10 +33,9 @@ const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 
 console.log('═══════════════════════════════');
-console.log('基金 / 股票 净值更新');
+console.log('基金 / 股票 净值更新（全量补全模式）');
 console.log('═══════════════════════════════\n');
 
-// 1. 读取所有产品
 const { data: prods, error } = await supabase.from('fund_stocks').select('*');
 if (error) { console.error('❌ 读库失败:', error.message); process.exit(1); }
 console.log(`读到 ${prods.length} 个产品\n`);
@@ -49,74 +47,120 @@ for (const p of prods) {
     if (p.type === 'fund') {
       console.log(`→ [基金] ${p.code} ${p.name}`);
       
-      // ★ 换用天天基金官方历史净值接口，极度稳定
-      const url = `https://api.fund.eastmoney.com/f10/lsjz?fundCode=${p.code}&pageIndex=1&pageSize=2`;
-      const res = await fetch(url, {
-        headers: {
-          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120.0.0.0 Safari/537.36',
-          'Referer': `http://fundf10.eastmoney.com/`,
-          'Accept': 'application/json, text/javascript, */*; q=0.01'
+      // 1. 查询数据库里该基金的最早记录日期，用于判断是否停止翻页
+      const { data: earliestData } = await supabase
+        .from('fund_stock_history')
+        .select('nav_date')
+        .eq('product_id', p.id)
+        .order('nav_date', { ascending: true })
+        .limit(1)
+        .maybeSingle();
+      
+      const earliestDate = earliestData?.nav_date || '1970-01-01';
+      
+      let pageIndex = 1;
+      let hasMore = true;
+      let allRows = [];
+      let latestRow = null;
+
+      // 2. 循环翻页
+      while (hasMore) {
+        const url = `https://api.fund.eastmoney.com/f10/lsjz?fundCode=${p.code}&pageIndex=${pageIndex}&pageSize=20`;
+        const res = await fetch(url, {
+          headers: {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120.0.0.0 Safari/537.36',
+            'Referer': `http://fundf10.eastmoney.com/`,
+            'Accept': 'application/json, text/javascript, */*; q=0.01'
+          }
+        });
+        
+        const text = await res.text();
+        if (!text || text.includes('Forbidden')) {
+          console.log(`   ⚠️ 接口被拦截，停止翻页`);
+          break;
         }
-      });
-      
-      const text = await res.text();
-      
-      // 拦截器：如果被拦截，通常返回空或报错
-      if (!text || text.includes('Forbidden')) {
-        console.log(`   ⚠️ 接口被拦截，无法获取数据\n`);
-        continue;
+
+        const json = JSON.parse(text);
+        const list = json.Data?.LSJZList || [];
+        
+        if (list.length === 0) break; // 没有更多数据了
+
+        if (!latestRow) latestRow = list[0]; // 保存最新的一条用于更新主表
+
+        let hitOld = false;
+        for (const item of list) {
+          const navDate = item.FSRQ;
+          const dwjz = parseFloat(item.DWJZ);
+          
+          if (!navDate || isNaN(dwjz)) continue;
+          // 如果抓到的日期 <= 数据库已有最早日期，说明历史数据已经补全了
+          if (navDate <= earliestDate) {
+            hitOld = true;
+            break;
+          }
+          
+          allRows.push({
+            product_id: p.id,
+            nav_date: navDate,
+            price: dwjz
+          });
+        }
+
+        if (hitOld) {
+          console.log(`   翻到已知历史区域，停止翻页 (共抓取 ${allRows.length} 条)`);
+          break;
+        }
+        
+        pageIndex++;
+        await sleep(500); // 翻页延迟，防封 IP
       }
 
-      const json = JSON.parse(text);
-      const list = json.Data?.LSJZList || [];
-      
-      if (list.length === 0) {
-        console.log(`   ⚠️ 未获取到数据，可能代码错误或停牌\n`);
-        continue;
+      // 3. 批量写入历史记录
+      if (allRows.length > 0) {
+        // 分批写入，防止单次请求过大
+        for (let i = 0; i < allRows.length; i += 100) {
+          const batch = allRows.slice(i, i + 100);
+          await supabase.from('fund_stock_history').upsert(batch, { onConflict: 'product_id, nav_date' });
+        }
+        console.log(`   ✅ 补充历史数据 ${allRows.length} 条`);
+      } else {
+        console.log(`   历史数据已是最全`);
       }
 
-      const latest = list[0];
-      const navDate = latest.FSRQ; // 净值日期
-      const dwjz = parseFloat(latest.DWJZ); // 单位净值
-      const prevDwjz = list.length > 1 ? parseFloat(list[1].DWJZ) : dwjz; // 昨日净值
+      // 4. 更新主表最新数据
+      if (latestRow) {
+        const latestNavDate = latestRow.FSRQ;
+        const latestDwjz = parseFloat(latestRow.DWJZ);
+        
+        // 查昨日净值
+        const { data: prevRows } = await supabase
+          .from('fund_stock_history')
+          .select('price')
+          .eq('product_id', p.id)
+          .lt('nav_date', latestNavDate)
+          .order('nav_date', { ascending: false })
+          .limit(1);
+        
+        const prevPrice = prevRows && prevRows.length > 0 ? prevRows[0].price : latestDwjz;
 
-      if (!navDate || isNaN(dwjz)) {
-        console.log(`   ⚠️ 数据解析异常\n`);
-        continue;
+        await supabase.from('fund_stocks').update({
+          prev_price: prevPrice,
+          current_price: latestDwjz,
+          nav_date: latestNavDate
+        }).eq('id', p.id);
+
+        console.log(`   📝 更新最新: ${latestDwjz} @ ${latestNavDate} (昨日: ${prevPrice})\n`);
       }
 
-      // 判断是否需要更新
-      if (p.nav_date === navDate) {
-        console.log(`   今日 (${navDate}) 已是最新，跳过\n`);
-        continue;
-      }
-
-      // 更新主表
-      await supabase.from('fund_stocks').update({
-        prev_price: prevDwjz,
-        current_price: dwjz,
-        nav_date: navDate
-      }).eq('id', p.id);
-
-      // 写入历史表
-      await supabase.from('fund_stock_history').upsert({
-        product_id: p.id,
-        nav_date: navDate,
-        price: dwjz
-      }, { onConflict: 'product_id, nav_date' });
-
-      console.log(`   ✅ 更新成功: 净值 ${dwjz} @ ${navDate} (昨日: ${prevDwjz})\n`);
       updatedCount++;
 
     } else if (p.type === 'stock') {
       console.log(`→ [股票] ${p.code} ${p.name} (暂未接入股票行情源)\n`);
       continue;
     }
-    
-    await sleep(1000); // 稍微延迟，防封 IP
   } catch (err) {
     console.log(`   ❌ 失败: ${err.message}\n`);
   }
 }
 
-console.log(`🎉 完成！共更新 ${updatedCount} 个产品。`);
+console.log(`🎉 完成！共处理 ${updatedCount} 个产品。`);
