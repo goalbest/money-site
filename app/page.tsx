@@ -13,7 +13,8 @@ const AllView = dynamic(() => import("./components/AllView"), {
 const CalendarView = dynamic(() => import("./components/CalendarView"), { ssr: false });
 const AddModal = dynamic(() => import("./components/AddModal"), { ssr: false });
 
-const CACHE_KEY = "cache_home_data_v10";
+// ★ 核心修复：把 CACHE_KEY 定义在组件外部，防止作用域报错
+const CACHE_KEY = "cache_home_data_v11";
 
 function daysAgoStr(n: number): string {
   const d = new Date();
@@ -25,9 +26,9 @@ type View = "calendar" | "all";
 
 export default function HomePage() {
   const [mounted, setMounted] = useState(false);
-  // ★ 新增：日历页全屏滑动的 Refs
   const touchStartRef = useRef<{ x: number, y: number } | null>(null);
 
+  // 从缓存初始化数据，实现秒开
   const [allHoldings, setAllHoldings] = useState<any[]>(() => {
     if (typeof window !== "undefined") {
       const cached = localStorage.getItem(CACHE_KEY);
@@ -80,6 +81,7 @@ export default function HomePage() {
   const [hideFab, setHideFab] = useState(false);
   const [showAddModal, setShowAddModal] = useState(false);
 
+  // 静默拉取最新数据（不再强制展示全屏 loading）
   const fetchData = useCallback(async (userId: string, isManual = false) => {
     if (isManual) setRefreshing(true);
     try {
@@ -104,7 +106,6 @@ export default function HomePage() {
           const { data: navData } = await supabase.from("nav_history")
             .select("nav_date, unit_nav")
             .eq("product_id", id)
-            .gte("nav_date", daysAgoStr(30)) 
             .order("nav_date", { ascending: true });
           if (navData && navData.length > 0) {
             allGrouped[id] = navData.map((r: any) => ({ nav: Number(r.unit_nav), date: r.nav_date }));
@@ -122,6 +123,7 @@ export default function HomePage() {
       setUpdatedAt(timeStr);
       setLoading(false); 
 
+      // 更新缓存
       localStorage.setItem(CACHE_KEY, JSON.stringify({
         allHoldings: hd || [],
         allProducts: prods || [],
@@ -164,7 +166,7 @@ export default function HomePage() {
     if (typeof window !== "undefined") window.history.replaceState(null, "", v === "all" ? "/" : `/?view=${v}`);
   }
 
-  // ★ 新增：处理日历页的触摸滑动
+  // ★ 核心修复：处理日历页的触摸滑动
   const handleCalendarTouchStart = (e: React.TouchEvent) => {
     touchStartRef.current = { x: e.touches[0].clientX, y: e.touches[0].clientY };
   };
@@ -202,7 +204,7 @@ export default function HomePage() {
       
       const navs = navHistory[p.id] || [];
       if (navs.length >= 2) {
-        // ★ 核心修复：买入日期 <= 净值日期，才计算今天的收益
+        // 核心修复：只有当该基金更新到了全局最新日期，且买入日期早于或等于最新日期时，才算今日收益
         if (p.nav_date === latestNavDateStr && (!h.hold_date || h.hold_date <= p.nav_date)) {
           totalProfitToday += shares * (navs[navs.length - 1].nav - navs[navs.length - 2].nav);
         }
@@ -283,14 +285,18 @@ export default function HomePage() {
               />
             )}
             
-            {/* ★ 日历页外面包一层触摸监听 */}
             {view === "calendar" && (
               <div 
                 className="min-h-[75vh]"
                 onTouchStart={handleCalendarTouchStart}
                 onTouchEnd={handleCalendarTouchEnd}
               >
-                <CalendarView />
+                {/* ★ 核心：把已经拉取好的数据直接传进去 */}
+                <CalendarView 
+                  allHoldings={allHoldings} 
+                  navHistory={navHistory} 
+                  globalStats={globalStats}
+                />
               </div>
             )}
           </>

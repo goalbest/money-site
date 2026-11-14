@@ -40,16 +40,29 @@ export default function HoldingCard({
   const holding = h.holding_info || h; 
   const bankInfo = getBankInfo(p.bank);
   const allNavs = navHistory[p.id] || [];
-  const wanfen = allNavs.length >= 2 ? (allNavs[allNavs.length-1].nav - allNavs[allNavs.length-2].nav) * 10000 : 0;
   
-  // ★ 核心修复：计算今日收益时，对比 hold_date 和 nav_date
-  let today = (holding && allNavs.length >= 2) ? (allNavs[allNavs.length-1].nav - allNavs[allNavs.length-2].nav) * Number(holding.shares) : 0;
-  if (holding?.hold_date && p.nav_date && p.nav_date < holding.hold_date) {
-    today = 0; // 如果买入日期晚于当前的净值日期，说明还没享受到净值涨幅，强制为0
+  // ★ 核心修复 1：彻底基于该产品自己的最新两天数据计算
+  let latestNav = null;
+  let prevNav = null;
+  if (allNavs.length >= 2) {
+    latestNav = allNavs[allNavs.length - 1];
+    prevNav = allNavs[allNavs.length - 2];
+  }
+
+  const navDateStr = latestNav?.date ? String(latestNav.date).slice(5) : "";
+
+  // ★ 核心修复 2：无论是不是全局最新日期，只要自己有数据就算出自己的值
+  let wanfen = 0;
+  let today = 0;
+  
+  if (latestNav && prevNav) {
+    wanfen = (latestNav.nav - prevNav.nav) * 10000;
+    if (holding && (!holding.hold_date || latestNav.date >= holding.hold_date)) {
+      today = (latestNav.nav - prevNav.nav) * Number(holding.shares);
+    }
   }
 
   const annual = calcAnnualizedFromNav(allNavs, annualPeriod);
-  const navDateStr = p.nav_date ? String(p.nav_date).slice(5) : "";
 
   let batches: any[] = [];
   let totalProfit = 0;
@@ -125,7 +138,7 @@ export default function HoldingCard({
                 <div className="text-right">
                   <div className="text-[10px] text-slate-400 mb-1 flex items-center justify-end gap-1">今日{navDateStr && <span className="text-[10px] text-amber-500 font-mono">{navDateStr}</span>}</div>
                   <div className={`font-mono font-semibold text-[14px] ${today > 0 ? "text-rose-500" : today < 0 ? "text-emerald-500" : "text-slate-300"}`}>
-                    {(today >= 0 ? "+" : "") + today.toFixed(2)}
+                    {allNavs.length < 2 ? "-" : ((today >= 0 ? "+" : "") + today.toFixed(2))}
                   </div>
                 </div>
               )}
@@ -164,8 +177,6 @@ export default function HoldingCard({
           </div>
         )}
       </Link>
-      
-      {/* 批注：这里省略了多笔明细的渲染代码，保留原样即可 */}
     </div>
   );
 }

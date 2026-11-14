@@ -10,10 +10,10 @@ import UpdateCashModal from "./components/UpdateCashModal";
 import CashBanner from "./components/CashBanner";
 
 const TABS = ["all", "fund", "stock"];
+const CACHE_KEY = "cache_funds_page_v1"; // ★ 定义一个干净的缓存键
 
 export default function FundsPage() {
   const [mounted, setMounted] = useState(false);
-  const [loading, setLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false); 
   
   const [activeTab, setActiveTab] = useState(() => {
@@ -23,9 +23,36 @@ export default function FundsPage() {
     return "all";
   });
 
-  const [data, setData] = useState<any[]>([]);
-  const [cashAmount, setCashAmount] = useState(0); 
-  const [historyMap, setHistoryMap] = useState<Record<string, any[]>>({});
+  // ★ 核心优化 1：从缓存初始化，实现秒开
+  const [data, setData] = useState<any[]>(() => {
+    if (typeof window !== "undefined") {
+      const cached = localStorage.getItem(CACHE_KEY);
+      if (cached) return JSON.parse(cached).data || [];
+    }
+    return [];
+  });
+  
+  const [cashAmount, setCashAmount] = useState(() => {
+    if (typeof window !== "undefined") {
+      const cached = localStorage.getItem(CACHE_KEY);
+      if (cached) return JSON.parse(cached).cashAmount || 0;
+    }
+    return 0;
+  });
+  
+  const [historyMap, setHistoryMap] = useState<Record<string, any[]>>(() => {
+    if (typeof window !== "undefined") {
+      const cached = localStorage.getItem(CACHE_KEY);
+      if (cached) return JSON.parse(cached).historyMap || {};
+    }
+    return {};
+  });
+
+  // 如果没有缓存，才显示 loading 骨架屏
+  const [loading, setLoading] = useState(() => {
+    if (typeof window !== "undefined") return !localStorage.getItem(CACHE_KEY);
+    return true;
+  });
   
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isCashModalOpen, setIsCashModalOpen] = useState(false);
@@ -34,9 +61,10 @@ export default function FundsPage() {
   const hasRestoredScroll = useRef(false);
   const touchStartRef = useRef<{ x: number, y: number } | null>(null);
 
+  // ★ 核心优化 2：后台静默拉取最新数据
   const fetchData = async () => {
     if (!userId) return;
-    setLoading(true);
+    // 注意：这里不再 setLoading(true)，防止页面闪烁
     
     const { data: res, error } = await supabase
       .from("fund_stock_holdings")
@@ -60,14 +88,12 @@ export default function FundsPage() {
         }
       });
 
-      setCashAmount(cash);
-      setData(others);
-
       const productIds = others.map((h: any) => {
         const fs = Array.isArray(h.fund_stocks) ? h.fund_stocks[0] : h.fund_stocks;
         return fs?.id;
       }).filter(Boolean);
 
+      let newHistoryMap: Record<string, any[]> = {};
       if (productIds.length > 0) {
         const { data: navs } = await supabase
           .from("fund_stock_history")
@@ -77,21 +103,33 @@ export default function FundsPage() {
           .limit(10000);
 
         if (navs) {
-          const map: Record<string, any[]> = {};
           navs.forEach((n: any) => {
-            if (!map[n.product_id]) map[n.product_id] = [];
-            map[n.product_id].push({ date: n.nav_date, price: Number(n.price) });
+            if (!newHistoryMap[n.product_id]) newHistoryMap[n.product_id] = [];
+            newHistoryMap[n.product_id].push({ date: n.nav_date, price: Number(n.price) });
           });
-          setHistoryMap(map);
         }
       }
+
+      // 更新状态
+      setCashAmount(cash);
+      setData(others);
+      setHistoryMap(newHistoryMap);
+      setLoading(false);
+
+      // ★ 核心优化 3：将最新数据写入缓存
+      localStorage.setItem(CACHE_KEY, JSON.stringify({
+        data: others,
+        cashAmount: cash,
+        historyMap: newHistoryMap
+      }));
+    } else {
+      setLoading(false);
     }
-    setLoading(false);
   };
 
   useEffect(() => {
     setMounted(true);
-    fetchData();
+    fetchData(); // 挂载时拉取最新数据
   }, [userId]);
 
   useEffect(() => {
@@ -129,7 +167,6 @@ export default function FundsPage() {
     window.scrollTo({ top: 0, behavior: "smooth" });
   };
 
-  // ★ 手势滑动逻辑
   const handleTouchStart = (e: React.TouchEvent) => {
     touchStartRef.current = { x: e.touches[0].clientX, y: e.touches[0].clientY };
   };
@@ -140,14 +177,11 @@ export default function FundsPage() {
     const dy = touchStartRef.current.y - e.changedTouches[0].clientY;
     touchStartRef.current = null;
 
-    // 横向滑动阈值，且横向大于纵向（防止误触上下滚动）
     if (Math.abs(dx) > 50 && Math.abs(dx) > Math.abs(dy) * 1.5) {
       const currentIndex = TABS.indexOf(activeTab);
       if (dx > 0 && currentIndex < TABS.length - 1) {
-        // 向左滑，切下一个
         handleTabChange(TABS[currentIndex + 1]);
       } else if (dx < 0 && currentIndex > 0) {
-        // 向右滑，切上一个
         handleTabChange(TABS[currentIndex - 1]);
       }
     }
@@ -234,7 +268,6 @@ export default function FundsPage() {
 
         <AssetOverviewCard stats={stats} />
         
-        {/* ★ 紧凑布局：Tab + 余额小方块 */}
         <div className="flex items-center gap-2 mb-6">
           <div className="flex-1">
             <FundTabs activeTab={activeTab} onTabChange={handleTabChange} />

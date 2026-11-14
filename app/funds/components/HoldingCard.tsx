@@ -62,8 +62,11 @@ export default function HoldingCard({ item, history }: { item: any, history: { d
 
       <div className="grid grid-cols-5 gap-1 pt-2 border-t border-slate-100/80">
         <div>
-          <div className="text-[10px] text-slate-400 mb-0.5 truncate">今日收益</div>
-          <div className={`font-mono font-bold text-[12px] truncate ${todayProfit > 0 ? "text-rose-500" : todayProfit < 0 ? "text-emerald-500" : "text-slate-400"}`}>
+          <div className="flex items-center gap-1 mb-0.5">
+            <span className="text-[10px] text-slate-400 truncate">今日收益</span>
+            {p.nav_date && <span className="text-[9px] text-amber-500 font-mono">{String(p.nav_date).slice(5)}</span>}
+          </div>
+          <div className={`font-mono font-bold text-[12px] truncate ${todayProfit > 0 ? "text-red-500" : todayProfit < 0 ? "text-green-500" : "text-slate-400"}`}>
             {todayProfit > 0 ? "+" : ""}{todayProfit.toFixed(2)}
           </div>
         </div>

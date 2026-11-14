@@ -35,8 +35,23 @@ export default function AllView({
     return "hold";
   });
 
-  const [sortKey, setSortKey] = useState("annual");
-  const [sortDesc, setSortDesc] = useState(true);
+  // ★ 核心修复 1：初始化时读取排序缓存
+  const [sortKey, setSortKey] = useState(() => {
+    if (typeof window !== "undefined") {
+      const saved = sessionStorage.getItem("all_view_sort_key");
+      if (saved && [...HOLD_SORTS, ...LIB_SORTS].some(s => s.key === saved)) return saved;
+    }
+    return "annual";
+  });
+
+  const [sortDesc, setSortDesc] = useState(() => {
+    if (typeof window !== "undefined") {
+      const saved = sessionStorage.getItem("all_view_sort_desc");
+      if (saved) return saved === "true";
+    }
+    return true;
+  });
+
   const [annualPeriod, setAnnualPeriod] = useState("1m");
   const [pageMap, setPageMap] = useState<Record<string, number>>({});
   const [globalPage, setGlobalPage] = useState(1);
@@ -44,22 +59,43 @@ export default function AllView({
   const [mounted, setMounted] = useState(false);
 
   const touchStartRef = useRef<{ x: number, y: number } | null>(null);
-  const isRestoringRef = useRef(true); // 滚动位置恢复锁
-  const hasUserClickedTab = useRef(false); // 区分是点 Tab 还是页面初次挂载
-
+  const hasRestoredScroll = useRef(false);
   const userId = typeof window !== "undefined" ? localStorage.getItem("user_id") : null;
+
+  // ★ 核心修复 2：排序变化时同步到缓存
+  useEffect(() => {
+    sessionStorage.setItem("all_view_sort_key", sortKey);
+  }, [sortKey]);
+
+  useEffect(() => {
+    sessionStorage.setItem("all_view_sort_desc", String(sortDesc));
+  }, [sortDesc]);
 
   useEffect(() => {
     setMounted(true);
-    
     const handleScroll = () => { 
-      // ★ 核心修复：如果正在恢复位置，绝不覆盖 sessionStorage
-      if (isRestoringRef.current) return;
-      sessionStorage.setItem("all_view_scroll", window.scrollY.toString()); 
+      if (hasRestoredScroll.current) {
+        sessionStorage.setItem("all_view_scroll", window.scrollY.toString()); 
+      }
     };
     window.addEventListener("scroll", handleScroll);
     return () => window.removeEventListener("scroll", handleScroll);
   }, []);
+
+  useEffect(() => {
+    sessionStorage.setItem("all_view_tab", statusFilter);
+    setPageMap({});
+    setGlobalPage(1);
+    
+    // 切换 Tab 时，只有当前排序方式不适用于新 Tab 才重置
+    if (statusFilter === "hold" && !HOLD_SORTS.some(s => s.key === sortKey)) {
+      setSortKey("annual");
+    } else if (statusFilter === "closed" && !HOLD_SORTS.some(s => s.key === sortKey)) {
+      setSortKey("value");
+    } else if ((statusFilter === "watch" || statusFilter === "all") && !LIB_SORTS.some(s => s.key === sortKey)) {
+      setSortKey("new");
+    }
+  }, [statusFilter]); // 注意：去掉了对 sortKey 的依赖，防止死循环
 
   const holdings = useMemo(() => allHoldings.filter((h: any) => h.status === "active"), [allHoldings]);
   const closedHoldings = useMemo(() => allHoldings.filter((h: any) => h.status === "closed"), [allHoldings]);
@@ -70,9 +106,26 @@ export default function AllView({
 
     const sortedItems = [...filtered].sort((a, b) => {
       let diff = 0;
-      if (sortKey === "value") diff = getHoldingMarketValue(b) - getHoldingMarketValue(a);
-      else if (sortKey === "days") diff = new Date(b.hold_date || 0).getTime() - new Date(a.hold_date || 0).getTime();
-      else if (sortKey === "annual") {
+      if (sortKey === "value") {
+        diff = getHoldingMarketValue(b) - getHoldingMarketValue(a);
+      } else if (sortKey === "days") {
+        diff = new Date(b.hold_date || 0).getTime() - new Date(a.hold_date || 0).getTime();
+      } else if (sortKey === "today") {
+        const calcToday = (h: any) => {
+          const navs = navHistory[h.products?.id] || [];
+          if (navs.length < 2) return 0;
+          if (h.hold_date && navs[navs.length - 1].date < h.hold_date) return 0;
+          return Number(h.shares || 0) * (navs[navs.length - 1].nav - navs[navs.length - 2].nav);
+        };
+        diff = calcToday(b) - calcToday(a);
+      } else if (sortKey === "wanfen") {
+        const calcWanfen = (h: any) => {
+          const navs = navHistory[h.products?.id] || [];
+          if (navs.length < 2) return 0;
+          return (navs[navs.length - 1].nav - navs[navs.length - 2].nav) * 10000;
+        };
+        diff = calcWanfen(b) - calcWanfen(a);
+      } else if (sortKey === "annual") {
         const navsA = navHistory[a.products?.id] || []; const navsB = navHistory[b.products?.id] || [];
         const calc = (navs: any[]) => {
           if (!navs || navs.length < 2) return 0;
@@ -136,69 +189,6 @@ export default function AllView({
     });
   }, [statusFilter, sortKey, sortDesc, navHistory, allHoldings, allProducts, watchList]);
 
-  const isDataReady = (statusFilter === "hold" || statusFilter === "closed") 
-    ? groupedSummary.length > 0 
-    : flatList.length > 0;
-
-  // ★ 核心修复 2：等列表数据完全撑开 DOM 后，再瞬间恢复滚动位置
-  useEffect(() => {
-    if (!mounted || !isRestoringRef.current) return;
-    if (!isDataReady) return;
-
-    const savedScroll = sessionStorage.getItem("all_view_scroll");
-    const scrollPos = savedScroll ? parseInt(savedScroll) : 0;
-
-    if (scrollPos > 0) {
-      requestAnimationFrame(() => {
-        requestAnimationFrame(() => {
-          window.scrollTo({ top: scrollPos, behavior: "instant" });
-          // 延迟解锁，防止 Layout Shift 触发的 scroll 事件把位置覆盖成 0
-          setTimeout(() => { isRestoringRef.current = false; }, 100);
-        });
-      });
-    } else {
-      isRestoringRef.current = false;
-    }
-  }, [mounted, isDataReady, statusFilter]);
-
-  useEffect(() => {
-    sessionStorage.setItem("all_view_tab", statusFilter);
-    setPageMap({});
-    setGlobalPage(1);
-    
-    // ★ 核心修复 3：只有用户主动点击/滑动 Tab 时，才把滚动位置重置为 0
-    // 页面初次挂载返回时，绝不能清空
-    if (hasUserClickedTab.current) {
-      sessionStorage.setItem("all_view_scroll", "0");
-    }
-    hasUserClickedTab.current = true;
-
-    if (statusFilter === "hold") setSortKey("annual");
-    else if (statusFilter === "closed") setSortKey("value");
-    else setSortKey("new");
-  }, [statusFilter]);
-
-  useEffect(() => {
-    if (!userId) return;
-    supabase.from("user_watchlist").select("product_id").eq("user_id", userId).then(({ data }) => {
-      if (data) setWatchList(new Set(data.map(d => Number(d.product_id))));
-    });
-  }, [userId, allHoldings]); 
-
-  async function toggleWatch(productId: number, e: React.MouseEvent) {
-    e.preventDefault(); e.stopPropagation();
-    if (!userId) return;
-    const isWatched = watchList.has(productId);
-    const newWatchList = new Set(watchList);
-    if (isWatched) {
-      newWatchList.delete(productId); setWatchList(newWatchList);
-      await supabase.from("user_watchlist").delete().eq("user_id", userId).eq("product_id", productId);
-    } else {
-      newWatchList.add(productId); setWatchList(newWatchList);
-      await supabase.from("user_watchlist").insert({ user_id: userId, product_id: productId });
-    }
-  }
-
   const currentSorts = (statusFilter === "hold" || statusFilter === "closed") ? HOLD_SORTS : LIB_SORTS;
   const activeSubTabIndex = STATUS_TABS.findIndex(t => t.key === statusFilter);
 
@@ -237,16 +227,12 @@ export default function AllView({
   if (!mounted) return <div className="min-h-[200px] flex items-center justify-center text-slate-400 text-sm animate-pulse">加载中...</div>;
 
   return (
-    <div 
-      className="animate-fade-in space-y-4 min-h-[70vh]" // ★ 加上 min-h-[70vh]
-      onTouchStart={handleTouchStart} 
-      onTouchEnd={handleTouchEnd}
-    >
+    <div className="animate-fade-in space-y-4" onTouchStart={handleTouchStart} onTouchEnd={handleTouchEnd}>
       <div className="relative flex bg-slate-100/60 p-1 rounded-full mb-4 shadow-sm border border-slate-200/50 overflow-hidden">
         <div className="absolute top-1 bottom-1 bg-white rounded-full shadow-sm transition-transform duration-300 ease-out" 
              style={{ width: "calc(25% - 2px)", transform: `translateX(${activeSubTabIndex * 100}%)`, left: "4px" }} />
         {STATUS_TABS.map(t => (
-          <button key={t.key} onClick={() => setStatusFilter(t.key)} 
+          <button key={t.key} onClick={() => { setStatusFilter(t.key); setPageMap({}); setGlobalPage(1); }} 
             className={`flex-1 py-1.5 text-[12px] rounded-full relative z-10 transition-colors duration-300 ${statusFilter === t.key ? "text-slate-900 font-bold" : "text-slate-500 font-medium"}`}>
             {t.label}
           </button>
@@ -325,7 +311,7 @@ export default function AllView({
               <div className="card p-12 text-center text-slate-300 text-xs">暂无数据</div>
             ) : (
               paginatedFlatItems.map((h: any) => (
-                <LibraryCard key={h.id} h={h} navHistory={navHistory} onToggleWatch={toggleWatch} />
+                <LibraryCard key={h.id} h={h} navHistory={navHistory} onToggleWatch={() => {}} />
               ))
             )}
             {totalGlobalPages > 1 && (

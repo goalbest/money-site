@@ -18,7 +18,7 @@ const TABS = [
   { key: "notes", label: "随手记" },
 ];
 
-const CACHE_KEY = "cache_ledger_v1";
+const CACHE_KEY = "cache_ledger_v2";
 
 export default function LedgerPage() {
   const router = useRouter();
