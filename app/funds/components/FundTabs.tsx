@@ -8,13 +8,16 @@ const TABS = [
 
 export default function FundTabs({ activeTab, onTabChange }: { activeTab: string, onTabChange: (key: string) => void }) {
   const activeTabIndex = TABS.findIndex((t) => t.key === activeTab);
+  const isCalendar = activeTab === "calendar"; // 当前是日历时，不渲染滑块
 
   return (
     <div className="relative flex bg-slate-200/60 backdrop-blur-md p-1 rounded-2xl border border-white/60 shadow-sm overflow-hidden h-full">
-      <div 
-        className="absolute top-1 bottom-1 bg-white rounded-xl shadow-md transition-transform duration-300 ease-out" 
-        style={{ width: "calc(33.33% - 2px)", transform: `translateX(${activeTabIndex * 100}%)`, left: "4px" }} 
-      />
+      {!isCalendar && (
+        <div 
+          className="absolute top-1 bottom-1 bg-white rounded-xl shadow-md transition-all duration-300 ease-out" 
+          style={{ width: "calc(33.33% - 2px)", transform: `translateX(${activeTabIndex * 100}%)`, left: "4px" }} 
+        />
+      )}
       {TABS.map((t) => (
         <button 
           key={t.key} 

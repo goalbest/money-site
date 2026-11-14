@@ -7,18 +7,37 @@ export default function HoldingCard({ item, history }: { item: any, history: { d
   const p = Array.isArray(item.fund_stocks) ? item.fund_stocks[0] : item.fund_stocks;
   if (!p) return null;
 
+  const isCash = p.type === "cash";
   const shares = Number(item.shares || 0);
   const costPrice = Number(item.avg_cost || item.cost_price || 0);
   const currentPrice = Number(p.current_price || 0);
   const prevPrice = Number(p.prev_price || currentPrice);
 
   const marketValue = shares * currentPrice;
+
+  if (isCash) {
+    return (
+      <div className="bg-white/90 backdrop-blur-xl rounded-2xl p-4 shadow-sm border border-white/60">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <span className="px-1.5 py-0.5 rounded text-[9px] font-bold bg-slate-100 text-slate-600">
+              现金
+            </span>
+            <span className="text-[15px] font-bold text-slate-900">{p.name}</span>
+          </div>
+          <div className="font-mono font-bold text-[16px] text-slate-900">
+            ¥{marketValue.toLocaleString("zh-CN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   const totalCost = shares * costPrice;
   const profit = marketValue - totalCost;
   const profitRate = totalCost > 0 ? (profit / totalCost) * 100 : 0;
   const todayProfit = (currentPrice - prevPrice) * shares;
 
-  // ★ 回撤算法封装在卡片内部
   const calcMaxDrawdown = (hist: { date: string, price: number }[]) => {
     if (!hist || hist.length < 2) return { rate: 0, days: 0 };
     let maxPrice = hist[0].price;
@@ -60,25 +79,26 @@ export default function HoldingCard({ item, history }: { item: any, history: { d
         </div>
       </div>
 
-      <div className="grid grid-cols-5 gap-1 pt-2 border-t border-slate-100/80">
+      {/* ★ 核心修复：使用自定义列宽比例，给第一列更宽的空间，并移除截断 */}
+      <div className="grid grid-cols-[1.4fr_1fr_1fr_0.9fr_0.9fr] gap-1 pt-2 border-t border-slate-100/80">
         <div>
-          <div className="flex items-center gap-1 mb-0.5">
-            <span className="text-[10px] text-slate-400 truncate">今日收益</span>
+          <div className="flex items-center gap-1 mb-0.5 whitespace-nowrap">
+            <span className="text-[10px] text-slate-400">今日收益</span>
             {p.nav_date && <span className="text-[9px] text-amber-500 font-mono">{String(p.nav_date).slice(5)}</span>}
           </div>
-          <div className={`font-mono font-bold text-[12px] truncate ${todayProfit > 0 ? "text-red-500" : todayProfit < 0 ? "text-green-500" : "text-slate-400"}`}>
+          <div className={`font-mono font-bold text-[12px] whitespace-nowrap ${todayProfit > 0 ? "text-red-500" : todayProfit < 0 ? "text-green-500" : "text-slate-400"}`}>
             {todayProfit > 0 ? "+" : ""}{todayProfit.toFixed(2)}
           </div>
         </div>
         <div>
           <div className="text-[10px] text-slate-400 mb-0.5 truncate">累计收益</div>
-          <div className={`font-mono font-bold text-[12px] truncate ${profit > 0 ? "text-rose-500" : profit < 0 ? "text-emerald-500" : "text-slate-400"}`}>
+          <div className={`font-mono font-bold text-[12px] truncate ${profit > 0 ? "text-red-500" : profit < 0 ? "text-green-500" : "text-slate-400"}`}>
             {profit > 0 ? "+" : ""}{profit.toFixed(2)}
           </div>
         </div>
         <div>
           <div className="text-[10px] text-slate-400 mb-0.5 truncate">收益率</div>
-          <div className={`font-mono font-bold text-[12px] truncate ${profitRate > 0 ? "text-rose-500" : profitRate < 0 ? "text-emerald-500" : "text-slate-400"}`}>
+          <div className={`font-mono font-bold text-[12px] truncate ${profitRate > 0 ? "text-red-500" : profitRate < 0 ? "text-green-500" : "text-slate-400"}`}>
             {profitRate >= 0 ? "+" : ""}{profitRate.toFixed(2)}%
           </div>
         </div>

@@ -11,6 +11,9 @@ const HOLD_SORTS = [
   { key: "value", label: "市值" }, { key: "today", label: "今日" }, { key: "wanfen", label: "万收" },
   { key: "annual", label: "年化" }, { key: "days", label: "天数" },
 ];
+const CLOSED_SORTS = [
+  { key: "sellDate", label: "卖出时间" }, { key: "wanfen", label: "万收" }, { key: "annual", label: "年化" },
+];
 const LIB_SORTS = [
   { key: "new", label: "最新加入" }, { key: "wanfen", label: "万收" }, { key: "annual", label: "年化" },
 ];
@@ -25,21 +28,20 @@ const STATUS_TABS = [
   { key: "watch", label: "关注" }, { key: "all", label: "产品库" },
 ];
 
+const PAGE_SIZE = 8;
+
 export default function AllView({ 
   allHoldings, allProducts = [], navHistory, transactions = [], globalStats, privacy, onSwipeLeft
 }: any) {
   const [statusFilter, setStatusFilter] = useState(() => {
-    if (typeof window !== "undefined") {
-      return sessionStorage.getItem("all_view_tab") || "hold";
-    }
+    if (typeof window !== "undefined") return sessionStorage.getItem("all_view_tab") || "hold";
     return "hold";
   });
 
-  // ★ 核心修复 1：初始化时读取排序缓存
   const [sortKey, setSortKey] = useState(() => {
     if (typeof window !== "undefined") {
       const saved = sessionStorage.getItem("all_view_sort_key");
-      if (saved && [...HOLD_SORTS, ...LIB_SORTS].some(s => s.key === saved)) return saved;
+      if (saved) return saved;
     }
     return "annual";
   });
@@ -62,21 +64,13 @@ export default function AllView({
   const hasRestoredScroll = useRef(false);
   const userId = typeof window !== "undefined" ? localStorage.getItem("user_id") : null;
 
-  // ★ 核心修复 2：排序变化时同步到缓存
-  useEffect(() => {
-    sessionStorage.setItem("all_view_sort_key", sortKey);
-  }, [sortKey]);
-
-  useEffect(() => {
-    sessionStorage.setItem("all_view_sort_desc", String(sortDesc));
-  }, [sortDesc]);
+  useEffect(() => { sessionStorage.setItem("all_view_sort_key", sortKey); }, [sortKey]);
+  useEffect(() => { sessionStorage.setItem("all_view_sort_desc", String(sortDesc)); }, [sortDesc]);
 
   useEffect(() => {
     setMounted(true);
     const handleScroll = () => { 
-      if (hasRestoredScroll.current) {
-        sessionStorage.setItem("all_view_scroll", window.scrollY.toString()); 
-      }
+      if (hasRestoredScroll.current) sessionStorage.setItem("all_view_scroll", window.scrollY.toString()); 
     };
     window.addEventListener("scroll", handleScroll);
     return () => window.removeEventListener("scroll", handleScroll);
@@ -87,22 +81,25 @@ export default function AllView({
     setPageMap({});
     setGlobalPage(1);
     
-    // 切换 Tab 时，只有当前排序方式不适用于新 Tab 才重置
-    if (statusFilter === "hold" && !HOLD_SORTS.some(s => s.key === sortKey)) {
-      setSortKey("annual");
-    } else if (statusFilter === "closed" && !HOLD_SORTS.some(s => s.key === sortKey)) {
-      setSortKey("value");
-    } else if ((statusFilter === "watch" || statusFilter === "all") && !LIB_SORTS.some(s => s.key === sortKey)) {
-      setSortKey("new");
-    }
-  }, [statusFilter]); // 注意：去掉了对 sortKey 的依赖，防止死循环
+    if (statusFilter === "hold" && !HOLD_SORTS.some(s => s.key === sortKey)) setSortKey("annual");
+    else if (statusFilter === "closed" && !CLOSED_SORTS.some(s => s.key === sortKey)) setSortKey("sellDate");
+    else if ((statusFilter === "watch" || statusFilter === "all") && !LIB_SORTS.some(s => s.key === sortKey)) setSortKey("new");
+  }, [statusFilter]);
 
   const holdings = useMemo(() => allHoldings.filter((h: any) => h.status === "active"), [allHoldings]);
-  const closedHoldings = useMemo(() => allHoldings.filter((h: any) => h.status === "closed"), [allHoldings]);
+
+  const getRealSellDate = (productId: number) => {
+    const txs = transactions.filter((t: any) => t.product_id === productId && (t.type === "sell" || t.type === "close"));
+    if (txs.length > 0) {
+      txs.sort((x: any, y: any) => new Date(y.trade_date).getTime() - new Date(x.trade_date).getTime());
+      return txs[0].trade_date;
+    }
+    return "";
+  };
 
   const groupedSummary = useMemo(() => {
-    if (statusFilter !== "hold" && statusFilter !== "closed") return [];
-    let filtered = statusFilter === "hold" ? holdings : closedHoldings;
+    if (statusFilter !== "hold") return [];
+    let filtered = holdings;
 
     const sortedItems = [...filtered].sort((a, b) => {
       let diff = 0;
@@ -113,8 +110,8 @@ export default function AllView({
       } else if (sortKey === "today") {
         const calcToday = (h: any) => {
           const navs = navHistory[h.products?.id] || [];
-          if (navs.length < 2) return 0;
-          if (h.hold_date && navs[navs.length - 1].date < h.hold_date) return 0;
+          if (navs.length < 2 || h.products?.nav_date !== globalStats.latestNavDateStr) return 0;
+          if (h.hold_date && h.products?.nav_date < h.hold_date) return 0;
           return Number(h.shares || 0) * (navs[navs.length - 1].nav - navs[navs.length - 2].nav);
         };
         diff = calcToday(b) - calcToday(a);
@@ -156,45 +153,107 @@ export default function AllView({
         totalCount: items.length, total, percent, totalPages, currentPage
       };
     }).sort((a, b) => b.total - a.total);
-  }, [holdings, closedHoldings, statusFilter, sortKey, sortDesc, navHistory, pageMap, globalStats.totalHolding]);
+  }, [holdings, statusFilter, sortKey, sortDesc, navHistory, pageMap, globalStats.totalHolding, globalStats.latestNavDateStr]);
+
+  const getClosedTotalAnnualized = (h: any) => {
+    const productTxs = transactions.filter((t: any) => t.product_id === h.product_id).sort((a:any,b:any) => new Date(a.trade_date).getTime() - new Date(b.trade_date).getTime());
+    const buyTxs = productTxs.filter((t: any) => t.type === "buy");
+    const sellTxs = productTxs.filter((t: any) => t.type === "sell" || t.type === "close");
+    
+    if (buyTxs.length === 0) return 0;
+    
+    const lastSellDate = sellTxs.length > 0 ? sellTxs[sellTxs.length - 1].trade_date : h.closed_at;
+    const sellDateObj = lastSellDate ? new Date(lastSellDate) : new Date();
+    
+    const totalPurchaseAmount = buyTxs.reduce((sum:number, t:any) => sum + Number(t.amount), 0);
+    const totalSoldAmount = Number(h.closed_amount || 0) || sellTxs.reduce((sum:number, t:any)=> sum + Number(t.amount), 0);
+    const totalProfit = totalSoldAmount - totalPurchaseAmount;
+
+    let totalWeightedPrincipalDays = 0;
+    buyTxs.forEach((bt: any) => {
+      const buyDateObj = new Date(bt.trade_date);
+      const batchDays = Math.max(1, Math.floor((sellDateObj.getTime() - buyDateObj.getTime()) / (1000 * 60 * 60 * 24)));
+      totalWeightedPrincipalDays += Number(bt.amount) * batchDays;
+    });
+
+    return totalWeightedPrincipalDays > 0 ? (totalProfit / totalWeightedPrincipalDays) * 365 * 100 : 0;
+  };
 
   const flatList = useMemo(() => {
-    if (statusFilter !== "watch" && statusFilter !== "all") return [];
+    if (statusFilter !== "closed" && statusFilter !== "watch" && statusFilter !== "all") return [];
     
-    const list: any[] = [];
-    const processedIds = new Set<number>();
-
-    allHoldings.forEach((h: any) => {
-      if (!h.products) return;
-      processedIds.add(h.products.id);
-      list.push({ id: h.id, product_id: h.products.id, products: h.products, status: h.status, holding_info: h, isWatched: watchList.has(h.products.id) });
-    });
-
-    allProducts.forEach((p: any) => {
-      if (!processedIds.has(p.id)) {
-        list.push({ id: `lib-${p.id}`, product_id: p.id, products: p, status: "none", holding_info: null, isWatched: watchList.has(p.id) });
+    let list: any[] = [];
+    
+    if (statusFilter === "closed") {
+      allHoldings.filter((h: any) => h.status === "closed").forEach((h: any) => {
+        if (!h.products) return;
+        list.push({ 
+          id: h.id, product_id: h.products.id, products: h.products, 
+          status: h.status, holding_info: h, type: "holding" 
+        });
+      });
+    } else {
+      const processedIds = new Set<number>();
+      allHoldings.forEach((h: any) => {
+        if (!h.products) return;
+        processedIds.add(h.products.id);
+        list.push({ 
+          id: h.id, product_id: h.products.id, products: h.products, 
+          status: h.status, holding_info: h, isWatched: watchList.has(h.products.id), type: "library" 
+        });
+      });
+      allProducts.forEach((p: any) => {
+        if (!processedIds.has(p.id)) {
+          list.push({ 
+            id: `lib-${p.id}`, product_id: p.id, products: p, 
+            status: "none", holding_info: null, isWatched: watchList.has(p.id), type: "library" 
+          });
+        }
+      });
+      if (statusFilter === "watch") {
+        list = list.filter(h => h.isWatched);
       }
-    });
+    }
 
-    let filtered = statusFilter === "watch" ? list.filter(h => h.isWatched) : list;
-    
-    return [...filtered].sort((a, b) => {
+    return list.sort((a, b) => {
       let diff = 0;
-      if (sortKey === "new") diff = b.product_id - a.product_id;
-      else if (sortKey === "wanfen") {
+      if (sortKey === "value") diff = getHoldingMarketValue(b) - getHoldingMarketValue(a);
+      else if (sortKey === "days") diff = new Date(b.hold_date || 0).getTime() - new Date(a.hold_date || 0).getTime();
+      else if (sortKey === "sellDate") {
+        const dateA = getRealSellDate(a.product_id);
+        const dateB = getRealSellDate(b.product_id);
+        diff = new Date(dateB || b.closed_at || 0).getTime() - new Date(dateA || a.closed_at || 0).getTime();
+      } else if (sortKey === "today") {
+        const calcToday = (h: any) => {
+          const navs = navHistory[h.products?.id] || [];
+          if (navs.length < 2 || h.products?.nav_date !== globalStats.latestNavDateStr) return 0;
+          if (h.hold_date && h.products?.nav_date < h.hold_date) return 0;
+          return Number(h.shares || 0) * (navs[navs.length - 1].nav - navs[navs.length - 2].nav);
+        };
+        diff = calcToday(b) - calcToday(a);
+      } else if (sortKey === "wanfen") {
         const navsA = navHistory[a.product_id] || []; const navsB = navHistory[b.product_id] || [];
-        diff = (navsB.length >= 2 ? (navsB[navsB.length-1].nav - navsB[navsB.length-2].nav) * 10000 : 0) - (navsA.length >= 2 ? (navsA[navsA.length-1].nav - navsA[navsA.length-2].nav) * 10000 : 0);
-      } else if (sortKey === "annual") diff = Number(b.products.annualized_1m || 0) - Number(a.products.annualized_1m || 0);
+        const wA = navsA.length >= 2 ? (navsA[navsA.length - 1].nav - navsA[navsA.length - 2].nav) * 10000 : 0;
+        const wB = navsB.length >= 2 ? (navsB[navsB.length - 1].nav - navsB[navsB.length - 2].nav) * 10000 : 0;
+        diff = wB - wA;
+      } else if (sortKey === "annual") {
+        if (statusFilter === "closed") {
+          diff = getClosedTotalAnnualized(b) - getClosedTotalAnnualized(a);
+        } else {
+          diff = Number(b.products.annualized_1m || 0) - Number(a.products.annualized_1m || 0);
+        }
+      } else if (sortKey === "new") {
+        diff = b.product_id - a.product_id;
+      }
       return sortDesc ? diff : -diff;
     });
-  }, [statusFilter, sortKey, sortDesc, navHistory, allHoldings, allProducts, watchList]);
+  }, [allHoldings, allProducts, statusFilter, sortKey, sortDesc, navHistory, watchList, globalStats.latestNavDateStr, transactions]);
 
-  const currentSorts = (statusFilter === "hold" || statusFilter === "closed") ? HOLD_SORTS : LIB_SORTS;
+  const currentSorts = statusFilter === "hold" ? HOLD_SORTS : statusFilter === "closed" ? CLOSED_SORTS : LIB_SORTS;
   const activeSubTabIndex = STATUS_TABS.findIndex(t => t.key === statusFilter);
 
-  const ITEMS_PER_PAGE = statusFilter === "all" ? 8 : 15;
-  const totalGlobalPages = Math.ceil(flatList.length / ITEMS_PER_PAGE);
-  const paginatedFlatItems = flatList.slice((globalPage - 1) * ITEMS_PER_PAGE, globalPage * ITEMS_PER_PAGE);
+  const totalGlobalPages = Math.ceil(flatList.length / PAGE_SIZE);
+  const paginatedFlatItems = flatList.slice((globalPage - 1) * PAGE_SIZE, globalPage * PAGE_SIZE);
   const periodLabel = ANNUAL_PERIODS.find(x => x.key === annualPeriod)?.label || "1月";
 
   const handleTouchStart = (e: React.TouchEvent) => {
@@ -209,17 +268,15 @@ export default function AllView({
     const dy = touchStartRef.current.y - endY;
     touchStartRef.current = null;
 
+    // 横向滑动阈值，且横向大于纵向（防止误触上下滚动）
     if (Math.abs(dx) > 50 && Math.abs(dx) > Math.abs(dy) * 1.5) {
       if (dx > 0) {
-        if (activeSubTabIndex < STATUS_TABS.length - 1) {
-          setStatusFilter(STATUS_TABS[activeSubTabIndex + 1].key);
-        } else if (onSwipeLeft) {
-          onSwipeLeft();
-        }
+        // 向左滑，切下一个
+        if (activeSubTabIndex < STATUS_TABS.length - 1) setStatusFilter(STATUS_TABS[activeSubTabIndex + 1].key);
+        else if (onSwipeLeft) onSwipeLeft();
       } else if (dx < 0) {
-        if (activeSubTabIndex > 0) {
-          setStatusFilter(STATUS_TABS[activeSubTabIndex - 1].key);
-        }
+        // 向右滑，切上一个
+        if (activeSubTabIndex > 0) setStatusFilter(STATUS_TABS[activeSubTabIndex - 1].key);
       }
     }
   };
@@ -227,12 +284,13 @@ export default function AllView({
   if (!mounted) return <div className="min-h-[200px] flex items-center justify-center text-slate-400 text-sm animate-pulse">加载中...</div>;
 
   return (
-    <div className="animate-fade-in space-y-4" onTouchStart={handleTouchStart} onTouchEnd={handleTouchEnd}>
+    // ★ 核心修复：给最外层加上 min-h-[75vh]，强制撑开高度，让下方空白区域也能响应滑动
+    <div className="animate-fade-in space-y-4 min-h-[75vh]" onTouchStart={handleTouchStart} onTouchEnd={handleTouchEnd}>
       <div className="relative flex bg-slate-100/60 p-1 rounded-full mb-4 shadow-sm border border-slate-200/50 overflow-hidden">
         <div className="absolute top-1 bottom-1 bg-white rounded-full shadow-sm transition-transform duration-300 ease-out" 
              style={{ width: "calc(25% - 2px)", transform: `translateX(${activeSubTabIndex * 100}%)`, left: "4px" }} />
         {STATUS_TABS.map(t => (
-          <button key={t.key} onClick={() => { setStatusFilter(t.key); setPageMap({}); setGlobalPage(1); }} 
+          <button key={t.key} onClick={() => setStatusFilter(t.key)} 
             className={`flex-1 py-1.5 text-[12px] rounded-full relative z-10 transition-colors duration-300 ${statusFilter === t.key ? "text-slate-900 font-bold" : "text-slate-500 font-medium"}`}>
             {t.label}
           </button>
@@ -249,7 +307,7 @@ export default function AllView({
             </button>
           ))}
         </div>
-        {sortKey === "annual" && (
+        {sortKey === "annual" && statusFilter !== "closed" && (
           <div className="flex gap-2 overflow-x-auto no-scrollbar mt-2 bg-slate-50/80 p-1 rounded-xl">
             {ANNUAL_PERIODS.map(p => (
               <button key={p.key} onClick={() => setAnnualPeriod(p.key)} className={`flex-1 py-1.5 px-3 rounded-lg text-[11px] font-medium transition-all ${annualPeriod === p.key ? "bg-white text-purple-600 shadow-sm" : "text-slate-500 hover:text-slate-700"}`}>
@@ -261,7 +319,7 @@ export default function AllView({
       </div>
 
       <div className="mt-4">
-        {(statusFilter === "hold" || statusFilter === "closed") ? (
+        {statusFilter === "hold" ? (
           groupedSummary.length === 0 ? (
             <div className="card p-12 text-center text-slate-300 text-xs">暂无数据</div>
           ) : (
@@ -291,7 +349,7 @@ export default function AllView({
                   </div>
                   <div className="p-2">
                     {group.items.map((h: any) => (
-                      <HoldingCard key={h.id} h={h} navHistory={navHistory} transactions={transactions} annualPeriod={annualPeriod} privacy={privacy} isClosedMode={statusFilter === "closed"} periodLabel={periodLabel} />
+                      <HoldingCard key={h.id} h={h} navHistory={navHistory} transactions={transactions} annualPeriod={annualPeriod} privacy={privacy} isClosedMode={false} periodLabel={periodLabel} />
                     ))}
                   </div>
                   {group.totalPages > 1 && (
@@ -310,10 +368,17 @@ export default function AllView({
             {paginatedFlatItems.length === 0 ? (
               <div className="card p-12 text-center text-slate-300 text-xs">暂无数据</div>
             ) : (
-              paginatedFlatItems.map((h: any) => (
-                <LibraryCard key={h.id} h={h} navHistory={navHistory} onToggleWatch={() => {}} />
-              ))
+              <div className="card overflow-hidden mb-4 p-2">
+                {paginatedFlatItems.map((h: any) => {
+                  if (h.type === "holding") {
+                    return <HoldingCard key={h.id} h={h} navHistory={navHistory} transactions={transactions} annualPeriod={annualPeriod} privacy={privacy} isClosedMode={true} periodLabel={periodLabel} />;
+                  } else {
+                    return <LibraryCard key={h.id} h={h} navHistory={navHistory} onToggleWatch={() => {}} />;
+                  }
+                })}
+              </div>
             )}
+            
             {totalGlobalPages > 1 && (
               <div className="flex items-center justify-between px-4 py-3 bg-white rounded-xl shadow-sm border border-slate-100 mt-4">
                 <button onClick={() => setGlobalPage(p => Math.max(1, p - 1))} disabled={globalPage === 1} className="px-4 py-1.5 text-[12px] font-medium bg-slate-50 rounded-lg text-slate-600 disabled:opacity-40">上一页</button>

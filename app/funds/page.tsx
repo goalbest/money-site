@@ -8,9 +8,10 @@ import HoldingCard from "./components/HoldingCard";
 import AddHoldingModal from "./components/AddHoldingModal";
 import UpdateCashModal from "./components/UpdateCashModal";
 import CashBanner from "./components/CashBanner";
+import FundCalendar from "./components/FundCalendar";
 
-const TABS = ["all", "fund", "stock"];
-const CACHE_KEY = "cache_funds_page_v1"; // ★ 定义一个干净的缓存键
+const TABS = ["all", "fund", "stock", "calendar"];
+const CACHE_KEY = "cache_funds_page_v3"; 
 
 export default function FundsPage() {
   const [mounted, setMounted] = useState(false);
@@ -23,7 +24,6 @@ export default function FundsPage() {
     return "all";
   });
 
-  // ★ 核心优化 1：从缓存初始化，实现秒开
   const [data, setData] = useState<any[]>(() => {
     if (typeof window !== "undefined") {
       const cached = localStorage.getItem(CACHE_KEY);
@@ -48,7 +48,6 @@ export default function FundsPage() {
     return {};
   });
 
-  // 如果没有缓存，才显示 loading 骨架屏
   const [loading, setLoading] = useState(() => {
     if (typeof window !== "undefined") return !localStorage.getItem(CACHE_KEY);
     return true;
@@ -61,10 +60,8 @@ export default function FundsPage() {
   const hasRestoredScroll = useRef(false);
   const touchStartRef = useRef<{ x: number, y: number } | null>(null);
 
-  // ★ 核心优化 2：后台静默拉取最新数据
   const fetchData = async () => {
     if (!userId) return;
-    // 注意：这里不再 setLoading(true)，防止页面闪烁
     
     const { data: res, error } = await supabase
       .from("fund_stock_holdings")
@@ -77,12 +74,14 @@ export default function FundsPage() {
 
     if (!error && res) {
       let cash = 0;
+      let hasCash = false;
       const others: any[] = [];
       
       res.forEach((h: any) => {
         const fs = Array.isArray(h.fund_stocks) ? h.fund_stocks[0] : h.fund_stocks;
         if (fs?.type === "cash") {
           cash = Number(fs.current_price || 0);
+          hasCash = true;
         } else {
           others.push(h);
         }
@@ -110,16 +109,14 @@ export default function FundsPage() {
         }
       }
 
-      // 更新状态
-      setCashAmount(cash);
+      setCashAmount(hasCash ? cash : 0);
       setData(others);
       setHistoryMap(newHistoryMap);
       setLoading(false);
 
-      // ★ 核心优化 3：将最新数据写入缓存
       localStorage.setItem(CACHE_KEY, JSON.stringify({
         data: others,
-        cashAmount: cash,
+        cashAmount: hasCash ? cash : 0,
         historyMap: newHistoryMap
       }));
     } else {
@@ -129,7 +126,7 @@ export default function FundsPage() {
 
   useEffect(() => {
     setMounted(true);
-    fetchData(); // 挂载时拉取最新数据
+    fetchData(); 
   }, [userId]);
 
   useEffect(() => {
@@ -138,16 +135,16 @@ export default function FundsPage() {
 
   useEffect(() => {
     const handleScroll = () => {
-      if (hasRestoredScroll.current) {
+      if (hasRestoredScroll.current && activeTab !== "calendar") { 
         sessionStorage.setItem("funds_view_scroll", window.scrollY.toString());
       }
     };
     window.addEventListener("scroll", handleScroll, { passive: true });
     return () => window.removeEventListener("scroll", handleScroll);
-  }, []);
+  }, [activeTab]);
 
   useEffect(() => {
-    if (loading || hasRestoredScroll.current) return;
+    if (loading || hasRestoredScroll.current || activeTab === "calendar") return;
     const savedScroll = sessionStorage.getItem("funds_view_scroll");
     if (savedScroll) {
       requestAnimationFrame(() => {
@@ -159,7 +156,7 @@ export default function FundsPage() {
     } else {
       hasRestoredScroll.current = true;
     }
-  }, [loading]);
+  }, [loading, activeTab]);
 
   const handleTabChange = (key: string) => {
     setActiveTab(key);
@@ -233,7 +230,7 @@ export default function FundsPage() {
   }, [data, cashAmount]);
 
   const filteredData = useMemo(() => {
-    if (activeTab === "all") return data;
+    if (activeTab === "all" || activeTab === "calendar") return data;
     return data.filter((d) => {
       const fs = Array.isArray(d.fund_stocks) ? d.fund_stocks[0] : d.fund_stocks;
       return fs?.type === activeTab;
@@ -268,34 +265,69 @@ export default function FundsPage() {
 
         <AssetOverviewCard stats={stats} />
         
+        {/* ★ 终极对称布局：[日历] [全部|基金|股票] [可用] */}
         <div className="flex items-center gap-2 mb-6">
-          <div className="flex-1">
+          
+          {/* 左侧：日历胶囊 */}
+          <button 
+            onClick={() => handleTabChange("calendar")}
+            className={`flex flex-col items-center justify-center px-3 py-1.5 rounded-2xl cursor-pointer active:scale-95 transition-all flex-shrink-0 h-full min-h-[42px] border ${
+              activeTab === "calendar" 
+                ? "bg-slate-900 border-slate-900 text-amber-400 shadow-md shadow-slate-900/20" 
+                : "bg-white/90 backdrop-blur-md border-white/60 shadow-sm text-slate-600 hover:bg-white"
+            }`}
+          >
+            <span className={`text-[9px] font-medium leading-tight mb-0.5 ${activeTab === "calendar" ? "text-amber-400/80" : "text-slate-500"}`}></span>
+            <span className="text-[12px] font-bold leading-tight flex items-center gap-1">
+              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2.5}>
+                <rect x="3" y="5" width="18" height="16" rx="2.5" />
+                <path d="M3 10h18M8 3v4M16 3v4" strokeLinecap="round" />
+              </svg>
+              日历
+            </span>
+          </button>
+
+          {/* 中间：全部/基金/股票 Tabs */}
+          <div className="flex-1 min-w-0">
             <FundTabs activeTab={activeTab} onTabChange={handleTabChange} />
           </div>
+
+          {/* 右侧：可用金额胶囊 */}
           <CashBanner amount={cashAmount} onEdit={() => setIsCashModalOpen(true)} />
+          
         </div>
 
-        <div className="space-y-3">
-          {loading ? (
-            <div className="text-center py-10 text-slate-400 text-sm animate-pulse">加载中...</div>
-          ) : filteredData.length === 0 ? (
-            <div className="bg-white/80 backdrop-blur rounded-3xl p-16 flex flex-col items-center justify-center text-slate-300 shadow-sm border border-white">
-              <div className="text-sm font-medium text-slate-500 mb-1">暂无持仓数据</div>
-              <div className="text-xs">点击右下角 + 号添加</div>
-            </div>
-          ) : (
-            filteredData.map((item) => {
-              const fs = Array.isArray(item.fund_stocks) ? item.fund_stocks[0] : item.fund_stocks;
-              if (!fs) return null;
-              return <HoldingCard key={item.id} item={item} history={historyMap[fs.id] || []} />;
-            })
-          )}
-        </div>
+        {activeTab === "calendar" ? (
+          <FundCalendar 
+            data={data} 
+            historyMap={historyMap} 
+            activeTab="all"
+          />
+        ) : (
+          <div className="space-y-3">
+            {loading ? (
+              <div className="text-center py-10 text-slate-400 text-sm animate-pulse">加载中...</div>
+            ) : filteredData.length === 0 ? (
+              <div className="bg-white/80 backdrop-blur rounded-3xl p-16 flex flex-col items-center justify-center text-slate-300 shadow-sm border border-white">
+                <div className="text-sm font-medium text-slate-500 mb-1">暂无持仓数据</div>
+                <div className="text-xs">点击右下角 + 号添加</div>
+              </div>
+            ) : (
+              filteredData.map((item) => {
+                const fs = Array.isArray(item.fund_stocks) ? item.fund_stocks[0] : item.fund_stocks;
+                if (!fs) return null;
+                return <HoldingCard key={item.id} item={item} history={historyMap[fs.id] || []} />;
+              })
+            )}
+          </div>
+        )}
       </div>
 
-      <button onClick={() => setIsModalOpen(true)} className="fixed z-40 flex items-center justify-center w-14 h-14 rounded-full bg-slate-900 text-white shadow-xl shadow-slate-900/30 active:scale-90 transition-all duration-300" style={{ bottom: "calc(100px + env(safe-area-inset-bottom))", right: "20px" }}>
-        <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2.5}><path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" /></svg>
-      </button>
+      {activeTab !== "calendar" && (
+        <button onClick={() => setIsModalOpen(true)} className="fixed z-40 flex items-center justify-center w-14 h-14 rounded-full bg-slate-900 text-white shadow-xl shadow-slate-900/30 active:scale-90 transition-all duration-300" style={{ bottom: "calc(100px + env(safe-area-inset-bottom))", right: "20px" }}>
+          <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2.5}><path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" /></svg>
+        </button>
+      )}
 
       <AddHoldingModal isOpen={isModalOpen} onClose={() => setIsModalOpen(false)} userId={userId} onSuccess={fetchData} />
       <UpdateCashModal isOpen={isCashModalOpen} onClose={() => setIsCashModalOpen(false)} userId={userId} currentAmount={cashAmount} onSuccess={fetchData} />

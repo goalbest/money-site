@@ -2,7 +2,6 @@
 
 import { useState, useMemo } from "react";
 import Link from "next/link";
-import CalendarGrid from "./calendar/CalendarGrid";
 import CalendarList from "./calendar/CalendarList";
 
 const fmtMonthCN = (monthStr: string) => {
@@ -15,7 +14,9 @@ const fmtW = (num: number) => {
   return num.toFixed(0);
 };
 
-export default function CalendarView({ allHoldings = [], navHistory = {} }: any) {
+const WEEKDAYS = ["日", "一", "二", "三", "四", "五", "六"];
+
+export default function CalendarView({ allHoldings = [], navHistory = {}, transactions = [] }: any) {
   const now = new Date();
   const currentMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
   
@@ -27,7 +28,7 @@ export default function CalendarView({ allHoldings = [], navHistory = {} }: any)
   const [selectedProduct, setSelectedProduct] = useState<number | null>(null);
 
   const holdings = useMemo(() => {
-    return allHoldings.filter((h: any) => h.status === "active");
+    return allHoldings.filter((h: any) => h.status === "active" && h.products);
   }, [allHoldings]);
 
   const availableBanks = useMemo(() => {
@@ -36,17 +37,23 @@ export default function CalendarView({ allHoldings = [], navHistory = {} }: any)
     return ["全部", ...Array.from(set)];
   }, [holdings]);
 
-  // 1. 基础收益计算
-  const { dayMap, productDayMap, productMonthlyMap } = useMemo(() => {
+  const filteredHoldings = useMemo(() => {
+    if (bankFilter === "全部") return holdings;
+    return holdings.filter((h: any) => h.products?.bank === bankFilter);
+  }, [holdings, bankFilter]);
+
+  // ★ 核心计算：每日收益、正负收益、真实资金额度区间
+  const { dayMap, posDayMap, negDayMap, productDayMap, productMonthlyMap, monthlyStats } = useMemo(() => {
     const dMap: Record<string, number> = {};
+    const posMap: Record<string, number> = {};
+    const negMap: Record<string, number> = {};
     const pDayMap: Record<string, Record<number, number>> = {};
     const pMonthMap: Record<number, number> = {};
 
-    holdings.forEach((h: any) => {
+    // 1. 计算每天的收益明细
+    filteredHoldings.forEach((h: any) => {
       const p = h.products;
       if (!p) return;
-      if (bankFilter !== "全部" && p.bank !== bankFilter) return;
-
       const shares = Number(h.shares || 0);
       if (shares <= 0) return;
 
@@ -65,6 +72,8 @@ export default function CalendarView({ allHoldings = [], navHistory = {} }: any)
         const profit = shares * (Number(today.nav) - Number(prev.nav));
         
         dMap[today.date] = (dMap[today.date] || 0) + profit;
+        if (profit > 0) posMap[today.date] = (posMap[today.date] || 0) + profit;
+        if (profit < 0) negMap[today.date] = (negMap[today.date] || 0) + profit;
         
         if (!pDayMap[today.date]) pDayMap[today.date] = {};
         pDayMap[today.date][p.id] = (pDayMap[today.date][p.id] || 0) + profit;
@@ -73,15 +82,51 @@ export default function CalendarView({ allHoldings = [], navHistory = {} }: any)
       }
     });
 
-    return { dayMap: dMap, productDayMap: pDayMap, productMonthlyMap: pMonthMap };
-  }, [holdings, navHistory, month, bankFilter]);
+    // 2. 根据交易流水，严格回放当月每一天的真实持仓市值
+    const monthRelevantProducts = allHoldings.filter((h: any) => {
+      if (bankFilter !== "全部" && h.products?.bank !== bankFilter) return false;
+      const pId = h.products?.id;
+      if (!pId) return false;
+      const hasNav = (navHistory[pId] || []).some((n: any) => n.date.startsWith(month));
+      const hasTx = transactions.some((t: any) => t.product_id === pId && t.trade_date.startsWith(month));
+      return hasNav || hasTx;
+    });
 
-  // 2. 计算高级统计
-  const monthlyStats = useMemo(() => {
-    const dates = Object.keys(dayMap);
-    if (dates.length === 0) return null;
+    const monthDates = new Set<string>();
+    monthRelevantProducts.forEach((h: any) => {
+      const navs = navHistory[h.products.id] || [];
+      navs.forEach((n: any) => { if (n.date.startsWith(month)) monthDates.add(n.date); });
+    });
+    const sortedDates = Array.from(monthDates).sort();
 
-    let totalProfit = 0;
+    const dailyMarketValues: Record<string, number> = {};
+    
+    sortedDates.forEach(date => {
+      let dailyTotal = 0;
+      monthRelevantProducts.forEach((h: any) => {
+        const pId = h.products.id;
+        const navs = [...(navHistory[pId] || [])].sort((a: any, b: any) => new Date(a.date).getTime() - new Date(b.date).getTime());
+        let closestNav = null;
+        for (let i = navs.length - 1; i >= 0; i--) {
+          if (navs[i].date <= date) { closestNav = navs[i]; break; }
+        }
+        if (!closestNav) return;
+        
+        const productTxs = transactions.filter((t: any) => t.product_id === pId && t.trade_date <= date);
+        let dailyShares = 0;
+        productTxs.forEach((t: any) => {
+          if (t.type === "buy") dailyShares += Number(t.shares);
+          else if (t.type === "sell" || t.type === "close") dailyShares -= Number(t.shares);
+        });
+
+        if (dailyShares > 0) dailyTotal += dailyShares * Number(closestNav.nav);
+      });
+      if (dailyTotal > 0) dailyMarketValues[date] = dailyTotal;
+    });
+
+    // 3. 汇总当月统计与正负收益
+    const dates = Object.keys(dMap);
+    let totalProfit = 0, totalPos = 0, totalNeg = 0;
     let maxDay = { date: "", profit: -Infinity };
     let minDay = { date: "", profit: Infinity };
     let totalMarketValue = 0;
@@ -89,26 +134,11 @@ export default function CalendarView({ allHoldings = [], navHistory = {} }: any)
     let minMarketValue = Infinity;
     let maxMarketValue = -Infinity;
 
-    const dailyMarketValues: Record<string, number> = {};
-    holdings.forEach((h: any) => {
-      const p = h.products;
-      if (!p) return;
-      if (bankFilter !== "全部" && p.bank !== bankFilter) return;
-      const shares = Number(h.shares || 0);
-      if (shares <= 0) return;
-
-      const navs = navHistory[p.id] || [];
-      navs.forEach((nav: any) => {
-        if (nav.date.startsWith(month) && (!h.hold_date || nav.date >= h.hold_date)) {
-          if (!dailyMarketValues[nav.date]) dailyMarketValues[nav.date] = 0;
-          dailyMarketValues[nav.date] += shares * Number(nav.nav);
-        }
-      });
-    });
-
     dates.forEach(date => {
-      const p = dayMap[date];
+      const p = dMap[date];
       totalProfit += p;
+      if (p > 0) totalPos += p;
+      if (p < 0) totalNeg += p;
       if (p > maxDay.profit) maxDay = { date, profit: p };
       if (p < minDay.profit) minDay = { date, profit: p };
       
@@ -124,30 +154,22 @@ export default function CalendarView({ allHoldings = [], navHistory = {} }: any)
     const avgMarketValue = validDays > 0 ? totalMarketValue / validDays : 0;
     const wanfen = avgMarketValue > 0 ? (totalProfit / avgMarketValue) * 10000 : 0;
     
-    // ★ 核心修复：区分当月和历史月
     const [y, m] = month.split("-").map(Number);
     const isCurrentMonth = (y === now.getFullYear() && m === now.getMonth() + 1);
-    // 当月就是已过天数，历史月就是整月天数
     const calcDays = isCurrentMonth ? now.getDate() : new Date(y, m, 0).getDate();
-
-    // 年化公式：用总收益 ÷ 资金 × (365 ÷ 实际持有天数)
     const annualized = avgMarketValue > 0 && calcDays > 0 ? (totalProfit / avgMarketValue) * (365 / calcDays) * 100 : 0;
 
-    return {
-      totalProfit, maxDay, minDay, avgMarketValue, wanfen, annualized, 
+    const stats = dates.length > 0 ? {
+      totalProfit, totalPos, totalNeg, maxDay, minDay, avgMarketValue, wanfen, annualized, 
       minMarketValue: minMarketValue === Infinity ? 0 : minMarketValue,
       maxMarketValue: maxMarketValue === -Infinity ? 0 : maxMarketValue,
       calcDays
-    };
-  }, [dayMap, month, holdings, navHistory, bankFilter, now]);
+    } : null;
 
-  const maxAbs = useMemo(() => {
-    let max = 1;
-    Object.values(dayMap).forEach(v => { max = Math.max(max, Math.abs(v)); });
-    return max;
-  }, [dayMap]);
+    return { dayMap: dMap, posDayMap: posMap, negDayMap: negMap, productDayMap: pDayMap, productMonthlyMap: pMonthMap, monthlyStats: stats };
+  }, [filteredHoldings, allHoldings, navHistory, transactions, month, bankFilter, now]);
 
-  const selectedProductHolding = selectedProduct != null ? holdings.find(h => h.products?.id === selectedProduct) : null;
+  const selectedProductHolding = selectedProduct != null ? holdings.find((h: any) => h.products?.id === selectedProduct) : null;
   const selectedProductMeta = selectedProductHolding?.products;
   const isProductDetailMode = viewMode === "byProduct" && !!selectedProductMeta;
   const selectedProductMonthly = selectedProduct != null ? productMonthlyMap[selectedProduct] || 0 : 0;
@@ -159,7 +181,6 @@ export default function CalendarView({ allHoldings = [], navHistory = {} }: any)
       const holding = holdings.find((h: any) => h.products?.id === pid);
       const meta = holding?.products;
       if (!meta) return;
-      if (bankFilter !== "全部" && meta.bank !== bankFilter) return;
 
       let days = 0;
       Object.keys(productDayMap).forEach(date => {
@@ -172,48 +193,58 @@ export default function CalendarView({ allHoldings = [], navHistory = {} }: any)
       });
     });
     return rows.sort((a, b) => b.profit - a.profit);
-  }, [productMonthlyMap, productDayMap, holdings, bankFilter]);
+  }, [productMonthlyMap, productDayMap, holdings]);
 
+  // ★ 关键修改：这里直接给 dailyList 附带上了 pos 和 neg 字段
   const dailyList = useMemo(() => {
     if (viewMode === "byProduct" && selectedProduct != null) {
-      const rows: { date: string; profit: number; count: number }[] = [];
+      const rows: { date: string; profit: number; count: number; pos: number; neg: number }[] = [];
       Object.entries(productDayMap).forEach(([date, map]) => {
         const p = map[selectedProduct];
         if (p == null) return;
-        rows.push({ date, profit: p, count: 1 });
+        rows.push({ 
+          date, 
+          profit: p, 
+          count: 1,
+          pos: p > 0 ? p : 0,
+          neg: p < 0 ? p : 0
+        });
       });
       return rows.sort((a, b) => b.date.localeCompare(a.date));
     }
 
-    const rows: { date: string; profit: number; count: number }[] = [];
+    const rows: { date: string; profit: number; count: number; pos: number; neg: number }[] = [];
     Object.entries(productDayMap).forEach(([date, map]) => {
       let sum = 0, count = 0;
       Object.entries(map).forEach(([pidStr, profit]) => {
-        const meta = holdings.find((h: any) => h.products?.id === Number(pidStr))?.products;
-        if (!meta || (bankFilter !== "全部" && meta.bank !== bankFilter)) return;
+        const meta = filteredHoldings.find((h: any) => h.products?.id === Number(pidStr))?.products;
+        if (!meta) return;
         sum += profit;
         count++;
       });
-      if (count > 0) rows.push({ date, profit: sum, count });
+      if (count > 0) {
+        rows.push({ 
+          date, 
+          profit: sum, 
+          count,
+          pos: posDayMap[date] || 0,
+          neg: negDayMap[date] || 0
+        });
+      }
     });
     return rows.sort((a, b) => b.date.localeCompare(a.date));
-  }, [viewMode, selectedProduct, productDayMap, bankFilter, holdings]);
+  }, [viewMode, selectedProduct, productDayMap, filteredHoldings, posDayMap, negDayMap]);
 
   const displayTotalProfit = useMemo(() => {
     if (viewMode === "byProduct" && selectedProduct != null) return selectedProductMonthly;
-    if (bankFilter === "全部") return Object.values(dayMap).reduce((a, b) => a + b, 0);
-    let sum = 0;
-    Object.entries(productMonthlyMap).forEach(([pidStr, profit]) => {
-      if (holdings.find((h: any) => h.products?.id === Number(pidStr))?.products?.bank === bankFilter) sum += profit;
-    });
-    return sum;
-  }, [viewMode, selectedProduct, selectedProductMonthly, bankFilter, productMonthlyMap, dayMap, holdings]);
+    return Object.values(dayMap).reduce((a, b) => a + b, 0);
+  }, [viewMode, selectedProduct, selectedProductMonthly, dayMap]);
 
   function getDayProducts(date: string) {
     const rows: any[] = [];
     Object.entries(productDayMap[date] || {}).forEach(([pidStr, profit]) => {
       const meta = holdings.find((h: any) => h.products?.id === Number(pidStr))?.products;
-      if (!meta || (bankFilter !== "全部" && meta.bank !== bankFilter)) return;
+      if (!meta) return;
       rows.push({ productId: Number(pidStr), name: meta.name, bank: meta.bank, profit });
     });
     return rows.sort((a, b) => b.profit - a.profit);
@@ -237,6 +268,103 @@ export default function CalendarView({ allHoldings = [], navHistory = {} }: any)
     setMonth(`${next.getFullYear()}-${String(next.getMonth() + 1).padStart(2, "0")}`);
     setSelectedDate(null);
   }
+
+  const renderGrid = () => {
+    const [y, m] = month.split("-").map(Number);
+    const daysInMonth = new Date(y, m, 0).getDate();
+    const firstDayOfWeek = new Date(y, m - 1, 1).getDay();
+    const todayStr = new Date().toISOString().split("T")[0];
+
+    let maxAbsProfit = 1;
+    Object.values(dayMap).forEach(v => {
+      maxAbsProfit = Math.max(maxAbsProfit, Math.abs(v));
+    });
+
+    return (
+      <div className="bg-white rounded-[24px] p-5 shadow-sm border border-slate-100">
+        <div className="grid grid-cols-7 gap-1 mb-2">
+          {WEEKDAYS.map(d => (
+            <div key={d} className="text-center text-[11px] text-slate-400 font-medium py-1">{d}</div>
+          ))}
+        </div>
+        <div className="grid grid-cols-7 gap-y-3 gap-x-1">
+          {Array.from({ length: firstDayOfWeek }).map((_, i) => (
+            <div key={`empty-${i}`} className="h-14" />
+          ))}
+          {Array.from({ length: daysInMonth }).map((_, i) => {
+            const day = i + 1;
+            const dateStr = `${month}-${String(day).padStart(2, "0")}`;
+            
+            const profit = isProductDetailMode && selectedProduct
+              ? (productDayMap[dateStr]?.[selectedProduct] || 0)
+              : dayMap[dateStr];
+              
+            const hasData = isProductDetailMode && selectedProduct
+              ? (productDayMap[dateStr]?.[selectedProduct] !== undefined)
+              : (dayMap[dateStr] !== undefined);
+
+            const isToday = dateStr === todayStr;
+            const isSelected = dateStr === selectedDate;
+
+            let bgStyle: React.CSSProperties = {};
+            let textColor = "text-slate-700";
+
+            if (hasData) {
+              const ratio = Math.min(1, Math.abs(profit) / maxAbsProfit);
+              const opacity = 0.15 + ratio * 0.45;
+              if (profit > 0) {
+                bgStyle = { backgroundColor: `rgba(244, 63, 94, ${opacity})` };
+                textColor = "text-rose-700 font-medium";
+              } else if (profit < 0) {
+                bgStyle = { backgroundColor: `rgba(16, 185, 129, ${opacity})` };
+                textColor = "text-emerald-700 font-medium";
+              } else {
+                bgStyle = { backgroundColor: `rgba(148, 163, 184, 0.15)` };
+                textColor = "text-slate-400";
+              }
+            }
+
+            const posVal = posDayMap[dateStr] || 0;
+            const negVal = negDayMap[dateStr] || 0;
+
+            return (
+              <div
+                key={day}
+                onClick={() => setSelectedDate(dateStr)}
+                style={bgStyle}
+                className={`relative flex flex-col items-center justify-center h-14 w-full rounded-2xl transition-colors cursor-pointer ${
+                  isToday ? "border-[1.5px] border-purple-400 bg-purple-50/20" : 
+                  isSelected ? "border border-slate-300" : "border border-transparent"
+                }`}
+              >
+                <span className={`text-[13px] mb-0.5 ${isToday ? "text-purple-700 font-bold" : textColor}`}>
+                  {day}
+                </span>
+                
+                {hasData && (
+                  <div className="flex flex-col items-center">
+                    <div className={`text-[9px] font-mono leading-tight ${textColor}`}>
+                      {profit > 0 ? "+" : ""}{profit.toFixed(0)}
+                    </div>
+                    {(posVal !== 0 || negVal !== 0) && (
+                      <div className={`text-[8px] font-mono leading-none scale-90 ${textColor} opacity-80`}>
+                        {posVal > 0 && negVal < 0 
+                          ? `${posVal.toFixed(0)}/${Math.abs(negVal).toFixed(0)}` 
+                          : posVal > 0 
+                            ? `${posVal.toFixed(0)}` 
+                            : `${Math.abs(negVal).toFixed(0)}`
+                        }
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    );
+  };
 
   if (holdings.length === 0) {
     return (
@@ -262,7 +390,6 @@ export default function CalendarView({ allHoldings = [], navHistory = {} }: any)
         </div>
       )}
 
-      {/* 月份切换 */}
       <div className="flex items-center justify-between px-1 mb-4">
         <button onClick={goPrevMonth} className="w-8 h-8 rounded-full bg-slate-50 hover:bg-slate-100 flex items-center justify-center transition-all active:scale-90">
           <svg className="w-4 h-4 text-slate-500" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2.5}><path strokeLinecap="round" strokeLinejoin="round" d="M15 19l-7-7 7-7" /></svg>
@@ -275,14 +402,20 @@ export default function CalendarView({ allHoldings = [], navHistory = {} }: any)
         </button>
       </div>
 
-      {/* 数据看板 */}
       {monthlyStats && (
         <div className="bg-white rounded-[24px] p-5 shadow-sm border border-slate-100 mb-2">
           <div className="flex justify-between items-start mb-4">
             <div>
               <div className="text-[11px] text-slate-400 mb-1">当月收益</div>
-              <div className={`font-mono font-bold text-[28px] tracking-tight ${monthlyStats.totalProfit >= 0 ? "text-red-500" : "text-green-500"}`}>
-                {monthlyStats.totalProfit > 0 ? "+" : ""}{monthlyStats.totalProfit.toFixed(2)}
+              <div className="flex items-baseline gap-3">
+                <div className={`font-mono font-bold text-[28px] tracking-tight ${monthlyStats.totalProfit >= 0 ? "text-red-500" : "text-green-500"}`}>
+                  {monthlyStats.totalProfit > 0 ? "+" : ""}{monthlyStats.totalProfit.toFixed(2)}
+                </div>
+                <div className="flex items-center gap-1.5 bg-slate-50/80 px-2 py-0.5 rounded-lg border border-slate-100/50">
+                  <span className="text-[12px] font-mono font-bold text-red-500">+{monthlyStats.totalPos.toFixed(0)}</span>
+                  <span className="text-slate-300">      </span>
+                  <span className="text-[12px] font-mono font-bold text-green-500">{monthlyStats.totalNeg.toFixed(0)}</span>
+                </div>
               </div>
             </div>
             
@@ -302,7 +435,6 @@ export default function CalendarView({ allHoldings = [], navHistory = {} }: any)
           </div>
 
           <div className="grid grid-cols-4 gap-2">
-            {/* ★ 万收框布局优化：左侧万收、右侧日均，上下对齐 */}
             <div className="bg-slate-50 rounded-xl p-2 flex flex-col justify-center">
               <div className="flex justify-between items-center mb-0.5">
                 <span className="text-[10px] text-slate-400">万收</span>
@@ -345,28 +477,24 @@ export default function CalendarView({ allHoldings = [], navHistory = {} }: any)
       )}
 
       <div className="mt-0">
-        <CalendarGrid 
-          month={month} productDayMap={productDayMap} dayMap={dayMap} 
-          selectedDate={selectedDate} setSelectedDate={setSelectedDate}
-          isProductDetailMode={isProductDetailMode} selectedProduct={selectedProduct}
-          bankFilter={bankFilter} holdings={holdings} navRows={[]}
-          maxAbs={maxAbs} privacy={privacy}
-        />
+        {renderGrid()}
       </div>
 
-      <CalendarList
-        viewMode={viewMode} setViewMode={setViewMode}
-        selectedProduct={selectedProduct} setSelectedProduct={setSelectedProduct}
-        selectedDate={selectedDate} setSelectedDate={setSelectedDate}
-        holdings={holdings} bankFilter={bankFilter}
-        dayMap={dayMap} productDayMap={productDayMap} 
-        productMonthlyMap={productMonthlyMap} productZeroDaysMap={{}}
-        isProductDetailMode={isProductDetailMode} selectedProductMeta={selectedProductMeta}
-        displayTotalProfit={displayTotalProfit}
-        dailyList={dailyList} productMonthlyList={productMonthlyList}
-        getDayProducts={getDayProducts} fmtProfit={fmtProfit}
-        selectedProductDayProfit={selectedProductDayProfit}
-      />
+      <div className="mt-4">
+        <CalendarList
+          viewMode={viewMode} setViewMode={setViewMode}
+          selectedProduct={selectedProduct} setSelectedProduct={setSelectedProduct}
+          selectedDate={selectedDate} setSelectedDate={setSelectedDate}
+          holdings={filteredHoldings} bankFilter={bankFilter}
+          dayMap={dayMap} productDayMap={productDayMap} 
+          productMonthlyMap={productMonthlyMap} productZeroDaysMap={{}}
+          isProductDetailMode={isProductDetailMode} selectedProductMeta={selectedProductMeta}
+          displayTotalProfit={displayTotalProfit}
+          dailyList={dailyList} productMonthlyList={productMonthlyList}
+          getDayProducts={getDayProducts} fmtProfit={fmtProfit}
+          selectedProductDayProfit={selectedProductDayProfit}
+        />
+      </div>
     </div>
   );
 }
